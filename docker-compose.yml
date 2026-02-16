@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: runcrew-db
+    environment:
+      POSTGRES_DB: runcrew
+      POSTGRES_USER: runcrew
+      POSTGRES_PASSWORD: runcrew_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runcrew"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: runcrew-backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://runcrew:runcrew_password@db:5432/runcrew
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      CORS_ORIGINS: '["http://localhost:8081","http://localhost:19006"]'
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - ./backend:/app
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:
