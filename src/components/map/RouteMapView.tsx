@@ -244,9 +244,12 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
       : undefined;
 
   // Compute initial region (used only when routeRegion is not set)
-  const initialRegion = isRouteMode && routePoints.length > 0
-    ? computeRegionFromPoints(routePoints)
-    : SEOUL_REGION;
+  // For follow mode (live running), use tight zoom (~200m view)
+  const initialRegion = followsUserLocation
+    ? { ...SEOUL_REGION, latitudeDelta: 0.003, longitudeDelta: 0.003 }
+    : isRouteMode && routePoints.length > 0
+      ? computeRegionFromPoints(routePoints)
+      : SEOUL_REGION;
 
   return (
     <View style={[styles.container, style]}>

@@ -372,18 +372,18 @@ export default function RunningScreen() {
           </View>
         )}
 
-        {/* Loop detection banners (free running only) */}
-        {!courseId && loopDetected && (
+        {/* Loop detection banners (free running only, after 300m) */}
+        {!courseId && loopDetected && distanceMeters >= 300 && (
           <View style={styles.loopArrivedBanner}>
             <Ionicons name="flag" size={16} color={colors.white} />
-            <Text style={styles.loopArrivedText}>출발점 도착! 왕복 완료</Text>
+            <Text style={styles.loopArrivedText}>Finish! Loop complete</Text>
           </View>
         )}
-        {!courseId && isApproachingStart && !isNearStart && !loopDetected && (
+        {!courseId && isApproachingStart && !isNearStart && !loopDetected && distanceMeters >= 300 && (
           <View style={styles.loopApproachBanner}>
             <Ionicons name="navigate" size={16} color={colors.text} />
             <Text style={styles.loopApproachText}>
-              출발점 접근 중 ~{Math.round(distanceToStart)}m
+              Approaching start ~{Math.round(distanceToStart)}m
             </Text>
           </View>
         )}
