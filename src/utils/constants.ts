@@ -3,7 +3,7 @@
 // ============================================================
 
 export const API_BASE_URL = __DEV__
-  ? 'http://localhost:8000/api/v1'
+  ? 'http://13.125.244.10:8000/api/v1'
   : 'https://api.runcrew.app/api/v1';
 
 export const SECURE_STORE_KEYS = {
