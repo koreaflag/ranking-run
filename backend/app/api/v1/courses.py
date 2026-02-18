@@ -68,6 +68,7 @@ async def create_course(
 @inject
 async def list_courses(
     db: DbSession,
+    search: str | None = Query(None, min_length=1, max_length=100),
     min_distance: int | None = Query(None, ge=0),
     max_distance: int | None = Query(None, ge=0),
     near_lat: float | None = Query(None, ge=-90, le=90),
@@ -82,6 +83,7 @@ async def list_courses(
     """List public courses with filtering, spatial search, and pagination."""
     courses_data, total_count = await course_service.list_courses(
         db=db,
+        search=search,
         min_distance=min_distance,
         max_distance=max_distance,
         near_lat=near_lat,
@@ -154,33 +156,23 @@ async def get_course_detail(
     course_service: CourseService = Depends(Provide[Container.course_service]),
 ) -> CourseDetail:
     """Get full course detail including route geometry."""
-    course = await course_service.get_course_by_id(db, course_id)
-    if course is None:
+    detail = await course_service.get_course_detail(db, course_id)
+    if detail is None:
         raise NotFoundError(code="NOT_FOUND", message="Course not found")
 
-    creator_info = CourseCreatorInfo(
-        id=str(course.creator.id) if course.creator else "",
-        nickname=course.creator.nickname if course.creator else None,
-        avatar_url=course.creator.avatar_url if course.creator else None,
-    )
-
-    route_geo = None
-    if course.route_geometry is not None:
-        route_geo = course.route_geometry
-
     return CourseDetail(
-        id=str(course.id),
-        title=course.title,
-        description=course.description,
-        route_geometry=route_geo,
-        distance_meters=course.distance_meters,
-        estimated_duration_seconds=course.estimated_duration_seconds,
-        elevation_gain_meters=course.elevation_gain_meters,
-        elevation_profile=course.elevation_profile,
-        thumbnail_url=course.thumbnail_url,
-        is_public=course.is_public,
-        created_at=course.created_at,
-        creator=creator_info,
+        id=detail["id"],
+        title=detail["title"],
+        description=detail["description"],
+        route_geometry=detail["route_geometry"],
+        distance_meters=detail["distance_meters"],
+        estimated_duration_seconds=detail["estimated_duration_seconds"],
+        elevation_gain_meters=detail["elevation_gain_meters"],
+        elevation_profile=detail["elevation_profile"],
+        thumbnail_url=detail["thumbnail_url"],
+        is_public=detail["is_public"],
+        created_at=detail["created_at"],
+        creator=CourseCreatorInfo(**detail["creator"]),
     )
 
 

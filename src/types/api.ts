@@ -19,7 +19,7 @@ export interface PaginatedResponse<T> {
 
 // ---- Auth ----
 
-export type AuthProvider = 'kakao' | 'apple';
+export type AuthProvider = 'kakao' | 'apple' | 'google';
 
 export interface LoginRequest {
   provider: AuthProvider;
@@ -35,7 +35,8 @@ export interface AuthResponse {
   user: {
     id: string;
     email: string;
-    provider: AuthProvider;
+    nickname?: string;
+    provider?: AuthProvider;
     is_new_user: boolean;
   };
 }
@@ -57,6 +58,11 @@ export interface UserProfile {
   email: string;
   nickname: string;
   avatar_url: string | null;
+  birthday: string | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  bio: string | null;
+  instagram_username: string | null;
   total_distance_meters: number;
   total_runs: number;
   created_at: string;
@@ -69,7 +75,12 @@ export interface ProfileSetupRequest {
 
 export interface ProfileUpdateRequest {
   nickname?: string;
-  avatar_url?: string;
+  avatar_url?: string | null;
+  birthday?: string | null;
+  height_cm?: number | null;
+  weight_kg?: number | null;
+  bio?: string | null;
+  instagram_username?: string | null;
 }
 
 export interface ProfileSetupResponse {
@@ -141,6 +152,7 @@ export interface CourseListItem {
   elevation_gain_meters: number;
   creator: CourseCreator;
   stats: CourseStats;
+  like_count?: number;
   created_at: string;
   distance_from_user_meters?: number;
 }
@@ -148,6 +160,7 @@ export interface CourseListItem {
 export type CourseListResponse = PaginatedResponse<CourseListItem>;
 
 export interface CourseListParams {
+  search?: string;
   min_distance?: number;
   max_distance?: number;
   near_lat?: number;
@@ -159,6 +172,8 @@ export interface CourseListParams {
   per_page?: number;
 }
 
+export type CourseDifficulty = 'easy' | 'normal' | 'hard' | 'expert' | 'legend';
+
 export interface NearbyCourse {
   id: string;
   title: string;
@@ -169,6 +184,10 @@ export interface NearbyCourse {
   avg_pace_seconds_per_km: number | null;
   creator_nickname: string;
   distance_from_user_meters: number;
+  difficulty?: CourseDifficulty;
+  avg_rating?: number | null;
+  active_runners?: number;
+  like_count?: number;
 }
 
 export interface CourseMarker {
@@ -178,6 +197,13 @@ export interface CourseMarker {
   start_lng: number;
   distance_meters: number;
   total_runs: number;
+  difficulty?: CourseDifficulty | null;
+  avg_rating?: number | null;
+  active_runners?: number;
+  is_new?: boolean;
+  elevation_gain_meters?: number;
+  creator_nickname?: string | null;
+  user_rank?: number | null;
 }
 
 export interface GeoJSONLineString {
@@ -476,8 +502,213 @@ export interface RunRecordDetail {
   };
 }
 
+// ---- Reviews ----
+
+export interface ReviewAuthor {
+  id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+}
+
+export interface CourseReview {
+  id: string;
+  course_id: string;
+  rating: number | null;
+  content: string | null;
+  author: ReviewAuthor;
+  created_at: string;
+  updated_at: string;
+  creator_reply: string | null;
+  creator_reply_at: string | null;
+}
+
+export interface CourseReviewListResponse {
+  data: CourseReview[];
+  total_count: number;
+  avg_rating: number | null;
+}
+
+export interface ReviewCreateRequest {
+  rating?: number;
+  content?: string;
+}
+
+export interface ReviewUpdateRequest {
+  rating?: number;
+  content?: string;
+}
+
+// ---- Favorites ----
+
+export interface FavoriteToggleResponse {
+  is_favorited: boolean;
+}
+
+export interface FavoriteCourseItem {
+  id: string;
+  title: string;
+  thumbnail_url: string | null;
+  distance_meters: number;
+  estimated_duration_seconds: number;
+  creator_nickname: string;
+  favorited_at: string;
+}
+
+// ---- Likes ----
+
+export interface LikeToggleResponse {
+  is_liked: boolean;
+  like_count: number;
+}
+
+export interface LikeStatusResponse {
+  is_liked: boolean;
+  like_count: number;
+}
+
+// ---- Public Profile ----
+
+export interface PublicProfileCourse {
+  id: string;
+  title: string;
+  distance_meters: number;
+  thumbnail_url: string | null;
+  total_runs: number;
+  like_count: number;
+}
+
+export interface PublicProfileRanking {
+  course_id: string;
+  course_title: string;
+  rank: number;
+  best_duration_seconds: number;
+}
+
+export interface PublicProfile {
+  id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  instagram_username: string | null;
+  total_distance_meters: number;
+  total_runs: number;
+  created_at: string;
+  followers_count: number;
+  following_count: number;
+  is_following: boolean;
+  courses: PublicProfileCourse[];
+  top_rankings: PublicProfileRanking[];
+}
+
+// ---- Social Counts ----
+
+export interface SocialCounts {
+    followers_count: number;
+    following_count: number;
+    total_likes_received: number;
+}
+
+// ---- Activity Feed ----
+
+export interface ActivityFeedItem {
+    type: 'run_completed' | 'course_created';
+    user_id: string;
+    nickname: string | null;
+    avatar_url: string | null;
+    // Run fields
+    run_id: string | null;
+    distance_meters: number | null;
+    duration_seconds: number | null;
+    course_title: string | null;
+    // Course fields
+    course_id: string | null;
+    course_title_created: string | null;
+    course_distance_meters: number | null;
+    // Common
+    created_at: string;
+}
+
+export interface ActivityFeedResponse {
+    data: ActivityFeedItem[];
+}
+
 // ---- Uploads ----
 
 export interface AvatarUploadResponse {
   url: string;
+}
+
+// ---- External Import ----
+
+export interface ImportUploadResponse {
+  import_id: string;
+  status: string;
+  message: string;
+}
+
+export interface ImportSummary {
+  distance_meters: number;
+  duration_seconds: number;
+  avg_pace_seconds_per_km: number | null;
+  elevation_gain_meters: number;
+  elevation_loss_meters: number;
+  point_count: number;
+  source_device: string | null;
+}
+
+export interface CourseMatchInfo {
+  course_id: string;
+  course_title: string;
+  match_percent: number;
+  is_completed: boolean;
+}
+
+export interface ImportDetailResponse {
+  id: string;
+  source: string;
+  status: string;
+  external_id: string | null;
+  original_filename: string | null;
+  import_summary: ImportSummary | null;
+  course_match: CourseMatchInfo | null;
+  run_record_id: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface ImportListResponse {
+  data: ImportDetailResponse[];
+  total_count: number;
+  has_next: boolean;
+}
+
+// ---- Strava Integration ----
+
+export interface StravaAuthURLResponse {
+  auth_url: string;
+  state: string;
+}
+
+export interface StravaConnectionStatus {
+  connected: boolean;
+  athlete_name: string | null;
+  athlete_profile_url: string | null;
+  last_sync_at: string | null;
+  auto_sync: boolean;
+}
+
+export interface StravaActivity {
+  id: number;
+  name: string | null;
+  sport_type: string | null;
+  start_date: string | null;
+  distance: number | null;
+  moving_time: number | null;
+  total_elevation_gain: number | null;
+}
+
+export interface StravaSyncResponse {
+  import_id: string;
+  status: string;
+  message: string;
 }

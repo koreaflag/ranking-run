@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   StyleSheet,
   TouchableOpacity,
   ViewStyle,
 } from 'react-native';
-import { COLORS, SPACING, BORDER_RADIUS } from '../../utils/constants';
+import { useTheme } from '../../hooks/useTheme';
+import type { ThemeColors } from '../../utils/constants';
+import { SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 
 interface CardProps {
   children: React.ReactNode;
@@ -20,6 +22,9 @@ export default function Card({
   style,
   padded = true,
 }: CardProps) {
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const containerStyle: ViewStyle[] = [
     styles.card,
     padded && styles.padded,
@@ -41,14 +46,14 @@ export default function Card({
   return <View style={containerStyle}>{children}</View>;
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: COLORS.card,
-    borderRadius: BORDER_RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  padded: {
-    padding: SPACING.lg,
-  },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    card: {
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      ...SHADOWS.sm,
+    },
+    padded: {
+      padding: SPACING.xl,
+    },
+  });

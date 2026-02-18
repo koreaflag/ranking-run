@@ -146,8 +146,8 @@ class FilterConfig(BaseModel):
 
 
 class RunCompleteRequest(BaseModel):
-    distance_meters: int = Field(..., gt=0)
-    duration_seconds: int = Field(..., gt=0)
+    distance_meters: int = Field(..., ge=0)
+    duration_seconds: int = Field(..., ge=0)
     total_elapsed_seconds: int | None = None
     avg_pace_seconds_per_km: int | None = None
     best_pace_seconds_per_km: int | None = None

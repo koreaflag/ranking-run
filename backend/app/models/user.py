@@ -1,11 +1,13 @@
 """User, SocialAccount, and RefreshToken models."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     BigInteger,
@@ -27,6 +29,11 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     nickname: Mapped[str | None] = mapped_column(String(12), nullable=True, unique=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    birthday: Mapped[date | None] = mapped_column(Date, nullable=True)
+    height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bio: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    instagram_username: Mapped[str | None] = mapped_column(String(30), nullable=True)
     total_distance_meters: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     total_runs: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 

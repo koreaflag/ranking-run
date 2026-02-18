@@ -106,8 +106,8 @@ def upgrade() -> None:
         sa.Column("filtered_points", sa.JSON()),
         sa.Column("chunk_summary", sa.JSON(), nullable=False),
         sa.Column("cumulative", sa.JSON(), nullable=False),
-        sa.Column("completed_splits", sa.JSON(), server_default="'[]'"),
-        sa.Column("pause_intervals", sa.JSON(), server_default="'[]'"),
+        sa.Column("completed_splits", sa.JSON(), server_default=sa.text("'[]'::json")),
+        sa.Column("pause_intervals", sa.JSON(), server_default=sa.text("'[]'::json")),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
     )
     op.create_index("idx_chunks_session_seq", "run_chunks", ["session_id", "sequence"], unique=True)
@@ -131,7 +131,7 @@ def upgrade() -> None:
         sa.Column("elevation_loss_meters", sa.Integer(), server_default="0"),
         sa.Column("elevation_profile", sa.JSON()),
         sa.Column("splits", sa.JSON()),
-        sa.Column("pause_intervals", sa.JSON(), server_default="'[]'"),
+        sa.Column("pause_intervals", sa.JSON(), server_default=sa.text("'[]'::json")),
         sa.Column("filter_config", sa.JSON()),
         sa.Column("course_completed", sa.Boolean()),
         sa.Column("route_match_percent", sa.Float()),
@@ -158,7 +158,7 @@ def upgrade() -> None:
         sa.Column("best_duration_seconds", sa.Integer()),
         sa.Column("best_pace_seconds_per_km", sa.Integer()),
         sa.Column("completion_rate", sa.Float(), server_default="0"),
-        sa.Column("runs_by_hour", sa.JSON(), server_default="'{}'"),
+        sa.Column("runs_by_hour", sa.JSON(), server_default=sa.text("'{}'::json")),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
     )
 

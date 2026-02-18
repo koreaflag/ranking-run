@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.models.ranking import Ranking
 from app.models.run_record import RunRecord
@@ -30,11 +31,12 @@ class RankingService:
         result = await db.execute(
             select(Ranking)
             .where(Ranking.course_id == course_id)
+            .options(joinedload(Ranking.user))
             .order_by(Ranking.best_duration_seconds)
             .offset(page * per_page)
             .limit(per_page)
         )
-        rankings = result.scalars().all()
+        rankings = result.scalars().unique().all()
 
         data = []
         for i, ranking in enumerate(rankings):

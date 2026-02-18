@@ -14,6 +14,7 @@ interface AuthState {
   error: string | null;
 
   login: (provider: AuthProvider, token: string, nonce?: string) => Promise<void>;
+  devLogin: (nickname?: string, email?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<boolean>;
   loadStoredAuth: () => Promise<void>;
@@ -71,6 +72,49 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
+  devLogin: async (nickname, email) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await authService.devLogin(nickname, email);
+
+      await SecureStore.setItemAsync(
+        SECURE_STORE_KEYS.ACCESS_TOKEN,
+        response.access_token,
+      );
+      await SecureStore.setItemAsync(
+        SECURE_STORE_KEYS.REFRESH_TOKEN,
+        response.refresh_token,
+      );
+
+      set({
+        accessToken: response.access_token,
+        refreshToken: response.refresh_token,
+        user: {
+          id: response.user.id,
+          email: response.user.email ?? '',
+          nickname: response.user.nickname ?? nickname ?? 'dev_user',
+          avatar_url: null,
+          birthday: null,
+          height_cm: null,
+          weight_kg: null,
+          bio: null,
+          instagram_username: null,
+          total_distance_meters: 0,
+          total_runs: 0,
+          created_at: new Date().toISOString(),
+        },
+        isAuthenticated: true,
+        isNewUser: false,
+        isLoading: false,
+      });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : '로그인에 실패했습니다.';
+      set({ isLoading: false, error: message });
+      throw error;
+    }
+  },
+
   logout: async () => {
     await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
     await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
@@ -116,6 +160,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   loadStoredAuth: async () => {
     set({ isLoading: true });
+
+    // DEV mode: skip auth and go straight to main screen
+    if (__DEV__) {
+      set({
+        user: {
+          id: 'dev-user-001',
+          email: 'dev@runcrew.app',
+          nickname: 'TestRunner',
+          avatar_url: null,
+          birthday: null,
+          height_cm: 175,
+          weight_kg: 70,
+          bio: null,
+          instagram_username: null,
+          total_distance_meters: 0,
+          total_runs: 0,
+          created_at: new Date().toISOString(),
+        },
+        accessToken: 'dev-token',
+        refreshToken: 'dev-refresh-token',
+        isAuthenticated: true,
+        isNewUser: false,
+        isLoading: false,
+      });
+      return;
+    }
+
     try {
       const accessToken = await SecureStore.getItemAsync(
         SECURE_STORE_KEYS.ACCESS_TOKEN,
@@ -178,6 +249,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           email: '',
           nickname: profile.nickname,
           avatar_url: profile.avatar_url,
+          birthday: null,
+          height_cm: null,
+          weight_kg: null,
+          bio: null,
+          instagram_username: null,
           total_distance_meters: profile.total_distance_meters,
           total_runs: profile.total_runs,
           created_at: profile.created_at,

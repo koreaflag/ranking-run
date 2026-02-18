@@ -9,11 +9,9 @@ export const rankingService = {
     courseId: string,
     limit: number = 10,
   ): Promise<RankingEntry[]> {
-    const response = await api.get<RankingEntry[]>(
-      `/courses/${courseId}/rankings`,
-      { params: { limit } },
+    return api.get<RankingEntry[]>(
+      `/courses/${courseId}/rankings?limit=${limit}`,
     );
-    return response.data;
   },
 
   /**
@@ -24,20 +22,15 @@ export const rankingService = {
     page: number = 0,
     perPage: number = 20,
   ): Promise<RankingListResponse> {
-    const response = await api.get<RankingListResponse>(
-      `/courses/${courseId}/rankings`,
-      { params: { page, per_page: perPage } },
+    return api.get<RankingListResponse>(
+      `/courses/${courseId}/rankings?page=${page}&per_page=${perPage}`,
     );
-    return response.data;
   },
 
   /**
    * Fetch the current user's ranking on a specific course.
    */
   async getMyRanking(courseId: string): Promise<MyRanking> {
-    const response = await api.get<MyRanking>(
-      `/courses/${courseId}/my-ranking`,
-    );
-    return response.data;
+    return api.get<MyRanking>(`/courses/${courseId}/my-ranking`);
   },
 };

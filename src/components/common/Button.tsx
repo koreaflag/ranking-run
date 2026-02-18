@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   TouchableOpacity,
   Text,
@@ -7,7 +7,9 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
-import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
+import { useTheme } from '../../hooks/useTheme';
+import type { ThemeColors } from '../../utils/constants';
+import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost';
 type ButtonSize = 'sm' | 'md' | 'lg';
@@ -37,6 +39,9 @@ export default function Button({
   textStyle,
   leftIcon,
 }: ButtonProps) {
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const containerStyles: ViewStyle[] = [
     styles.base,
     styles[`variant_${variant}`],
@@ -54,6 +59,9 @@ export default function Button({
     textStyle as TextStyle,
   ].filter(Boolean) as TextStyle[];
 
+  const indicatorColor =
+    variant === 'primary' ? COLORS.white : colors.text;
+
   return (
     <TouchableOpacity
       style={containerStyles}
@@ -64,7 +72,7 @@ export default function Button({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={variant === 'primary' ? COLORS.white : COLORS.primary}
+          color={indicatorColor}
         />
       ) : (
         <>
@@ -76,82 +84,82 @@ export default function Button({
   );
 }
 
-const styles = StyleSheet.create({
-  base: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: BORDER_RADIUS.md,
-    gap: SPACING.sm,
-  },
-  fullWidth: {
-    width: '100%',
-  },
-  disabled: {
-    opacity: 0.5,
-  },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    base: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: BORDER_RADIUS.full,
+      gap: SPACING.sm,
+    },
+    fullWidth: {
+      width: '100%',
+    },
+    disabled: {
+      opacity: 0.4,
+    },
 
-  // Variants
-  variant_primary: {
-    backgroundColor: COLORS.primary,
-  },
-  variant_secondary: {
-    backgroundColor: COLORS.surfaceLight,
-  },
-  variant_outline: {
-    backgroundColor: COLORS.transparent,
-    borderWidth: 1.5,
-    borderColor: COLORS.primary,
-  },
-  variant_ghost: {
-    backgroundColor: COLORS.transparent,
-  },
+    // -- Variants --
+    variant_primary: {
+      backgroundColor: c.primary,
+      ...SHADOWS.md,
+    },
+    variant_secondary: {
+      backgroundColor: c.surface,
+    },
+    variant_outline: {
+      backgroundColor: COLORS.transparent,
+      borderWidth: 1.5,
+      borderColor: c.border,
+    },
+    variant_ghost: {
+      backgroundColor: COLORS.transparent,
+    },
 
-  // Sizes
-  size_sm: {
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    minHeight: 36,
-  },
-  size_md: {
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.xl,
-    minHeight: 48,
-  },
-  size_lg: {
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.xxl,
-    minHeight: 56,
-  },
+    // -- Sizes --
+    size_sm: {
+      paddingVertical: SPACING.sm,
+      paddingHorizontal: SPACING.lg,
+      minHeight: 36,
+    },
+    size_md: {
+      paddingVertical: SPACING.md,
+      paddingHorizontal: SPACING.xl,
+      minHeight: 48,
+    },
+    size_lg: {
+      paddingVertical: SPACING.lg,
+      paddingHorizontal: SPACING.xxl,
+      minHeight: 56,
+    },
 
-  // Labels
-  label: {
-    fontWeight: '600',
-  },
-  label_primary: {
-    color: COLORS.white,
-  },
-  label_secondary: {
-    color: COLORS.text,
-  },
-  label_outline: {
-    color: COLORS.primary,
-  },
-  label_ghost: {
-    color: COLORS.primary,
-  },
-  labelDisabled: {
-    opacity: 0.7,
-  },
-
-  // Label sizes
-  labelSize_sm: {
-    fontSize: FONT_SIZES.sm,
-  },
-  labelSize_md: {
-    fontSize: FONT_SIZES.lg,
-  },
-  labelSize_lg: {
-    fontSize: FONT_SIZES.xl,
-  },
-});
+    // -- Labels --
+    label: {
+      fontWeight: '700',
+    },
+    label_primary: {
+      color: COLORS.white,
+    },
+    label_secondary: {
+      color: c.text,
+    },
+    label_outline: {
+      color: c.text,
+    },
+    label_ghost: {
+      color: c.textSecondary,
+    },
+    labelDisabled: {
+      opacity: 0.7,
+    },
+    labelSize_sm: {
+      fontSize: FONT_SIZES.sm,
+    },
+    labelSize_md: {
+      fontSize: FONT_SIZES.lg,
+    },
+    labelSize_lg: {
+      fontSize: FONT_SIZES.xl,
+    },
+  });

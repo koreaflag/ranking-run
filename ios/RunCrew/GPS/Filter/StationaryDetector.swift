@@ -1,133 +1,94 @@
 import Foundation
+import CoreLocation
 
-// MARK: - StationaryDetector
-// Detects whether the user is stationary or moving using Core Motion
-// userAcceleration data. Uses a sliding variance window over 3 seconds.
-//
-// When stationary:
-// - GPS drift should not accumulate as distance
-// - Battery optimizer can reduce GPS accuracy
-// - UI shows "paused" indicator
-//
-// This class maintains a circular buffer of acceleration magnitudes
-// and computes their variance to determine motion state.
-
-protocol StationaryDetectorDelegate: AnyObject {
-    func stationaryDetector(_ detector: StationaryDetector, didChangeState state: RunningState)
-}
-
-final class StationaryDetector {
-
-    weak var delegate: StationaryDetectorDelegate?
-
-    // MARK: - Configuration
-
-    /// Variance threshold below which the user is considered stationary.
-    /// Tuned empirically: typical stationary variance ~ 0.001-0.005,
-    /// walking ~ 0.05-0.2, running ~ 0.5+
-    private let stationaryThreshold: Double = 0.015
-
-    /// Minimum consecutive samples in new state before transitioning.
-    /// Prevents rapid flickering between states.
-    private let minTransitionSamples: Int = 15  // At 10Hz = 1.5 seconds
-
-    /// Window size for variance calculation (3 seconds at 10Hz)
-    private let windowSize: Int = 30
-
-    // MARK: - State
-
-    private(set) var currentState: RunningState = .moving
-
-    /// Circular buffer of acceleration magnitudes
-    private var accelerationBuffer: [Double] = []
-    private var bufferIndex: Int = 0
-    private var bufferFull: Bool = false
-
-    /// Counter for consecutive samples in a potential new state
-    private var transitionCounter: Int = 0
-    private var pendingState: RunningState = .moving
-
-    // MARK: - Initialization
-
-    init() {
-        accelerationBuffer = [Double](repeating: 0, count: windowSize)
+/// Detects stationary (stopped) state using GPS + motion data
+class StationaryDetector {
+    enum State: String {
+        case moving
+        case stationary
     }
 
-    // MARK: - Feed Acceleration Data
+    private(set) var state: State = .moving
+    private(set) var stateDuration: TimeInterval = 0
 
-    /// Feed a userAcceleration sample (magnitude of x,y,z combined).
-    /// Call at ~10Hz from MotionTracker.
-    func feedAcceleration(x: Double, y: Double, z: Double) {
-        let magnitude = sqrt(x * x + y * y + z * z)
+    private var stateStartTime: Date = Date()
+    private var recentSpeeds: [Double] = []
+    private let speedWindowSize = 5
 
-        // Add to circular buffer
-        accelerationBuffer[bufferIndex] = magnitude
-        bufferIndex = (bufferIndex + 1) % windowSize
-        if bufferIndex == 0 {
-            bufferFull = true
+    // Thresholds
+    private let stationarySpeedThreshold: Double = 0.3  // m/s
+    private let movingSpeedThreshold: Double = 0.8       // m/s (hysteresis)
+    private let stationaryAccelThreshold: Double = 0.15  // g-force
+    private let minStationaryDuration: TimeInterval = 3.0 // seconds
+
+    private var consecutiveStationaryCount = 0
+    private var consecutiveMovingCount = 0
+    private let requiredConsecutiveCount = 3
+
+    /// Update with new GPS speed
+    func updateWithSpeed(_ speed: Double) {
+        recentSpeeds.append(speed)
+        if recentSpeeds.count > speedWindowSize {
+            recentSpeeds.removeFirst()
         }
 
-        // Don't evaluate until we have a full window
-        guard bufferFull else { return }
+        let avgSpeed = recentSpeeds.reduce(0, +) / Double(recentSpeeds.count)
 
-        let variance = computeVariance()
-        let detectedState: RunningState = variance < stationaryThreshold ? .stationary : .moving
-
-        if detectedState == currentState {
-            // Reset transition counter if we're still in the current state
-            transitionCounter = 0
-            pendingState = currentState
-        } else {
-            if detectedState == pendingState {
-                transitionCounter += 1
-            } else {
-                pendingState = detectedState
-                transitionCounter = 1
-            }
-
-            if transitionCounter >= minTransitionSamples {
-                let previousState = currentState
-                currentState = detectedState
-                transitionCounter = 0
-
-                if previousState != currentState {
-                    delegate?.stationaryDetector(self, didChangeState: currentState)
+        switch state {
+        case .moving:
+            if avgSpeed < stationarySpeedThreshold {
+                consecutiveStationaryCount += 1
+                consecutiveMovingCount = 0
+                if consecutiveStationaryCount >= requiredConsecutiveCount {
+                    transitionTo(.stationary)
                 }
+            } else {
+                consecutiveStationaryCount = 0
+            }
+        case .stationary:
+            if avgSpeed > movingSpeedThreshold {
+                consecutiveMovingCount += 1
+                consecutiveStationaryCount = 0
+                if consecutiveMovingCount >= requiredConsecutiveCount {
+                    transitionTo(.moving)
+                }
+            } else {
+                consecutiveMovingCount = 0
             }
         }
     }
 
-    // MARK: - Variance Calculation
-
-    /// Returns the current acceleration variance from the buffer.
-    /// Also exposed for the Kalman Filter Q matrix adjustment.
-    func computeVariance() -> Double {
-        let count = bufferFull ? windowSize : bufferIndex
-        guard count > 1 else { return 0 }
-
-        var sum = 0.0
-        for i in 0..<count {
-            sum += accelerationBuffer[i]
+    /// Update with Core Motion acceleration magnitude (optional, improves accuracy)
+    func updateWithAcceleration(_ magnitude: Double) {
+        // Supplement GPS-based detection with motion data
+        if state == .stationary && magnitude > stationaryAccelThreshold {
+            consecutiveMovingCount += 1
+            if consecutiveMovingCount >= requiredConsecutiveCount {
+                transitionTo(.moving)
+            }
         }
-        let mean = sum / Double(count)
-
-        var sumSquaredDiff = 0.0
-        for i in 0..<count {
-            let diff = accelerationBuffer[i] - mean
-            sumSquaredDiff += diff * diff
-        }
-
-        return sumSquaredDiff / Double(count - 1)
     }
 
-    // MARK: - Reset
+    var isStationary: Bool { state == .stationary }
+    var isMoving: Bool { state == .moving }
+
+    private func transitionTo(_ newState: State) {
+        guard newState != state else { return }
+        state = newState
+        stateStartTime = Date()
+        consecutiveStationaryCount = 0
+        consecutiveMovingCount = 0
+    }
+
+    func getStateDurationMs() -> Double {
+        return Date().timeIntervalSince(stateStartTime) * 1000
+    }
 
     func reset() {
-        currentState = .moving
-        accelerationBuffer = [Double](repeating: 0, count: windowSize)
-        bufferIndex = 0
-        bufferFull = false
-        transitionCounter = 0
-        pendingState = .moving
+        state = .moving
+        stateStartTime = Date()
+        recentSpeeds.removeAll()
+        consecutiveStationaryCount = 0
+        consecutiveMovingCount = 0
     }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,11 @@ import {
   TouchableOpacity,
   RefreshControl,
   SafeAreaView,
+  Image,
+  NativeModules,
+  Platform,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuthStore } from '../../stores/authStore';
@@ -15,8 +19,10 @@ import { useCourseStore } from '../../stores/courseStore';
 import Card from '../../components/common/Card';
 import StatItem from '../../components/common/StatItem';
 import EmptyState from '../../components/common/EmptyState';
+import BlurredBackground from '../../components/common/BlurredBackground';
+import GlassCard from '../../components/common/GlassCard';
 import type { HomeStackParamList } from '../../types/navigation';
-import type { NearbyCourse, RecentRun, WeeklySummary } from '../../types/api';
+import type { RecentRun, WeeklySummary, FavoriteCourseItem, ActivityFeedItem } from '../../types/api';
 import { userService } from '../../services/userService';
 import {
   formatDistance,
@@ -24,39 +30,143 @@ import {
   formatPace,
   formatRelativeTime,
 } from '../../utils/format';
-import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
+import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
+import type { ThemeColors } from '../../utils/constants';
+import { useTheme } from '../../hooks/useTheme';
 
 type HomeNav = NativeStackNavigationProp<HomeStackParamList, 'Home'>;
+
+// DEV mode mock data (shown when backend is unavailable)
+const DEV_WEEKLY_SUMMARY: WeeklySummary = {
+  total_distance_meters: 23450,
+  total_duration_seconds: 7860,
+  run_count: 4,
+  avg_pace_seconds_per_km: 335,
+  compared_to_last_week_percent: 12,
+};
+
+const DEV_RECENT_RUNS: RecentRun[] = [
+  {
+    id: 'dev-run-1',
+    distance_meters: 5230,
+    duration_seconds: 1740,
+    avg_pace_seconds_per_km: 333,
+    started_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    finished_at: new Date(Date.now() - 1.5 * 60 * 60 * 1000).toISOString(),
+    course: { id: 'dev-course-1', title: '한강 반포 코스' },
+  },
+  {
+    id: 'dev-run-2',
+    distance_meters: 10120,
+    duration_seconds: 3450,
+    avg_pace_seconds_per_km: 341,
+    started_at: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
+    finished_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+    course: null,
+  },
+  {
+    id: 'dev-run-3',
+    distance_meters: 3050,
+    duration_seconds: 1080,
+    avg_pace_seconds_per_km: 354,
+    started_at: new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(),
+    finished_at: new Date(Date.now() - 71.5 * 60 * 60 * 1000).toISOString(),
+    course: { id: 'dev-course-2', title: '올림픽공원 순환' },
+  },
+];
+
+const DEV_ACTIVITY_FEED: ActivityFeedItem[] = [
+  {
+    type: 'run_completed',
+    user_id: 'dev-user-2',
+    nickname: '달리는하마',
+    avatar_url: null,
+    run_id: 'dev-feed-run-1',
+    distance_meters: 7500,
+    duration_seconds: 2580,
+    course_title: '여의도 한강공원',
+    course_id: null,
+    course_title_created: null,
+    course_distance_meters: null,
+    created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+  },
+  {
+    type: 'course_created',
+    user_id: 'dev-user-3',
+    nickname: '런크루장',
+    avatar_url: null,
+    run_id: null,
+    distance_meters: null,
+    duration_seconds: null,
+    course_title: null,
+    course_id: 'dev-course-new',
+    course_title_created: '남산 순환 코스',
+    course_distance_meters: 4200,
+    created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    type: 'run_completed',
+    user_id: 'dev-user-4',
+    nickname: '새벽러너',
+    avatar_url: null,
+    run_id: 'dev-feed-run-2',
+    distance_meters: 12300,
+    duration_seconds: 4020,
+    course_title: null,
+    course_id: null,
+    course_title_created: null,
+    course_distance_meters: null,
+    created_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+  },
+];
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNav>();
   const { user } = useAuthStore();
-  const { nearbyCourses, fetchNearbyCourses } = useCourseStore();
+  const colors = useTheme();
+  const { favoriteCourses, fetchFavoriteCourses } = useCourseStore();
 
   const [recentRuns, setRecentRuns] = useState<RecentRun[]>([]);
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
+  const [activityFeed, setActivityFeed] = useState<ActivityFeedItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const loadHomeData = useCallback(async () => {
     try {
-      const [runs, summary] = await Promise.all([
+      const [runs, summary, feed] = await Promise.all([
         userService.getRecentRuns(3).catch(() => [] as RecentRun[]),
         userService.getWeeklySummary().catch(() => null),
+        userService.getActivityFeed(10).catch(() => [] as ActivityFeedItem[]),
       ]);
-      setRecentRuns(runs);
-      setWeeklySummary(summary);
+      // Use DEV mock data as fallback when API returns empty
+      setRecentRuns(runs.length > 0 ? runs : (__DEV__ ? DEV_RECENT_RUNS : []));
+      setWeeklySummary(summary ?? (__DEV__ ? DEV_WEEKLY_SUMMARY : null));
+      setActivityFeed(feed.length > 0 ? feed : (__DEV__ ? DEV_ACTIVITY_FEED : []));
 
-      // Fetch nearby courses with a mock location (Seoul city center)
-      // In production, this would use the device's actual location
-      await fetchNearbyCourses(37.5665, 126.978);
+      // Fetch favorite courses
+      await fetchFavoriteCourses();
     } catch {
-      // Partial failures are acceptable on the home screen
+      // In DEV mode, show mock data even on total failure
+      if (__DEV__) {
+        setRecentRuns(DEV_RECENT_RUNS);
+        setWeeklySummary(DEV_WEEKLY_SUMMARY);
+        setActivityFeed(DEV_ACTIVITY_FEED);
+      }
     }
-  }, [fetchNearbyCourses]);
+  }, [fetchFavoriteCourses]);
 
   useEffect(() => {
     loadHomeData();
   }, [loadHomeData]);
+
+  // Request location permission on mount
+  useEffect(() => {
+    if (Platform.OS === 'ios' && NativeModules.GPSTrackerModule) {
+      NativeModules.GPSTrackerModule.requestLocationPermission?.();
+    }
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -64,18 +174,13 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, [loadHomeData]);
 
-  const handleStartRun = () => {
-    // Navigate to the RunningTab
-    // Using the parent navigator to switch tabs
-    navigation.getParent()?.navigate('RunningTab');
-  };
-
   const handleCoursePress = (courseId: string) => {
     navigation.navigate('CourseDetail', { courseId });
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <BlurredBackground>
+      <SafeAreaView style={styles.container}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.contentContainer}
@@ -84,99 +189,135 @@ export default function HomeScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={COLORS.primary}
+            tintColor={colors.text}
           />
         }
       >
         {/* Greeting */}
         <View style={styles.greetingSection}>
           <Text style={styles.greeting}>
-            안녕하세요, {user?.nickname ?? '러너'}님
+            {'안녕, '}
+            <Text style={styles.greetingName}>
+              {user?.nickname ?? '러너'}
+            </Text>
           </Text>
-          <Text style={styles.greetingSub}>오늘도 함께 달려볼까요?</Text>
+          <Text style={styles.greetingSub}>
+            오늘도 달려볼까요?
+          </Text>
         </View>
 
         {/* Weekly Summary */}
         {weeklySummary && (
-          <Card style={styles.weeklySummaryCard}>
-            <Text style={styles.sectionLabel}>이번 주 요약</Text>
-            <View style={styles.weeklyStats}>
-              <StatItem
-                label="거리"
-                value={formatDistance(weeklySummary.total_distance_meters)}
-              />
-              <StatItem
-                label="시간"
-                value={formatDuration(weeklySummary.total_duration_seconds)}
-              />
-              <StatItem
-                label="횟수"
-                value={`${weeklySummary.run_count}회`}
-              />
-              <StatItem
-                label="평균 페이스"
-                value={formatPace(weeklySummary.avg_pace_seconds_per_km)}
-              />
-            </View>
-            {weeklySummary.compared_to_last_week_percent !== 0 && (
-              <Text
-                style={[
-                  styles.weeklyCompare,
-                  {
-                    color:
-                      weeklySummary.compared_to_last_week_percent > 0
-                        ? COLORS.success
-                        : COLORS.error,
-                  },
-                ]}
-              >
-                지난주 대비{' '}
-                {weeklySummary.compared_to_last_week_percent > 0 ? '+' : ''}
-                {weeklySummary.compared_to_last_week_percent}%
-              </Text>
-            )}
-          </Card>
+          <View style={styles.weeklySection}>
+            <Text style={styles.sectionTitle}>이번 주</Text>
+            <GlassCard>
+              <View style={styles.weeklyTopRow}>
+                <View style={styles.weeklyHighlight}>
+                  <Text style={styles.weeklyHighlightLabel}>총 거리</Text>
+                  <Text style={styles.weeklyHighlightValue}>
+                    {formatDistance(weeklySummary.total_distance_meters)}
+                  </Text>
+                </View>
+                {weeklySummary.compared_to_last_week_percent !== 0 && (
+                  <View
+                    style={[
+                      styles.weeklyBadge,
+                      {
+                        backgroundColor:
+                          weeklySummary.compared_to_last_week_percent > 0
+                            ? colors.success + '14'
+                            : colors.error + '14',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.weeklyBadgeText,
+                        {
+                          color:
+                            weeklySummary.compared_to_last_week_percent > 0
+                              ? colors.success
+                              : colors.error,
+                        },
+                      ]}
+                    >
+                      {weeklySummary.compared_to_last_week_percent > 0 ? '+' : ''}
+                      {weeklySummary.compared_to_last_week_percent}%
+                    </Text>
+                    <Text style={styles.weeklyBadgeSub}>지난주 대비</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.weeklyDivider} />
+
+              <View style={styles.weeklyStatsRow}>
+                <View style={styles.weeklyStatCell}>
+                  <Text style={styles.weeklyStatLabel}>시간</Text>
+                  <Text style={styles.weeklyStatValue}>
+                    {formatDuration(weeklySummary.total_duration_seconds)}
+                  </Text>
+                </View>
+                <View style={styles.weeklyStatSeparator} />
+                <View style={styles.weeklyStatCell}>
+                  <Text style={styles.weeklyStatLabel}>러닝</Text>
+                  <Text style={styles.weeklyStatValue}>
+                    {weeklySummary.run_count}
+                    <Text style={styles.weeklyStatUnit}>회</Text>
+                  </Text>
+                </View>
+                <View style={styles.weeklyStatSeparator} />
+                <View style={styles.weeklyStatCell}>
+                  <Text style={styles.weeklyStatLabel}>평균 페이스</Text>
+                  <Text style={styles.weeklyStatValue}>
+                    {formatPace(weeklySummary.avg_pace_seconds_per_km)}
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
+          </View>
         )}
 
-        {/* Recommended Courses */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>추천 코스</Text>
-            <TouchableOpacity
-              onPress={() => navigation.getParent()?.navigate('CourseTab')}
-            >
-              <Text style={styles.seeAll}>더보기</Text>
-            </TouchableOpacity>
-          </View>
+        {/* Friend Activity Feed */}
+        {activityFeed.length > 0 && (
+            <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>친구 활동</Text>
+                </View>
+                <View style={styles.activityList}>
+                    {activityFeed.slice(0, 5).map((item, index) => (
+                        <ActivityItem key={`${item.type}-${item.run_id || item.course_id}-${index}`} item={item} />
+                    ))}
+                </View>
+            </View>
+        )}
 
-          {nearbyCourses.length > 0 ? (
+        {/* Favorite Courses */}
+        {favoriteCourses.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>즐겨찾기 코스</Text>
+            </View>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.horizontalList}
             >
-              {nearbyCourses.map((course: NearbyCourse) => (
-                <CourseCard
-                  key={course.id}
-                  course={course}
-                  onPress={() => handleCoursePress(course.id)}
+              {favoriteCourses.map((item: FavoriteCourseItem) => (
+                <FavoriteCourseCard
+                  key={item.id}
+                  item={item}
+                  onPress={() => handleCoursePress(item.id)}
                 />
               ))}
             </ScrollView>
-          ) : (
-            <Card>
-              <EmptyState
-                title="주변에 등록된 코스가 없습니다"
-                description="직접 달리고 코스를 등록해 보세요!"
-              />
-            </Card>
-          )}
-        </View>
+          </View>
+        )}
 
         {/* Recent Runs */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>최근 활동</Text>
+            <Text style={styles.sectionTitle}>최근 러닝</Text>
           </View>
 
           {recentRuns.length > 0 ? (
@@ -186,52 +327,99 @@ export default function HomeScreen() {
               ))}
             </View>
           ) : (
-            <Card>
-              <EmptyState
-                title="아직 런닝 기록이 없습니다"
-                description="첫 런닝을 시작해 보세요!"
-              />
-            </Card>
+            <View style={styles.emptyCardWrapper}>
+              <Card>
+                <EmptyState
+                  icon="🏃"
+                  title="아직 러닝 기록이 없습니다"
+                  description="첫 러닝을 시작해 보세요!"
+                />
+              </Card>
+            </View>
           )}
         </View>
       </ScrollView>
-
-      {/* FAB - Start Running */}
-      <TouchableOpacity style={styles.fab} onPress={handleStartRun} activeOpacity={0.85}>
-        <Text style={styles.fabIcon}>🏃</Text>
-        <Text style={styles.fabText}>런닝 시작</Text>
-      </TouchableOpacity>
-    </SafeAreaView>
+      </SafeAreaView>
+    </BlurredBackground>
   );
 }
 
 // ---- Sub-components ----
 
-function CourseCard({
-  course,
+function RecentRunCard({ run }: { run: RecentRun }) {
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  return (
+    <View style={styles.recentRunCard}>
+      <View style={styles.recentRunHeader}>
+        <View style={styles.recentRunTitleBlock}>
+          <Text style={styles.recentRunTitle}>
+            {run.course ? run.course.title : '자유 러닝'}
+          </Text>
+          <Text style={styles.recentRunTime}>
+            {formatRelativeTime(run.finished_at)}
+          </Text>
+        </View>
+        <View style={styles.recentRunHeroDistance}>
+          <Text style={styles.recentRunHeroValue}>
+            {formatDistance(run.distance_meters)}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.recentRunDivider} />
+
+      <View style={styles.recentRunStats}>
+        <StatItem label="시간" value={formatDuration(run.duration_seconds)} />
+        <StatItem
+          label="페이스"
+          value={formatPace(run.avg_pace_seconds_per_km)}
+        />
+      </View>
+    </View>
+  );
+}
+
+function FavoriteCourseCard({
+  item,
   onPress,
 }: {
-  course: NearbyCourse;
+  item: FavoriteCourseItem;
   onPress: () => void;
 }) {
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <TouchableOpacity style={styles.courseCard} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.courseThumbnail}>
-        <Text style={styles.courseEmoji}>🗺</Text>
-      </View>
+      {/* Thumbnail */}
+      {item.thumbnail_url ? (
+        <View>
+          <Image source={{ uri: item.thumbnail_url }} style={styles.courseThumbnailImage} />
+          <View style={styles.favBadge}>
+            <Ionicons name="heart" size={14} color={colors.primary} />
+          </View>
+        </View>
+      ) : (
+        <View style={styles.courseThumbnail}>
+          <Ionicons name="heart" size={24} color={colors.primary} />
+          <Text style={styles.thumbnailLabel}>즐겨찾기</Text>
+        </View>
+      )}
+
+      {/* Course info */}
       <View style={styles.courseInfo}>
-        <Text style={styles.courseTitle} numberOfLines={1}>
-          {course.title}
-        </Text>
         <Text style={styles.courseDistance}>
-          {formatDistance(course.distance_meters)}
+          {formatDistance(item.distance_meters)}
+        </Text>
+        <Text style={styles.courseTitle} numberOfLines={1}>
+          {item.title}
         </Text>
         <View style={styles.courseMetaRow}>
-          <Text style={styles.courseMeta}>
-            {course.total_runs}회 달림
-          </Text>
-          <Text style={styles.courseMeta}>
-            {formatDistance(course.distance_from_user_meters)} 거리
+          <Ionicons name="person-outline" size={12} color={colors.textTertiary} />
+          <Text style={styles.courseMetaText}>
+            {item.creator_nickname}
           </Text>
         </View>
       </View>
@@ -239,86 +427,191 @@ function CourseCard({
   );
 }
 
-function RecentRunCard({ run }: { run: RecentRun }) {
-  return (
-    <Card style={styles.runCard}>
-      <View style={styles.runCardHeader}>
-        <View>
-          <Text style={styles.runTitle}>
-            {run.course ? run.course.title : '자유 런닝'}
-          </Text>
-          <Text style={styles.runTime}>
-            {formatRelativeTime(run.finished_at)}
-          </Text>
-        </View>
-      </View>
-      <View style={styles.runStats}>
-        <StatItem label="거리" value={formatDistance(run.distance_meters)} />
-        <StatItem
-          label="시간"
-          value={formatDuration(run.duration_seconds)}
-        />
-        <StatItem
-          label="페이스"
-          value={formatPace(run.avg_pace_seconds_per_km)}
-        />
-      </View>
-    </Card>
-  );
+function ActivityItem({ item }: { item: ActivityFeedItem }) {
+    const colors = useTheme();
+    const styles = useMemo(() => createStyles(colors), [colors]);
+    const navigation = useNavigation<HomeNav>();
+
+    const handlePress = () => {
+        if (item.type === 'course_created' && item.course_id) {
+            navigation.navigate('CourseDetail', { courseId: item.course_id });
+        } else if (item.user_id) {
+            navigation.navigate('UserProfile', { userId: item.user_id });
+        }
+    };
+
+    return (
+        <TouchableOpacity style={styles.activityCard} onPress={handlePress} activeOpacity={0.7}>
+            <View style={styles.activityAvatar}>
+                {item.avatar_url ? (
+                    <Image source={{ uri: item.avatar_url }} style={styles.activityAvatarImage} />
+                ) : (
+                    <View style={styles.activityAvatarPlaceholder}>
+                        <Text style={styles.activityAvatarText}>
+                            {(item.nickname ?? '?').charAt(0).toUpperCase()}
+                        </Text>
+                    </View>
+                )}
+            </View>
+            <View style={styles.activityContent}>
+                <Text style={styles.activityText} numberOfLines={2}>
+                    <Text style={styles.activityNickname}>{item.nickname ?? '러너'}</Text>
+                    {item.type === 'run_completed' ? (
+                        <>{'님이 '}
+                        {item.course_title ? (
+                            <Text style={styles.activityHighlight}>{item.course_title}</Text>
+                        ) : '자유 러닝'}
+                        {`을 완주했어요 `}
+                        <Text style={styles.activityDistance}>{formatDistance(item.distance_meters ?? 0)}</Text>
+                        </>
+                    ) : (
+                        <>{'님이 새 코스 '}
+                        <Text style={styles.activityHighlight}>{item.course_title_created}</Text>
+                        {'을 등록했어요'}
+                        </>
+                    )}
+                </Text>
+                <Text style={styles.activityTime}>{formatRelativeTime(item.created_at)}</Text>
+            </View>
+            <Ionicons
+                name={item.type === 'run_completed' ? 'footsteps' : 'flag'}
+                size={16}
+                color={colors.textTertiary}
+            />
+        </TouchableOpacity>
+    );
 }
 
 // ---- Styles ----
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   scrollView: {
     flex: 1,
   },
   contentContainer: {
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
+
+  // --- Greeting ---
   greetingSection: {
     paddingHorizontal: SPACING.xxl,
-    paddingTop: SPACING.xl,
-    paddingBottom: SPACING.lg,
-    gap: SPACING.xs,
+    paddingTop: SPACING.huge,
+    paddingBottom: SPACING.xl,
   },
   greeting: {
-    fontSize: FONT_SIZES.title,
+    fontSize: 34,
     fontWeight: '800',
-    color: COLORS.text,
+    color: c.text,
+    lineHeight: 40,
+    letterSpacing: -0.5,
+  },
+  greetingName: {
+    color: c.text,
+    fontWeight: '800',
   },
   greetingSub: {
     fontSize: FONT_SIZES.lg,
-    color: COLORS.textSecondary,
+    fontWeight: '400',
+    color: c.textTertiary,
+    marginTop: SPACING.xs,
+    lineHeight: 24,
   },
-  weeklySummaryCard: {
-    marginHorizontal: SPACING.xxl,
-    marginBottom: SPACING.lg,
+
+  // --- Section Title (bold black, no decorators) ---
+  sectionTitle: {
+    fontSize: FONT_SIZES.xl,
+    fontWeight: '800',
+    color: c.text,
+    letterSpacing: -0.3,
+  },
+
+  // --- Weekly Summary ---
+  weeklySection: {
+    paddingHorizontal: SPACING.xxl,
     gap: SPACING.md,
   },
-  sectionLabel: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: COLORS.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  weeklyStats: {
+  weeklyTopRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
-  weeklyCompare: {
+  weeklyHighlight: {
+    gap: SPACING.xs,
+  },
+  weeklyHighlightLabel: {
     fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: '500',
+    color: c.textTertiary,
   },
+  weeklyHighlightValue: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: c.text,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -1,
+  },
+  weeklyBadge: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.full,
+    alignItems: 'center',
+    gap: 2,
+  },
+  weeklyBadgeText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  weeklyBadgeSub: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '500',
+    color: c.textTertiary,
+  },
+  weeklyDivider: {
+    height: 1,
+    backgroundColor: c.divider,
+    marginVertical: SPACING.lg,
+  },
+  weeklyStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  weeklyStatCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  weeklyStatLabel: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '500',
+    color: c.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  weeklyStatValue: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '800',
+    color: c.text,
+    fontVariant: ['tabular-nums'],
+  },
+  weeklyStatUnit: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '500',
+    color: c.textTertiary,
+  },
+  weeklyStatSeparator: {
+    width: 1,
+    height: 28,
+    backgroundColor: c.divider,
+  },
+
+  // --- Section ---
   section: {
-    paddingTop: SPACING.lg,
-    gap: SPACING.md,
+    paddingTop: SPACING.xxxl,
+    gap: SPACING.lg,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -326,108 +619,192 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.xxl,
   },
-  sectionTitle: {
-    fontSize: FONT_SIZES.xl,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  seeAll: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
+  // --- Horizontal List ---
   horizontalList: {
     paddingHorizontal: SPACING.xxl,
     gap: SPACING.md,
   },
+  emptyCardWrapper: {
+    paddingHorizontal: SPACING.xxl,
+  },
+
+  // --- Course Card (clean card bg, bold distance) ---
   courseCard: {
-    width: 180,
-    backgroundColor: COLORS.card,
+    width: 200,
+    backgroundColor: c.card,
     borderRadius: BORDER_RADIUS.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: c.border,
   },
   courseThumbnail: {
     height: 100,
-    backgroundColor: COLORS.surfaceLight,
+    backgroundColor: c.surface,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  courseEmoji: {
-    fontSize: 32,
-  },
-  courseInfo: {
-    padding: SPACING.md,
     gap: SPACING.xs,
   },
-  courseTitle: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '700',
-    color: COLORS.text,
+  courseThumbnailImage: {
+    height: 100,
+    width: '100%',
+    resizeMode: 'cover',
+  },
+  thumbnailLabel: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '600',
+    color: c.textTertiary,
+  },
+  favBadge: {
+    position: 'absolute',
+    top: SPACING.sm,
+    right: SPACING.sm,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: c.card,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...SHADOWS.sm,
+  },
+  courseInfo: {
+    padding: SPACING.lg,
+    gap: SPACING.xs,
   },
   courseDistance: {
+    fontSize: FONT_SIZES.xl,
+    color: c.text,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  courseTitle: {
     fontSize: FONT_SIZES.sm,
-    color: COLORS.primary,
-    fontWeight: '600',
+    fontWeight: '500',
+    color: c.textSecondary,
   },
   courseMetaRow: {
     flexDirection: 'row',
-    gap: SPACING.sm,
+    alignItems: 'center',
+    marginTop: SPACING.xs,
+    gap: 4,
   },
-  courseMeta: {
+  courseMetaText: {
     fontSize: FONT_SIZES.xs,
-    color: COLORS.textTertiary,
+    color: c.textTertiary,
+    fontWeight: '400',
   },
+  // --- Recent Runs (hero distance layout) ---
   runsList: {
     paddingHorizontal: SPACING.xxl,
     gap: SPACING.md,
   },
-  runCard: {
-    gap: SPACING.md,
+  recentRunCard: {
+    backgroundColor: c.card,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.xl,
+    borderWidth: 1,
+    borderColor: c.border,
   },
-  runCardHeader: {
+  recentRunHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
-  runTitle: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '700',
-    color: COLORS.text,
+  recentRunTitleBlock: {
+    flex: 1,
+    gap: 3,
   },
-  runTime: {
-    fontSize: FONT_SIZES.sm,
-    color: COLORS.textTertiary,
-    marginTop: 2,
+  recentRunTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: c.text,
   },
-  runStats: {
+  recentRunTime: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textTertiary,
+    fontWeight: '400',
+  },
+  recentRunHeroDistance: {
+    alignItems: 'flex-end',
+  },
+  recentRunHeroValue: {
+    fontSize: FONT_SIZES.xxl,
+    fontWeight: '800',
+    color: c.text,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.5,
+  },
+  recentRunDivider: {
+    height: 1,
+    backgroundColor: c.divider,
+    marginVertical: SPACING.lg,
+  },
+  recentRunStats: {
     flexDirection: 'row',
     justifyContent: 'space-around',
   },
-  fab: {
-    position: 'absolute',
-    bottom: 100,
-    right: SPACING.xxl,
+
+  // --- Activity Feed ---
+  activityList: {
+    paddingHorizontal: SPACING.xxl,
+    gap: SPACING.sm,
+  },
+  activityCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.accent,
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.xl,
-    borderRadius: BORDER_RADIUS.full,
-    gap: SPACING.sm,
-    shadowColor: COLORS.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
+    backgroundColor: c.card,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+    gap: SPACING.md,
+    borderWidth: 1,
+    borderColor: c.border,
   },
-  fabIcon: {
-    fontSize: 20,
+  activityAvatar: {
+    width: 36,
+    height: 36,
   },
-  fabText: {
-    fontSize: FONT_SIZES.lg,
+  activityAvatarImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  activityAvatarPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: c.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityAvatarText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '800',
+    color: c.textSecondary,
+  },
+  activityContent: {
+    flex: 1,
+    gap: 2,
+  },
+  activityText: {
+    fontSize: FONT_SIZES.sm,
+    color: c.textSecondary,
+    lineHeight: 18,
+  },
+  activityNickname: {
     fontWeight: '700',
-    color: COLORS.white,
+    color: c.text,
   },
+  activityHighlight: {
+    fontWeight: '600',
+    color: c.primary,
+  },
+  activityDistance: {
+    fontWeight: '700',
+    color: c.text,
+    fontVariant: ['tabular-nums'],
+  },
+  activityTime: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textTertiary,
+  },
+
 });

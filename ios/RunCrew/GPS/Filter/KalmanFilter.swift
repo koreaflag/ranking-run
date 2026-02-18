@@ -1,368 +1,243 @@
 import Foundation
 
-// MARK: - KalmanFilter
-// 6-dimensional linear Kalman Filter for GPS position smoothing.
-//
-// State vector: [lat_m, lng_m, alt, v_north, v_east, v_vertical]
-// where lat_m and lng_m are in local meters (via CoordinateConverter).
-//
-// The filter operates in a local Cartesian frame to avoid nonlinearities
-// from working directly in geographic coordinates. This makes a standard
-// (non-extended) Kalman Filter sufficient for running-speed movement.
-//
-// Matrices are represented as flat [Double] arrays in row-major order
-// for simplicity. No external linear algebra framework required.
+/// 6-dimensional Kalman Filter for GPS smoothing
+/// State vector: [x, y, alt, vx, vy, vz] in meters
+class KalmanFilter {
+    private var state: [Double]       // 6D state vector
+    private var covariance: [[Double]] // 6x6 covariance matrix P
+    private var isInitialized = false
+    private var converter: CoordinateConverter?
+    private var lastTimestamp: TimeInterval = 0
 
-final class KalmanFilter {
+    // Process noise base values
+    private let processNoisePosition: Double = 0.5
+    private let processNoiseVelocity: Double = 2.0
+    private var dynamicProcessNoise: Double = 1.0
 
-    // MARK: - Constants
-
-    static let stateDim = 6
-
-    // MARK: - State
-
-    /// State estimate vector [lat_m, lng_m, alt, v_north, v_east, v_vertical]
-    private(set) var state: [Double]
-
-    /// Error covariance matrix (6x6, row-major)
-    private(set) var P: [Double]
-
-    /// Whether the filter has been initialized with a first measurement
-    private(set) var isInitialized: Bool = false
-
-    /// Timestamp of the last update (seconds since epoch)
-    private var lastTimestamp: Double = 0
-
-    /// Coordinate converter for the current session
-    private let converter: CoordinateConverter
-
-    // MARK: - Tuning
-
-    /// Base process noise standard deviation for position (meters)
-    private let basePositionNoise: Double = 1.0
-
-    /// Base process noise standard deviation for velocity (m/s)
-    private let baseVelocityNoise: Double = 2.0
-
-    /// Base process noise standard deviation for altitude (meters)
-    private let baseAltitudeNoise: Double = 0.5
-
-    /// Current acceleration variance from Core Motion (used to scale Q dynamically)
-    var accelerationVariance: Double = 1.0
-
-    // MARK: - Initialization
-
-    init(converter: CoordinateConverter) {
-        self.converter = converter
-        self.state = [Double](repeating: 0, count: KalmanFilter.stateDim)
-        // Initialize P with large uncertainty
-        self.P = KalmanFilter.identityMatrix(scale: 100.0)
+    init() {
+        state = [0, 0, 0, 0, 0, 0]
+        covariance = Self.identity(6, scale: 100.0)
     }
 
-    // MARK: - Initialize with First Measurement
-
-    /// Seeds the filter with the first valid GPS measurement.
-    func initialize(
-        lat: Double, lng: Double, alt: Double,
-        speed: Double, bearing: Double,
-        horizontalAccuracy: Double,
-        timestamp: Double
-    ) {
-        let meters = converter.toMeters(lat: lat, lng: lng)
-
-        let bearingRad = GeoMath.toRadians(bearing)
-        let vNorth = speed * cos(bearingRad)
-        let vEast = speed * sin(bearingRad)
-
-        state = [meters.northing, meters.easting, alt, vNorth, vEast, 0.0]
-
-        // Initial covariance based on reported accuracy
-        let posVar = horizontalAccuracy * horizontalAccuracy
-        let velVar = max(speed * 0.5, 2.0) // initial velocity uncertainty
-        let velVarSq = velVar * velVar
-        let altVar = 25.0 // GPS altitude ~5m std dev initially
-
-        P = KalmanFilter.diagonalMatrix([posVar, posVar, altVar, velVarSq, velVarSq, 4.0])
-
-        lastTimestamp = timestamp / 1000.0 // Convert ms to seconds
+    /// Initialize filter with first valid GPS point
+    func initialize(lat: Double, lon: Double, alt: Double, timestamp: TimeInterval) {
+        converter = CoordinateConverter(referenceLat: lat, referenceLon: lon)
+        state = [0, 0, alt, 0, 0, 0] // Reference point = origin
+        covariance = Self.identity(6, scale: 100.0)
+        lastTimestamp = timestamp
         isInitialized = true
     }
 
-    // MARK: - Predict
+    /// Update dynamic process noise based on Core Motion acceleration variance
+    func updateProcessNoise(accelerationVariance: Double) {
+        dynamicProcessNoise = max(0.5, min(accelerationVariance, 10.0))
+    }
 
-    /// Predicts the state forward to the given timestamp.
-    /// dt is computed from the difference with the last timestamp.
-    func predict(timestamp: Double) {
-        guard isInitialized else { return }
+    /// Predict + Update step with new GPS measurement
+    func update(lat: Double, lon: Double, alt: Double,
+                speed: Double, bearing: Double,
+                horizontalAccuracy: Double, speedAccuracy: Double,
+                timestamp: TimeInterval) -> (lat: Double, lon: Double, alt: Double,
+                                              speed: Double, bearing: Double) {
+        guard isInitialized, let converter = converter else {
+            initialize(lat: lat, lon: lon, alt: alt, timestamp: timestamp)
+            return (lat, lon, alt, speed, bearing)
+        }
 
-        let t = timestamp / 1000.0
-        let dt = t - lastTimestamp
-        guard dt > 0, dt < 30.0 else { return } // Ignore unreasonable gaps
+        let dt = (timestamp - lastTimestamp) / 1000.0 // ms to seconds
+        guard dt > 0, dt < 30 else {
+            // Reset if time gap too large
+            initialize(lat: lat, lon: lon, alt: alt, timestamp: timestamp)
+            return (lat, lon, alt, speed, bearing)
+        }
+        lastTimestamp = timestamp
 
-        lastTimestamp = t
+        // --- Predict ---
+        let F = stateTransitionMatrix(dt: dt)
+        let Q = processNoiseMatrix(dt: dt)
 
-        // State transition: constant velocity model
-        // x_new = x + v * dt
-        state[0] += state[3] * dt // lat_m += v_north * dt
-        state[1] += state[4] * dt // lng_m += v_east * dt
-        state[2] += state[5] * dt // alt += v_vertical * dt
+        let predictedState = matVecMul(F, state)
+        let predictedP = matAdd(matMul(matMul(F, covariance), transpose(F)), Q)
 
-        // Build state transition matrix F (6x6)
-        var F = KalmanFilter.identityMatrix(scale: 1.0)
-        F[0 * 6 + 3] = dt // d(lat_m)/d(v_north)
-        F[1 * 6 + 4] = dt // d(lng_m)/d(v_east)
-        F[2 * 6 + 5] = dt // d(alt)/d(v_vertical)
+        // --- Update ---
+        let measurement = toMeasurement(lat: lat, lon: lon, alt: alt,
+                                         speed: speed, bearing: bearing,
+                                         converter: converter)
+        let H = measurementMatrix()
+        let R = measurementNoiseMatrix(horizontalAccuracy: horizontalAccuracy,
+                                        speedAccuracy: speedAccuracy)
 
-        // Build process noise Q scaled by acceleration variance
-        let accelScale = max(accelerationVariance, 0.1)
+        let y = vecSub(measurement, matVecMul(H, predictedState)) // Innovation
+        let S = matAdd(matMul(matMul(H, predictedP), transpose(H)), R) // Innovation covariance
+        guard let SInv = invert(S) else {
+            state = predictedState
+            covariance = predictedP
+            return convertStateToLatLng()
+        }
+        let K = matMul(matMul(predictedP, transpose(H)), SInv) // Kalman gain
+
+        state = vecAdd(predictedState, matVecMul(K, y))
+        let I = Self.identity(6)
+        covariance = matMul(matSub(I, matMul(K, H)), predictedP)
+
+        return convertStateToLatLng()
+    }
+
+    func getEstimatedSpeed() -> Double {
+        return sqrt(state[3] * state[3] + state[4] * state[4])
+    }
+
+    func reset() {
+        isInitialized = false
+        state = [0, 0, 0, 0, 0, 0]
+        covariance = Self.identity(6, scale: 100.0)
+        converter = nil
+    }
+
+    // MARK: - Private Helpers
+
+    private func convertStateToLatLng() -> (lat: Double, lon: Double, alt: Double,
+                                             speed: Double, bearing: Double) {
+        guard let converter = converter else { return (0, 0, 0, 0, 0) }
+        let latLng = converter.toLatLng(x: state[0], y: state[1])
+        let speed = sqrt(state[3] * state[3] + state[4] * state[4])
+        var bearing = atan2(state[3], state[4]).toDegrees() // vx=east, vy=north
+        bearing = (bearing + 360).truncatingRemainder(dividingBy: 360)
+        return (latLng.lat, latLng.lon, state[2], speed, bearing)
+    }
+
+    private func toMeasurement(lat: Double, lon: Double, alt: Double,
+                                speed: Double, bearing: Double,
+                                converter: CoordinateConverter) -> [Double] {
+        let pos = converter.toMeters(lat: lat, lon: lon)
+        let bearingRad = bearing * .pi / 180.0
+        let vEast = speed * sin(bearingRad)
+        let vNorth = speed * cos(bearingRad)
+        return [pos.x, pos.y, alt, vEast, vNorth, 0]
+    }
+
+    private func stateTransitionMatrix(dt: Double) -> [[Double]] {
+        return [
+            [1, 0, 0, dt, 0,  0],
+            [0, 1, 0, 0,  dt, 0],
+            [0, 0, 1, 0,  0,  dt],
+            [0, 0, 0, 1,  0,  0],
+            [0, 0, 0, 0,  1,  0],
+            [0, 0, 0, 0,  0,  1]
+        ]
+    }
+
+    private func processNoiseMatrix(dt: Double) -> [[Double]] {
         let dt2 = dt * dt
         let dt3 = dt2 * dt / 2.0
         let dt4 = dt2 * dt2 / 4.0
-
-        let posQ = basePositionNoise * basePositionNoise * accelScale
-        let velQ = baseVelocityNoise * baseVelocityNoise * accelScale
-        let altPosQ = baseAltitudeNoise * baseAltitudeNoise
-
-        // Simplified Q matrix (diagonal + cross terms from constant-acceleration model)
-        var Q = [Double](repeating: 0, count: 36)
-        // Position variance: q * dt^4/4
-        Q[0 * 6 + 0] = posQ * dt4
-        Q[1 * 6 + 1] = posQ * dt4
-        Q[2 * 6 + 2] = altPosQ * dt4
-        // Position-velocity cross terms: q * dt^3/2
-        Q[0 * 6 + 3] = posQ * dt3
-        Q[3 * 6 + 0] = posQ * dt3
-        Q[1 * 6 + 4] = posQ * dt3
-        Q[4 * 6 + 1] = posQ * dt3
-        Q[2 * 6 + 5] = altPosQ * dt3
-        Q[5 * 6 + 2] = altPosQ * dt3
-        // Velocity variance: q * dt^2
-        Q[3 * 6 + 3] = velQ * dt2
-        Q[4 * 6 + 4] = velQ * dt2
-        Q[5 * 6 + 5] = altPosQ * dt2
-
-        // P = F * P * F^T + Q
-        let FP = KalmanFilter.multiply(F, P, n: 6)
-        let Ft = KalmanFilter.transpose(F, n: 6)
-        let FPFt = KalmanFilter.multiply(FP, Ft, n: 6)
-        P = KalmanFilter.add(FPFt, Q, n: 6)
+        let qp = processNoisePosition * dynamicProcessNoise
+        let qv = processNoiseVelocity * dynamicProcessNoise
+        return [
+            [qp * dt4, 0,        0,        qp * dt3, 0,        0],
+            [0,        qp * dt4, 0,        0,        qp * dt3, 0],
+            [0,        0,        qp * dt4, 0,        0,        qp * dt3],
+            [qp * dt3, 0,        0,        qv * dt2, 0,        0],
+            [0,        qp * dt3, 0,        0,        qv * dt2, 0],
+            [0,        0,        qp * dt3, 0,        0,        qv * dt2]
+        ]
     }
 
-    // MARK: - Update
-
-    /// Updates the filter with a GPS measurement.
-    /// Measurement vector: [lat_m, lng_m, alt, v_north, v_east, v_vertical]
-    /// R diagonal: [hAcc^2, hAcc^2, vAcc^2, spdAcc^2, spdAcc^2, vAcc^2]
-    func update(
-        lat: Double, lng: Double, alt: Double,
-        speed: Double, bearing: Double,
-        horizontalAccuracy: Double,
-        verticalAccuracy: Double,
-        speedAccuracy: Double
-    ) {
-        guard isInitialized else { return }
-
-        let meters = converter.toMeters(lat: lat, lng: lng)
-
-        let bearingRad = GeoMath.toRadians(bearing)
-        let vNorth = speed * cos(bearingRad)
-        let vEast = speed * sin(bearingRad)
-
-        // Measurement vector
-        let z: [Double] = [meters.northing, meters.easting, alt, vNorth, vEast, 0.0]
-
-        // Measurement noise R (diagonal)
-        let hVar = horizontalAccuracy * horizontalAccuracy
-        let vVar = verticalAccuracy * verticalAccuracy
-        let spdVar: Double
-        if speedAccuracy > 0 {
-            spdVar = speedAccuracy * speedAccuracy
-        } else {
-            // Fallback: assume speed accuracy is proportional to horizontal accuracy
-            spdVar = max(hVar * 0.25, 4.0)
-        }
-        let altVelVar = max(vVar, 9.0) // Vertical velocity is poorly observed
-
-        let R = KalmanFilter.diagonalMatrix([hVar, hVar, vVar, spdVar, spdVar, altVelVar])
-
-        // Observation model H = Identity (we observe all state components)
-        let H = KalmanFilter.identityMatrix(scale: 1.0)
-
-        // Innovation: y = z - H * x (since H = I, y = z - x)
-        var y = [Double](repeating: 0, count: 6)
-        for i in 0..<6 {
-            y[i] = z[i] - state[i]
-        }
-
-        // Innovation covariance: S = H * P * H^T + R = P + R
-        let S = KalmanFilter.add(P, R, n: 6)
-
-        // Kalman gain: K = P * H^T * S^(-1) = P * S^(-1)
-        guard let Sinv = KalmanFilter.invert(S, n: 6) else { return }
-        let K = KalmanFilter.multiply(P, Sinv, n: 6)
-
-        // Updated state: x = x + K * y
-        for i in 0..<6 {
-            var correction = 0.0
-            for j in 0..<6 {
-                correction += K[i * 6 + j] * y[j]
-            }
-            state[i] += correction
-        }
-
-        // Updated covariance: P = (I - K * H) * P = (I - K) * P
-        let IminusK = KalmanFilter.subtract(KalmanFilter.identityMatrix(scale: 1.0), K, n: 6)
-        P = KalmanFilter.multiply(IminusK, P, n: 6)
-
-        // Symmetrize P to prevent numerical drift
-        for i in 0..<6 {
-            for j in (i + 1)..<6 {
-                let avg = (P[i * 6 + j] + P[j * 6 + i]) / 2.0
-                P[i * 6 + j] = avg
-                P[j * 6 + i] = avg
-            }
-        }
+    private func measurementMatrix() -> [[Double]] {
+        return Self.identity(6)
     }
 
-    // MARK: - Get Filtered Position
-
-    /// Returns the current filtered position in geographic coordinates.
-    func getFilteredPosition() -> (lat: Double, lng: Double, alt: Double,
-                                    speed: Double, bearing: Double) {
-        let coords = converter.toDegrees(northing: state[0], easting: state[1])
-        let alt = state[2]
-        let vNorth = state[3]
-        let vEast = state[4]
-        let speed = sqrt(vNorth * vNorth + vEast * vEast)
-        let bearing = fmod(GeoMath.toDegrees(atan2(vEast, vNorth)) + 360.0, 360.0)
-
-        return (coords.lat, coords.lng, alt, speed, bearing)
+    private func measurementNoiseMatrix(horizontalAccuracy: Double,
+                                         speedAccuracy: Double) -> [[Double]] {
+        let posVar = horizontalAccuracy * horizontalAccuracy
+        let spdVar = speedAccuracy > 0 ? speedAccuracy * speedAccuracy : 4.0
+        let altVar: Double = 100.0 // GPS altitude is typically inaccurate
+        return [
+            [posVar, 0,      0,      0,      0,      0],
+            [0,      posVar, 0,      0,      0,      0],
+            [0,      0,      altVar, 0,      0,      0],
+            [0,      0,      0,      spdVar, 0,      0],
+            [0,      0,      0,      0,      spdVar, 0],
+            [0,      0,      0,      0,      0,      spdVar]
+        ]
     }
 
-    /// Returns the estimated position uncertainty (1-sigma) in meters.
-    func getPositionUncertainty() -> Double {
-        let latVar = P[0 * 6 + 0]
-        let lngVar = P[1 * 6 + 1]
-        return sqrt(latVar + lngVar)
-    }
+    // MARK: - Matrix Operations
 
-    // MARK: - Reset
-
-    func reset() {
-        state = [Double](repeating: 0, count: KalmanFilter.stateDim)
-        P = KalmanFilter.identityMatrix(scale: 100.0)
-        isInitialized = false
-        lastTimestamp = 0
-        accelerationVariance = 1.0
-    }
-
-    // MARK: - Matrix Operations (6x6 row-major)
-
-    private static func identityMatrix(scale: Double) -> [Double] {
-        var m = [Double](repeating: 0, count: 36)
-        for i in 0..<6 { m[i * 6 + i] = scale }
+    private static func identity(_ n: Int, scale: Double = 1.0) -> [[Double]] {
+        var m = Array(repeating: Array(repeating: 0.0, count: n), count: n)
+        for i in 0..<n { m[i][i] = scale }
         return m
     }
 
-    private static func diagonalMatrix(_ diag: [Double]) -> [Double] {
-        var m = [Double](repeating: 0, count: 36)
-        for i in 0..<min(diag.count, 6) { m[i * 6 + i] = diag[i] }
-        return m
-    }
-
-    private static func multiply(_ A: [Double], _ B: [Double], n: Int) -> [Double] {
-        var C = [Double](repeating: 0, count: n * n)
+    private func matMul(_ a: [[Double]], _ b: [[Double]]) -> [[Double]] {
+        let n = a.count, m = b[0].count, p = b.count
+        var result = Array(repeating: Array(repeating: 0.0, count: m), count: n)
         for i in 0..<n {
-            for j in 0..<n {
-                var sum = 0.0
-                for k in 0..<n {
-                    sum += A[i * n + k] * B[k * n + j]
-                }
-                C[i * n + j] = sum
+            for j in 0..<m {
+                for k in 0..<p { result[i][j] += a[i][k] * b[k][j] }
             }
         }
-        return C
+        return result
     }
 
-    private static func transpose(_ A: [Double], n: Int) -> [Double] {
-        var T = [Double](repeating: 0, count: n * n)
-        for i in 0..<n {
-            for j in 0..<n {
-                T[j * n + i] = A[i * n + j]
-            }
+    private func matVecMul(_ m: [[Double]], _ v: [Double]) -> [Double] {
+        return m.map { row in zip(row, v).reduce(0.0) { $0 + $1.0 * $1.1 } }
+    }
+
+    private func matAdd(_ a: [[Double]], _ b: [[Double]]) -> [[Double]] {
+        return zip(a, b).map { zip($0, $1).map { $0 + $1 } }
+    }
+
+    private func matSub(_ a: [[Double]], _ b: [[Double]]) -> [[Double]] {
+        return zip(a, b).map { zip($0, $1).map { $0 - $1 } }
+    }
+
+    private func vecAdd(_ a: [Double], _ b: [Double]) -> [Double] {
+        return zip(a, b).map(+)
+    }
+
+    private func vecSub(_ a: [Double], _ b: [Double]) -> [Double] {
+        return zip(a, b).map(-)
+    }
+
+    private func transpose(_ m: [[Double]]) -> [[Double]] {
+        guard !m.isEmpty else { return m }
+        let rows = m.count, cols = m[0].count
+        var result = Array(repeating: Array(repeating: 0.0, count: rows), count: cols)
+        for i in 0..<rows {
+            for j in 0..<cols { result[j][i] = m[i][j] }
         }
-        return T
+        return result
     }
 
-    private static func add(_ A: [Double], _ B: [Double], n: Int) -> [Double] {
-        var C = [Double](repeating: 0, count: n * n)
-        for i in 0..<(n * n) { C[i] = A[i] + B[i] }
-        return C
-    }
+    /// Simple 6x6 matrix inversion using Gauss-Jordan elimination
+    private func invert(_ matrix: [[Double]]) -> [[Double]]? {
+        let n = matrix.count
+        var a = matrix
+        var inv = Self.identity(n)
 
-    private static func subtract(_ A: [Double], _ B: [Double], n: Int) -> [Double] {
-        var C = [Double](repeating: 0, count: n * n)
-        for i in 0..<(n * n) { C[i] = A[i] - B[i] }
-        return C
-    }
-
-    /// Inverts a 6x6 matrix using Gauss-Jordan elimination.
-    /// Returns nil if the matrix is singular.
-    private static func invert(_ M: [Double], n: Int) -> [Double]? {
-        // Augmented matrix [M | I]
-        var aug = [Double](repeating: 0, count: n * 2 * n)
-        for i in 0..<n {
-            for j in 0..<n {
-                aug[i * 2 * n + j] = M[i * n + j]
-            }
-            aug[i * 2 * n + n + i] = 1.0
-        }
-
-        // Forward elimination with partial pivoting
         for col in 0..<n {
-            // Find pivot
-            var maxVal = abs(aug[col * 2 * n + col])
             var maxRow = col
             for row in (col + 1)..<n {
-                let val = abs(aug[row * 2 * n + col])
-                if val > maxVal {
-                    maxVal = val
-                    maxRow = row
-                }
+                if abs(a[row][col]) > abs(a[maxRow][col]) { maxRow = row }
             }
+            a.swapAt(col, maxRow)
+            inv.swapAt(col, maxRow)
 
-            if maxVal < 1e-12 { return nil } // Singular
+            let pivot = a[col][col]
+            guard abs(pivot) > 1e-12 else { return nil }
 
-            // Swap rows
-            if maxRow != col {
-                for j in 0..<(2 * n) {
-                    let temp = aug[col * 2 * n + j]
-                    aug[col * 2 * n + j] = aug[maxRow * 2 * n + j]
-                    aug[maxRow * 2 * n + j] = temp
-                }
-            }
-
-            // Scale pivot row
-            let pivotVal = aug[col * 2 * n + col]
-            for j in 0..<(2 * n) {
-                aug[col * 2 * n + j] /= pivotVal
-            }
-
-            // Eliminate column
-            for row in 0..<n {
-                if row == col { continue }
-                let factor = aug[row * 2 * n + col]
-                for j in 0..<(2 * n) {
-                    aug[row * 2 * n + j] -= factor * aug[col * 2 * n + j]
-                }
-            }
-        }
-
-        // Extract inverse
-        var inv = [Double](repeating: 0, count: n * n)
-        for i in 0..<n {
             for j in 0..<n {
-                inv[i * n + j] = aug[i * 2 * n + n + j]
+                a[col][j] /= pivot
+                inv[col][j] /= pivot
+            }
+            for row in 0..<n where row != col {
+                let factor = a[row][col]
+                for j in 0..<n {
+                    a[row][j] -= factor * a[col][j]
+                    inv[row][j] -= factor * inv[col][j]
+                }
             }
         }
         return inv

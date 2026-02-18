@@ -2,6 +2,7 @@
   "expo": {
     "name": "RunCrew",
     "slug": "runcrew",
+    "scheme": "runcrew",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -18,7 +19,11 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "런닝 경로를 기록하기 위해 위치 정보가 필요합니다.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "백그라운드에서 런닝을 계속 기록하기 위해 항상 위치 접근이 필요합니다.",
-        "UIBackgroundModes": ["location"]
+        "UIBackgroundModes": [
+          "location",
+          "location"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -35,7 +40,17 @@
       ]
     },
     "plugins": [
-      "expo-secure-store"
-    ]
+      "expo-secure-store",
+      "expo-asset",
+      "expo-font",
+      "expo-apple-authentication",
+      "expo-crypto"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7aad7550-6886-4154-affa-f92894d374dd"
+      }
+    },
+    "owner": "flagproject"
   }
 }

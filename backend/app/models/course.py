@@ -58,6 +58,7 @@ class Course(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     thumbnail_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(Text), server_default="{}")
+    difficulty: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
 
     # Relationships
     creator: Mapped["User"] = relationship("User", lazy="joined")

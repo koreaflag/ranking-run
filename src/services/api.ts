@@ -1,22 +1,12 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL, SECURE_STORE_KEYS } from '../utils/constants';
 
 /**
- * Central Axios instance for all API calls.
+ * Central fetch wrapper for all API calls.
  * - Automatically attaches JWT Bearer token from SecureStore.
  * - On 401 responses, attempts a token refresh and retries the original request.
- * - On 403 from refresh, triggers logout (handled by auth store).
  */
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 15000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
 
-// Flag to prevent multiple simultaneous refresh attempts
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (token: string) => void;
@@ -34,94 +24,134 @@ function processQueue(error: unknown, token: string | null) {
   failedQueue = [];
 }
 
-// Request interceptor: attach access token
-api.interceptors.request.use(
-  async (config: InternalAxiosRequestConfig) => {
-    const token = await SecureStore.getItemAsync(
-      SECURE_STORE_KEYS.ACCESS_TOKEN,
-    );
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
+interface ApiOptions extends RequestInit {
+  _retry?: boolean;
+}
+
+class ApiError extends Error {
+  status: number;
+  data: unknown;
+  constructor(status: number, data: unknown) {
+    super(`API Error: ${status}`);
+    this.status = status;
+    this.data = data;
+  }
+}
+
+async function request<T = unknown>(
+  endpoint: string,
+  options: ApiOptions = {},
+): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const token = await SecureStore.getItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
+
+  const isFormData = options.body instanceof FormData;
+  const headers: Record<string, string> = {
+    ...(!isFormData && { 'Content-Type': 'application/json' }),
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      if (response.status === 204) return undefined as T;
+      return (await response.json()) as T;
     }
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
 
-// Response interceptor: handle 401 with token refresh
-api.interceptors.response.use(
-  (response) => response,
-  async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & {
-      _retry?: boolean;
-    };
+    // Handle 401 with token refresh
+    if (response.status === 401 && !options._retry && !endpoint.includes('/auth/refresh')) {
+      if (isRefreshing) {
+        return new Promise<string>((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then((newToken) => {
+          return request<T>(endpoint, {
+            ...options,
+            _retry: true,
+            headers: { ...headers, Authorization: `Bearer ${newToken}` },
+          });
+        });
+      }
 
-    // Only attempt refresh for 401 errors, and only once per request
-    if (error.response?.status !== 401 || originalRequest._retry) {
-      return Promise.reject(error);
-    }
+      isRefreshing = true;
 
-    // Do not retry refresh endpoint itself
-    if (originalRequest.url?.includes('/auth/refresh')) {
-      return Promise.reject(error);
-    }
-
-    if (isRefreshing) {
-      // Queue this request until the refresh completes
-      return new Promise<string>((resolve, reject) => {
-        failedQueue.push({ resolve, reject });
-      }).then((token) => {
-        if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${token}`;
+      try {
+        const refreshToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
+        if (!refreshToken) {
+          processQueue(new Error('No refresh token'), null);
+          throw new ApiError(401, { message: 'No refresh token' });
         }
-        return api(originalRequest);
-      });
+
+        const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+
+        if (!refreshResponse.ok) {
+          await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
+          await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
+          processQueue(new Error('Refresh failed'), null);
+          throw new ApiError(refreshResponse.status, await refreshResponse.json().catch(() => null));
+        }
+
+        const { access_token, refresh_token: newRefreshToken } = await refreshResponse.json();
+
+        await SecureStore.setItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN, access_token);
+        await SecureStore.setItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN, newRefreshToken);
+
+        processQueue(null, access_token);
+
+        return request<T>(endpoint, {
+          ...options,
+          _retry: true,
+          headers: { ...headers, Authorization: `Bearer ${access_token}` },
+        });
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        throw refreshError;
+      } finally {
+        isRefreshing = false;
+      }
     }
 
-    originalRequest._retry = true;
-    isRefreshing = true;
+    const errorData = await response.json().catch(() => null);
+    throw new ApiError(response.status, errorData);
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
 
-    try {
-      const refreshToken = await SecureStore.getItemAsync(
-        SECURE_STORE_KEYS.REFRESH_TOKEN,
-      );
+const api = {
+  get: <T = unknown>(endpoint: string, options?: ApiOptions) =>
+    request<T>(endpoint, { ...options, method: 'GET' }),
 
-      if (!refreshToken) {
-        processQueue(new Error('No refresh token'), null);
-        return Promise.reject(error);
-      }
+  post: <T = unknown>(endpoint: string, body?: unknown, options?: ApiOptions) =>
+    request<T>(endpoint, { ...options, method: 'POST', body: body instanceof FormData ? (body as unknown as BodyInit) : (body ? JSON.stringify(body) : undefined) }),
 
-      const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-        refresh_token: refreshToken,
-      });
+  patch: <T = unknown>(endpoint: string, body?: unknown, options?: ApiOptions) =>
+    request<T>(endpoint, { ...options, method: 'PATCH', body: body instanceof FormData ? (body as unknown as BodyInit) : (body ? JSON.stringify(body) : undefined) }),
 
-      const { access_token, refresh_token: newRefreshToken } = response.data;
+  put: <T = unknown>(endpoint: string, body?: unknown, options?: ApiOptions) =>
+    request<T>(endpoint, { ...options, method: 'PUT', body: body instanceof FormData ? (body as unknown as BodyInit) : (body ? JSON.stringify(body) : undefined) }),
 
-      await SecureStore.setItemAsync(
-        SECURE_STORE_KEYS.ACCESS_TOKEN,
-        access_token,
-      );
-      await SecureStore.setItemAsync(
-        SECURE_STORE_KEYS.REFRESH_TOKEN,
-        newRefreshToken,
-      );
+  delete: <T = unknown>(endpoint: string, options?: ApiOptions) =>
+    request<T>(endpoint, { ...options, method: 'DELETE' }),
+};
 
-      processQueue(null, access_token);
-
-      if (originalRequest.headers) {
-        originalRequest.headers.Authorization = `Bearer ${access_token}`;
-      }
-      return api(originalRequest);
-    } catch (refreshError) {
-      processQueue(refreshError, null);
-      // Clear tokens on refresh failure
-      await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
-      await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
-      return Promise.reject(refreshError);
-    } finally {
-      isRefreshing = false;
-    }
-  },
-);
-
+export { ApiError };
 export default api;

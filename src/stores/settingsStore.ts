@@ -14,10 +14,14 @@ interface SettingsState {
   hapticFeedback: boolean;
   autoLockDisabled: boolean;
 
+  // Appearance
+  backgroundImageUri: string | null;
+
   // Running preferences
   autoPause: boolean;
   countdownSeconds: number;
   splitAlertEnabled: boolean;
+  voiceGuidance: boolean;
 
   // Actions
   setDistanceUnit: (unit: DistanceUnit) => void;
@@ -29,6 +33,8 @@ interface SettingsState {
   setAutoPause: (enabled: boolean) => void;
   setCountdownSeconds: (seconds: number) => void;
   setSplitAlertEnabled: (enabled: boolean) => void;
+  setVoiceGuidance: (enabled: boolean) => void;
+  setBackgroundImageUri: (uri: string | null) => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -40,9 +46,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   hapticFeedback: true,
   autoLockDisabled: true,
 
+  backgroundImageUri: null,
+
   autoPause: true,
   countdownSeconds: 3,
   splitAlertEnabled: true,
+  voiceGuidance: true,
 
   setDistanceUnit: (unit) => set({ distanceUnit: unit }),
   setPaceUnit: (unit) => set({ paceUnit: unit }),
@@ -53,4 +62,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setAutoPause: (enabled) => set({ autoPause: enabled }),
   setCountdownSeconds: (seconds) => set({ countdownSeconds: seconds }),
   setSplitAlertEnabled: (enabled) => set({ splitAlertEnabled: enabled }),
+  setVoiceGuidance: (enabled) => set({ voiceGuidance: enabled }),
+  setBackgroundImageUri: (uri) => set({ backgroundImageUri: uri }),
 }));

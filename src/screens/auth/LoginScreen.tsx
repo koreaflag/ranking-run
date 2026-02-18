@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,101 +6,230 @@ import {
   TouchableOpacity,
   Alert,
   SafeAreaView,
+  StatusBar,
+  Platform,
+  ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
+import { login as kakaoLogin } from '@react-native-seoul/kakao-login';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
-import type { AuthStackParamList } from '../../types/navigation';
-import type { AuthProvider } from '../../types/api';
-import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
+import { useTheme } from '../../hooks/useTheme';
+import BlurredBackground from '../../components/common/BlurredBackground';
+import type { ThemeColors } from '../../utils/constants';
+import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 
-type LoginNav = NativeStackNavigationProp<AuthStackParamList, 'Login'>;
+// Configure Google Sign In — replace with your iOS client ID
+GoogleSignin.configure({
+  iosClientId: 'YOUR_GOOGLE_IOS_CLIENT_ID',
+});
 
 export default function LoginScreen() {
-  const navigation = useNavigation<LoginNav>();
-  const { login, isLoading, error, isNewUser } = useAuthStore();
-  const [activeProvider, setActiveProvider] = useState<AuthProvider | null>(
-    null,
-  );
+  const { login, devLogin, isLoading, error } = useAuthStore();
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
 
-  const handleSocialLogin = async (provider: AuthProvider) => {
-    setActiveProvider(provider);
+  // ── Apple Sign In ──────────────────────────────────────────
+  const handleAppleLogin = async () => {
     try {
-      // In a real implementation, this would first invoke the social SDK
-      // (Kakao SDK / Apple Sign In) to get a social token, then pass it
-      // to our backend. For now we simulate with a placeholder token.
-      const mockToken = `mock_${provider}_token_${Date.now()}`;
-      await login(provider, mockToken);
+      setLoadingProvider('apple');
 
-      // After login, authStore checks isNewUser.
-      // If isNewUser is true, RootNavigator stays on Auth stack,
-      // and we navigate to Onboarding.
-      if (useAuthStore.getState().isNewUser) {
-        navigation.navigate('Onboarding');
-      }
-      // If not a new user, RootNavigator automatically switches to Main.
-    } catch {
-      Alert.alert(
-        '로그인 실패',
-        error ?? '다시 시도해 주세요.',
-        [{ text: '확인' }],
+      // Generate nonce
+      const rawNonce = Crypto.randomUUID();
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce,
       );
+
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce,
+      });
+
+      if (!credential.identityToken) {
+        throw new Error('No identity token');
+      }
+
+      await login('apple', credential.identityToken, rawNonce);
+    } catch (e: any) {
+      if (e.code === 'ERR_REQUEST_CANCELED') return; // user cancelled
+      Alert.alert('로그인 실패', 'Apple 로그인에 실패했습니다. 다시 시도해 주세요.');
     } finally {
-      setActiveProvider(null);
+      setLoadingProvider(null);
     }
   };
 
+  // ── Google Sign In ─────────────────────────────────────────
+  const handleGoogleLogin = async () => {
+    try {
+      setLoadingProvider('google');
+
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+
+      const idToken = userInfo.data?.idToken;
+      if (!idToken) {
+        throw new Error('No ID token from Google');
+      }
+
+      await login('google', idToken);
+    } catch (e: any) {
+      // statusCodes.SIGN_IN_CANCELLED = '12501'
+      if (e.code === '12501' || e.code === 'SIGN_IN_CANCELLED') return;
+      Alert.alert('로그인 실패', 'Google 로그인에 실패했습니다. 다시 시도해 주세요.');
+    } finally {
+      setLoadingProvider(null);
+    }
+  };
+
+  // ── Kakao Login ────────────────────────────────────────────
+  const handleKakaoLogin = async () => {
+    try {
+      setLoadingProvider('kakao');
+
+      const result = await kakaoLogin();
+      if (!result.accessToken) {
+        throw new Error('No access token from Kakao');
+      }
+
+      await login('kakao', result.accessToken);
+    } catch (e: any) {
+      // User cancelled
+      if (e.message?.includes('cancelled') || e.message?.includes('cancel')) return;
+      Alert.alert('로그인 실패', '카카오 로그인에 실패했습니다. 다시 시도해 주세요.');
+    } finally {
+      setLoadingProvider(null);
+    }
+  };
+
+  // ── Dev Login ──────────────────────────────────────────────
+  const handleDevLogin = async () => {
+    try {
+      setLoadingProvider('dev');
+      await devLogin('dev_runner', 'dev@runcrew.test');
+    } catch {
+      Alert.alert('로그인 실패', error ?? '다시 시도해 주세요.');
+    } finally {
+      setLoadingProvider(null);
+    }
+  };
+
+  const disabled = isLoading || loadingProvider !== null;
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        {/* Hero Section */}
-        <View style={styles.heroSection}>
-          <Text style={styles.appName}>RunCrew</Text>
-          <Text style={styles.tagline}>함께 달리는 즐거움</Text>
-          <Text style={styles.subtitle}>
-            나만의 코스를 등록하고{'\n'}다른 러너들과 경쟁해 보세요
-          </Text>
-        </View>
+    <BlurredBackground intensity={90}>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle={colors.statusBar} />
 
-        {/* Login Buttons */}
-        <View style={styles.buttonSection}>
-          <TouchableOpacity
-            style={styles.kakaoButton}
-            onPress={() => handleSocialLogin('kakao')}
-            disabled={isLoading}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.kakaoIcon}>💬</Text>
-            <Text style={styles.kakaoText}>
-              {activeProvider === 'kakao' ? '로그인 중...' : '카카오로 시작하기'}
+        <View style={styles.content}>
+          {/* Hero Section */}
+          <View style={styles.heroSection}>
+            <View style={styles.logoContainer}>
+              <Text style={styles.logoText}>Run</Text>
+              <Text style={styles.logoText}>Crew</Text>
+            </View>
+
+            <Text style={styles.tagline}>
+              나만의 코스를 달리고{'\n'}전국의 러너들과 겨뤄보세요
             </Text>
-          </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.appleButton}
-            onPress={() => handleSocialLogin('apple')}
-            disabled={isLoading}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.appleIcon}></Text>
-            <Text style={styles.appleText}>
-              {activeProvider === 'apple' ? '로그인 중...' : 'Apple로 시작하기'}
+            <View style={styles.accentLine} />
+          </View>
+
+          {/* Login Buttons */}
+          <View style={styles.buttonSection}>
+            {/* Apple Sign In */}
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity
+                style={[styles.socialButton, styles.appleButton, disabled && styles.buttonDisabled]}
+                onPress={handleAppleLogin}
+                disabled={disabled}
+                activeOpacity={0.8}
+              >
+                {loadingProvider === 'apple' ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="logo-apple" size={20} color="#FFF" />
+                    <Text style={[styles.socialButtonText, styles.appleText]}>
+                      Apple로 시작하기
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+
+            {/* Google Sign In */}
+            <TouchableOpacity
+              style={[styles.socialButton, styles.googleButton, disabled && styles.buttonDisabled]}
+              onPress={handleGoogleLogin}
+              disabled={disabled}
+              activeOpacity={0.8}
+            >
+              {loadingProvider === 'google' ? (
+                <ActivityIndicator color="#333" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="logo-google" size={20} color="#333" />
+                  <Text style={[styles.socialButtonText, styles.googleText]}>
+                    Google로 시작하기
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Kakao Login */}
+            <TouchableOpacity
+              style={[styles.socialButton, styles.kakaoButton, disabled && styles.buttonDisabled]}
+              onPress={handleKakaoLogin}
+              disabled={disabled}
+              activeOpacity={0.8}
+            >
+              {loadingProvider === 'kakao' ? (
+                <ActivityIndicator color="#191919" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.kakaoIcon}>💬</Text>
+                  <Text style={[styles.socialButtonText, styles.kakaoText]}>
+                    카카오로 시작하기
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Dev Login (only in development) */}
+            {__DEV__ && (
+              <TouchableOpacity
+                style={[styles.devButton, disabled && styles.buttonDisabled]}
+                onPress={handleDevLogin}
+                disabled={disabled}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.devButtonText}>
+                  {loadingProvider === 'dev' ? '접속 중...' : 'DEV LOGIN'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            <Text style={styles.footerNote}>
+              로그인 시 이용약관 및 개인정보 처리방침에 동의합니다
             </Text>
-          </TouchableOpacity>
-
-          <Text style={styles.terms}>
-            계속 진행하면 서비스 이용약관 및{'\n'}개인정보 처리방침에 동의하게 됩니다.
-          </Text>
+          </View>
         </View>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </BlurredBackground>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   content: {
     flex: 1,
@@ -108,77 +237,111 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.xxl,
     paddingBottom: SPACING.xxxl,
   },
+
+  // ── Hero ──────────────────────────────────────────────────
   heroSection: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: SPACING.md,
+    gap: SPACING.lg,
   },
-  appName: {
-    fontSize: 48,
+  logoContainer: {
+    alignItems: 'center',
+  },
+  logoText: {
+    fontSize: 64,
     fontWeight: '900',
-    color: COLORS.primary,
-    letterSpacing: 2,
+    color: c.text,
+    letterSpacing: -2,
+    lineHeight: 68,
   },
   tagline: {
-    fontSize: FONT_SIZES.xxl,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginTop: SPACING.sm,
-  },
-  subtitle: {
     fontSize: FONT_SIZES.lg,
-    color: COLORS.textSecondary,
+    fontWeight: '400',
+    color: c.textTertiary,
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 26,
     marginTop: SPACING.sm,
   },
+  accentLine: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: c.primary,
+    marginTop: SPACING.xs,
+  },
+
+  // ── Buttons ────────────────────────────────────────────────
   buttonSection: {
-    gap: SPACING.md,
+    gap: SPACING.sm,
     alignItems: 'center',
   },
-  kakaoButton: {
+  socialButton: {
+    width: '100%',
+    borderRadius: BORDER_RADIUS.full,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.kakaoYellow,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.lg,
-    width: '100%',
+    paddingVertical: SPACING.md + 2,
     gap: SPACING.sm,
+    ...SHADOWS.sm,
   },
-  kakaoIcon: {
-    fontSize: 20,
-  },
-  kakaoText: {
-    fontSize: FONT_SIZES.lg,
+  socialButtonText: {
+    fontSize: FONT_SIZES.md,
     fontWeight: '700',
-    color: COLORS.kakaoBlack,
   },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+
+  // Apple
   appleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.appleWhite,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.lg,
-    width: '100%',
-    gap: SPACING.sm,
-  },
-  appleIcon: {
-    fontSize: 20,
-    color: COLORS.black,
+    backgroundColor: '#000',
   },
   appleText: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '700',
-    color: COLORS.black,
+    color: '#FFF',
   },
-  terms: {
-    fontSize: FONT_SIZES.xs,
-    color: COLORS.textTertiary,
-    textAlign: 'center',
-    lineHeight: 16,
+
+  // Google
+  googleButton: {
+    backgroundColor: '#FFF',
+    borderWidth: 1,
+    borderColor: '#DDD',
+  },
+  googleText: {
+    color: '#333',
+  },
+
+  // Kakao
+  kakaoButton: {
+    backgroundColor: '#FEE500',
+  },
+  kakaoIcon: {
+    fontSize: 18,
+  },
+  kakaoText: {
+    color: '#191919',
+  },
+
+  // Dev
+  devButton: {
     marginTop: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  devButtonText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: c.textSecondary,
+  },
+
+  footerNote: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textTertiary,
+    textAlign: 'center',
+    marginTop: SPACING.xs,
   },
 });

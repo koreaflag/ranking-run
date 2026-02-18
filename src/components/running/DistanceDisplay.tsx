@@ -28,8 +28,9 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
+    color: COLORS.runTextSecondary,
     fontWeight: '500',
+    letterSpacing: 0.5,
   },
   valueRow: {
     flexDirection: 'row',
@@ -37,14 +38,15 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   value: {
-    fontSize: FONT_SIZES.hero,
-    color: COLORS.text,
-    fontWeight: '800',
+    fontSize: 72,
+    color: COLORS.runText,
+    fontWeight: '900',
     fontVariant: ['tabular-nums'],
+    lineHeight: 80,
   },
   unit: {
-    fontSize: FONT_SIZES.xl,
-    color: COLORS.textSecondary,
-    fontWeight: '600',
+    fontSize: FONT_SIZES.xxl,
+    color: COLORS.runTextSecondary,
+    fontWeight: '700',
   },
 });

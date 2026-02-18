@@ -31,6 +31,9 @@ dependencies = [
     "shapely>=2.0.0",
     # DI
     "dependency-injector>=4.42.0",
+    # File import (GPX/FIT parsing)
+    "gpxpy>=1.6.0",
+    "fitparse>=0.0.8",
 ]
 
 [project.optional-dependencies]

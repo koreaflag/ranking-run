@@ -27,13 +27,14 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: FONT_SIZES.sm,
-    color: COLORS.textSecondary,
+    color: COLORS.runTextSecondary,
     fontWeight: '500',
+    letterSpacing: 0.5,
   },
   value: {
-    fontSize: 32,
-    color: COLORS.text,
-    fontWeight: '700',
+    fontSize: 30,
+    color: COLORS.runText,
+    fontWeight: '800',
     fontVariant: ['tabular-nums'],
   },
 });

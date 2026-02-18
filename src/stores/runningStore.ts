@@ -34,6 +34,10 @@ interface RunningState {
   pauseIntervals: PauseInterval[];
   isPaused: boolean;
 
+  // Watch
+  heartRate: number;
+  watchConnected: boolean;
+
   // Chunk tracking
   chunkSequence: number;
   lastChunkTimestamp: number;
@@ -54,6 +58,8 @@ interface RunningState {
   addSplit: (split: Split) => void;
   incrementChunkSequence: () => void;
   setPhase: (phase: RunningPhase) => void;
+  updateHeartRate: (bpm: number) => void;
+  setWatchConnected: (connected: boolean) => void;
 }
 
 export const useRunningStore = create<RunningState>((set, get) => ({
@@ -81,6 +87,9 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   pauseIntervals: [],
   isPaused: false,
 
+  heartRate: 0,
+  watchConnected: false,
+
   chunkSequence: 0,
   lastChunkTimestamp: 0,
 
@@ -107,6 +116,8 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       currentSplitDistance: 0,
       pauseIntervals: [],
       isPaused: false,
+      heartRate: 0,
+      watchConnected: false,
       chunkSequence: 0,
       lastChunkTimestamp: Date.now(),
       startTime: Date.now(),
@@ -144,6 +155,8 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       avgPaceSecondsPerKm: avgPace,
       routePoints: newRoutePoints,
       calories: caloriesBurned,
+      // Auto-set GPS locked when we receive a location update
+      ...(state.gpsStatus !== 'locked' ? { gpsStatus: 'locked' as const } : {}),
     });
   },
 
@@ -205,6 +218,8 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       currentSplitDistance: 0,
       pauseIntervals: [],
       isPaused: false,
+      heartRate: 0,
+      watchConnected: false,
       chunkSequence: 0,
       lastChunkTimestamp: 0,
       startTime: null,
@@ -228,5 +243,13 @@ export const useRunningStore = create<RunningState>((set, get) => ({
 
   setPhase: (phase) => {
     set({ phase });
+  },
+
+  updateHeartRate: (bpm) => {
+    set({ heartRate: bpm });
+  },
+
+  setWatchConnected: (connected) => {
+    set({ watchConnected: connected });
   },
 }));

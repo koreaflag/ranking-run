@@ -1,17 +1,15 @@
 """JWT creation/verification and password hashing utilities."""
 
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import get_settings
 
 settings = get_settings()
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def create_access_token(
@@ -68,10 +66,10 @@ def decode_access_token(token: str) -> dict[str, Any]:
 
 
 def hash_token(token: str) -> str:
-    """Hash a refresh token for secure DB storage."""
-    return pwd_context.hash(token)
+    """Hash a refresh token for secure DB storage (SHA-256)."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def verify_token_hash(plain_token: str, hashed_token: str) -> bool:
     """Verify a refresh token against its stored hash."""
-    return pwd_context.verify(plain_token, hashed_token)
+    return secrets.compare_digest(hash_token(plain_token), hashed_token)

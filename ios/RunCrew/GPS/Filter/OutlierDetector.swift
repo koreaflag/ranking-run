@@ -1,134 +1,88 @@
 import Foundation
 import CoreLocation
 
-// MARK: - OutlierDetector
-// Implements a multi-stage outlier detection pipeline for GPS data.
-//
-// Pipeline stages (from ios-gps.md):
-// 1. Validity check: horizontalAccuracy < 0 -> invalid, discard
-// 2. Accuracy threshold: horizontalAccuracy > 30m -> discard
-// 3. Speed validity: speed < 0 -> flag but don't discard
-// 4. Staleness check: timestamp vs current > 10s -> cached, discard
-// 5. Source check (iOS 15+): WiFi/Cell-based locations get lower weight
-// 6. Speed outlier: consecutive point speed > 15 m/s -> discard
-// 7. Acceleration outlier: 3-point acceleration > 8 m/s^2 -> discard middle
+/// Outlier detection and removal for GPS points
+class OutlierDetector {
+    private var lastValidLocation: CLLocation?
+    private var recentSpeeds: [Double] = []
+    private let maxRecentSpeeds = 10
 
-enum OutlierResult {
-    case valid
-    case validLowWeight   // Valid but from WiFi/Cell source
-    case invalid(reason: String)
-}
+    // Thresholds
+    private let maxHorizontalAccuracy: Double = 30.0  // meters
+    private let maxSpeed: Double = 15.0                // m/s (~54 km/h)
+    private let maxAcceleration: Double = 8.0          // m/s²
+    private let maxTimestampAge: TimeInterval = 10.0   // seconds
+    private let minTimeBetweenUpdates: TimeInterval = 0.1 // seconds
 
-final class OutlierDetector {
+    private var lastTimestamp: TimeInterval = 0
+    private var previousPoints: [(location: CLLocation, speed: Double)] = []
 
-    // MARK: - Thresholds
+    /// Validate and filter a raw CLLocation
+    /// Returns nil if the location should be discarded
+    func validate(_ location: CLLocation) -> CLLocation? {
+        // Layer 1: Basic validity checks
+        guard location.horizontalAccuracy >= 0 else { return nil }
+        guard location.horizontalAccuracy <= maxHorizontalAccuracy else { return nil }
 
-    private let maxHorizontalAccuracy: Double = 30.0    // meters
-    private let maxStaleAge: TimeInterval = 10.0        // seconds
-    private let maxConsecutiveSpeed: Double = 15.0       // m/s (~54 km/h)
-    private let maxThreePointAcceleration: Double = 8.0  // m/s^2
+        // Timestamp validation
+        let currentTime = Date().timeIntervalSince1970
+        let locationTime = location.timestamp.timeIntervalSince1970
+        guard abs(currentTime - locationTime) <= maxTimestampAge else { return nil }
 
-    // MARK: - History
+        // Duplicate timestamp check
+        let timestampMs = locationTime * 1000
+        guard timestampMs > lastTimestamp + (minTimeBetweenUpdates * 1000) else { return nil }
 
-    /// Ring buffer of recent valid points for multi-point checks.
-    /// Stores (lat, lng, timestamp_ms).
-    private var recentPoints: [(lat: Double, lng: Double, timestamp: Double)] = []
-    private let maxRecentPoints = 5
+        // Layer 2: Speed-based outlier detection
+        if let lastValid = lastValidLocation {
+            let distance = location.distance(from: lastValid)
+            let timeDelta = location.timestamp.timeIntervalSince(lastValid.timestamp)
 
-    // MARK: - Layer 1: Validity Check
+            guard timeDelta > 0 else { return nil }
 
-    /// Performs basic validity checks on a CLLocation.
-    /// Returns .invalid if the location should be discarded outright.
-    func checkValidity(_ location: CLLocation) -> OutlierResult {
-        // Negative horizontalAccuracy means invalid location
-        if location.horizontalAccuracy < 0 {
-            return .invalid(reason: "Negative horizontalAccuracy: location invalid")
-        }
+            let calculatedSpeed = distance / timeDelta
+            if calculatedSpeed > maxSpeed {
+                return nil
+            }
 
-        // Accuracy too poor
-        if location.horizontalAccuracy > maxHorizontalAccuracy {
-            return .invalid(reason: "horizontalAccuracy \(location.horizontalAccuracy)m > \(maxHorizontalAccuracy)m threshold")
-        }
-
-        // Check for stale/cached location
-        let age = abs(Date().timeIntervalSince(location.timestamp))
-        if age > maxStaleAge {
-            return .invalid(reason: "Location age \(String(format: "%.1f", age))s > \(maxStaleAge)s threshold (cached location)")
-        }
-
-        // Check source on iOS 15+
-        if #available(iOS 15.0, *) {
-            if let sourceInfo = location.sourceInformation {
-                if !sourceInfo.isProducedByAccessory && !sourceInfo.isSimulatedBySoftware {
-                    // This is a standard system location - OK
+            // Acceleration check using recent points
+            if !previousPoints.isEmpty {
+                let prevSpeed = previousPoints.last?.speed ?? 0
+                let acceleration = abs(calculatedSpeed - prevSpeed) / timeDelta
+                if acceleration > maxAcceleration {
+                    return nil
                 }
             }
-        }
 
-        return .valid
-    }
+            // Update recent speeds for statistical outlier detection
+            recentSpeeds.append(calculatedSpeed)
+            if recentSpeeds.count > maxRecentSpeeds {
+                recentSpeeds.removeFirst()
+            }
 
-    // MARK: - Layer 2: Outlier Removal
-
-    /// Checks for speed and acceleration outliers against recent history.
-    /// Must be called AFTER checkValidity passes.
-    /// Returns .invalid if the point is an outlier.
-    func checkOutlier(lat: Double, lng: Double, timestamp: Double) -> OutlierResult {
-        defer {
-            // Always add the point to history if we reach the defer
-            // (even if it's an outlier - we add it conditionally below)
-        }
-
-        // Speed check against last valid point
-        if let lastPoint = recentPoints.last {
-            if let speed = GeoMath.speed(
-                lat1: lastPoint.lat, lng1: lastPoint.lng, timestamp1: lastPoint.timestamp,
-                lat2: lat, lng2: lng, timestamp2: timestamp
-            ) {
-                if speed > maxConsecutiveSpeed {
-                    // Don't add this point to history
-                    return .invalid(reason: "Consecutive speed \(String(format: "%.1f", speed)) m/s > \(maxConsecutiveSpeed) m/s")
+            // Mahalanobis-like check: reject if speed is >3 std devs from mean
+            if recentSpeeds.count >= 5 {
+                let mean = recentSpeeds.reduce(0, +) / Double(recentSpeeds.count)
+                let variance = recentSpeeds.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(recentSpeeds.count)
+                let stdDev = sqrt(variance)
+                if stdDev > 0.1 && abs(calculatedSpeed - mean) > 3.0 * stdDev {
+                    return nil
                 }
             }
+
+            previousPoints.append((location: location, speed: calculatedSpeed))
+            if previousPoints.count > 3 { previousPoints.removeFirst() }
         }
 
-        // 3-point acceleration check
-        if recentPoints.count >= 2 {
-            let p1 = recentPoints[recentPoints.count - 2]
-            let p2 = recentPoints[recentPoints.count - 1]
-
-            if let accel = GeoMath.threePointAcceleration(
-                lat1: p1.lat, lng1: p1.lng, t1: p1.timestamp,
-                lat2: p2.lat, lng2: p2.lng, t2: p2.timestamp,
-                lat3: lat, lng3: lng, t3: timestamp
-            ) {
-                if accel > maxThreePointAcceleration {
-                    // The middle point (p2) is the outlier - remove it from history
-                    // and this new point replaces it
-                    if !recentPoints.isEmpty {
-                        recentPoints.removeLast()
-                    }
-                    addToHistory(lat: lat, lng: lng, timestamp: timestamp)
-                    return .valid // The new point itself is valid; the middle one was the outlier
-                }
-            }
-        }
-
-        addToHistory(lat: lat, lng: lng, timestamp: timestamp)
-        return .valid
+        lastValidLocation = location
+        lastTimestamp = timestampMs
+        return location
     }
 
-    // MARK: - History Management
-
-    private func addToHistory(lat: Double, lng: Double, timestamp: Double) {
-        recentPoints.append((lat: lat, lng: lng, timestamp: timestamp))
-        if recentPoints.count > maxRecentPoints {
-            recentPoints.removeFirst()
-        }
-    }
-
-    /// Resets the detector state. Call when starting a new session.
     func reset() {
-        recentPoints.removeAll()
+        lastValidLocation = nil
+        recentSpeeds.removeAll()
+        previousPoints.removeAll()
+        lastTimestamp = 0
     }
 }

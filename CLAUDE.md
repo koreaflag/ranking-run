@@ -21,7 +21,7 @@
 - **비동기 처리 (성장기)**: Redis + Celery
 
 ## 팀 에이전트
-이 프로젝트는 4개의 전문 에이전트로 개발합니다.
+이 프로젝트는 6개의 전문 에이전트로 개발합니다.
 
 ### 사용법
 각 에이전트는 `agents/` 디렉토리에 정의되어 있으며, Task tool의 프롬프트에 해당 에이전트 파일의 내용을 포함하여 호출합니다.
@@ -32,6 +32,14 @@
 | Android GPS | `agents/android-gps.md` | Android GPS 트래킹, 센서 퓨전, Fused Location |
 | iOS GPS | `agents/ios-gps.md` | iOS GPS 트래킹, Core Location, Core Motion |
 | 백엔드 | `agents/backend-fastapi.md` | FastAPI, 소셜 로그인, DB, 랭킹, 통계, 코스 매칭 |
+| QA & 테스팅 | `agents/qa-testing.md` | GPS 정확도 검증, 유닛/E2E 테스트, 성능 테스트 |
+| DevOps | `agents/devops.md` | Docker, CI/CD, EAS 빌드, 서버 배포, 모니터링 |
+
+### 참조 문서
+| 문서 | 파일 | 내용 |
+|-----|------|------|
+| 공통 인터페이스 | `agents/shared-interfaces.md` | GPS 모듈 메서드, 이벤트, 데이터 모델, 에러 코드 |
+| API 스키마 | `agents/api-schema.md` | 전체 REST API 통신 명세, 청크 기반 전송 설계 |
 
 ## GPS 정확도 전략 (다층 방어)
 ```

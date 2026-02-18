@@ -17,11 +17,7 @@ export const runService = {
   async createSession(
     request: CreateSessionRequest,
   ): Promise<CreateSessionResponse> {
-    const response = await api.post<CreateSessionResponse>(
-      '/runs/sessions',
-      request,
-    );
-    return response.data;
+    return api.post<CreateSessionResponse>('/runs/sessions', request);
   },
 
   /**
@@ -33,11 +29,10 @@ export const runService = {
     sessionId: string,
     request: UploadChunkRequest,
   ): Promise<UploadChunkResponse> {
-    const response = await api.post<UploadChunkResponse>(
+    return api.post<UploadChunkResponse>(
       `/runs/sessions/${sessionId}/chunks`,
       request,
     );
-    return response.data;
   },
 
   /**
@@ -49,11 +44,10 @@ export const runService = {
     sessionId: string,
     request: CompleteRunRequest,
   ): Promise<RunCompleteResponse> {
-    const response = await api.post<RunCompleteResponse>(
+    return api.post<RunCompleteResponse>(
       `/runs/sessions/${sessionId}/complete`,
       request,
     );
-    return response.data;
   },
 
   /**
@@ -68,11 +62,13 @@ export const runService = {
     received_sequences: number[];
     failed_sequences: number[];
   }> {
-    const response = await api.post(
-      `/runs/sessions/${sessionId}/chunks/batch`,
-      { session_id: sessionId, chunks },
-    );
-    return response.data;
+    return api.post<{
+      received_sequences: number[];
+      failed_sequences: number[];
+    }>(`/runs/sessions/${sessionId}/chunks/batch`, {
+      session_id: sessionId,
+      chunks,
+    });
   },
 
   /**
@@ -92,11 +88,12 @@ export const runService = {
     recovered_duration_seconds: number;
     missing_chunk_sequences: number[];
   }> {
-    const response = await api.post(
-      `/runs/sessions/${sessionId}/recover`,
-      data,
-    );
-    return response.data;
+    return api.post<{
+      run_record_id: string;
+      recovered_distance_meters: number;
+      recovered_duration_seconds: number;
+      missing_chunk_sequences: number[];
+    }>(`/runs/sessions/${sessionId}/recover`, data);
   },
 
   /**

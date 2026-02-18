@@ -7,16 +7,22 @@ from pydantic import BaseModel, Field
 
 class LoginRequest(BaseModel):
     """Social login request."""
-    provider: Literal["kakao", "apple"]
+    provider: Literal["kakao", "apple", "google"]
     token: str = Field(..., min_length=1, description="Kakao access_token or Apple id_token")
     nonce: str | None = Field(None, description="Apple Sign In nonce (required for Apple)")
+
+
+class DevLoginRequest(BaseModel):
+    """Dev bypass login - creates or reuses a test user."""
+    nickname: str = Field("dev_user", max_length=12)
+    email: str = Field("dev@runcrew.test")
 
 
 class LoginUserInfo(BaseModel):
     """User info returned as part of auth response."""
     id: str
     email: str | None
-    provider: Literal["kakao", "apple"]
+    nickname: str | None = None
     is_new_user: bool
 
 

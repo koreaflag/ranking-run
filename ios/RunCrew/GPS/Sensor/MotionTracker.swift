@@ -1,129 +1,81 @@
 import Foundation
 import CoreMotion
 
-// MARK: - MotionTracker
-// Wraps CMMotionManager.deviceMotion to provide:
-// - userAcceleration: gravity-subtracted acceleration for movement detection
-// - attitude: device orientation for heading/direction tracking
-// - rotationRate: angular velocity for corner detection
-//
-// Updates at 10Hz (100ms interval) to balance accuracy and battery.
-// Feeds acceleration data to StationaryDetector and provides
-// acceleration variance to the Kalman Filter's Q matrix.
+/// Tracks device motion using CMMotionManager (accelerometer + gyroscope)
+class MotionTracker {
+    private let motionManager = CMMotionManager()
+    private let queue = OperationQueue()
+    private let updateInterval: TimeInterval = 1.0 / 10.0 // 10 Hz
 
-protocol MotionTrackerDelegate: AnyObject {
-    func motionTracker(
-        _ tracker: MotionTracker,
-        didUpdateAcceleration x: Double, y: Double, z: Double,
-        heading: Double         // Device heading in degrees (0-360), -1 if unavailable
-    )
-}
+    private(set) var userAcceleration: CMAcceleration = CMAcceleration(x: 0, y: 0, z: 0)
+    private(set) var attitude: CMAttitude?
+    private(set) var rotationRate: CMRotationRate = CMRotationRate(x: 0, y: 0, z: 0)
+    private(set) var accelerationMagnitude: Double = 0
+    private(set) var accelerationVariance: Double = 1.0
 
-final class MotionTracker {
+    private var recentMagnitudes: [Double] = []
+    private let varianceWindowSize = 50
 
-    weak var delegate: MotionTrackerDelegate?
-
-    private let motionManager: CMMotionManager
-    private let updateQueue: OperationQueue
-    private var isRunning: Bool = false
-
-    /// Update interval in seconds (10Hz)
-    private let updateInterval: TimeInterval = 0.1
-
-    // Accumulated acceleration variance (exposed for Kalman Filter)
-    private var recentAccelerations: [Double] = []
-    private let varianceWindowSize: Int = 30  // 3 seconds at 10Hz
-
-    // MARK: - Initialization
+    var isAvailable: Bool { motionManager.isDeviceMotionAvailable }
 
     init() {
-        motionManager = CMMotionManager()
-        updateQueue = OperationQueue()
-        updateQueue.name = "com.runcrew.motion"
-        updateQueue.maxConcurrentOperationCount = 1
-        updateQueue.qualityOfService = .userInitiated
+        queue.name = "com.runcrew.motion"
+        queue.maxConcurrentOperationCount = 1
     }
-
-    // MARK: - Availability Check
-
-    var isAvailable: Bool {
-        return motionManager.isDeviceMotionAvailable
-    }
-
-    // MARK: - Start / Stop
 
     func start() {
-        guard isAvailable, !isRunning else { return }
+        guard motionManager.isDeviceMotionAvailable else { return }
 
-        isRunning = true
         motionManager.deviceMotionUpdateInterval = updateInterval
-
-        // Use .xArbitraryCorrectedZVertical for a stable reference frame
         motionManager.startDeviceMotionUpdates(
             using: .xArbitraryCorrectedZVertical,
-            to: updateQueue
+            to: queue
         ) { [weak self] motion, error in
             guard let self = self, let motion = motion, error == nil else { return }
-
-            let userAccel = motion.userAcceleration
-            let magnitude = sqrt(
-                userAccel.x * userAccel.x
-                + userAccel.y * userAccel.y
-                + userAccel.z * userAccel.z
-            )
-
-            // Track for variance calculation
-            self.recentAccelerations.append(magnitude)
-            if self.recentAccelerations.count > self.varianceWindowSize {
-                self.recentAccelerations.removeFirst()
-            }
-
-            // Extract heading from attitude
-            let heading = fmod(GeoMath.toDegrees(motion.attitude.yaw) + 360.0, 360.0)
-
-            self.delegate?.motionTracker(
-                self,
-                didUpdateAcceleration: userAccel.x,
-                y: userAccel.y,
-                z: userAccel.z,
-                heading: heading
-            )
+            self.processMotion(motion)
         }
     }
 
     func stop() {
-        guard isRunning else { return }
         motionManager.stopDeviceMotionUpdates()
-        isRunning = false
+        recentMagnitudes.removeAll()
     }
 
-    // MARK: - Acceleration Variance
+    private func processMotion(_ motion: CMDeviceMotion) {
+        userAcceleration = motion.userAcceleration
+        attitude = motion.attitude
+        rotationRate = motion.rotationRate
 
-    /// Returns the current acceleration variance for the Kalman Filter Q matrix.
-    /// Higher variance = more dynamic movement = larger process noise.
-    func getAccelerationVariance() -> Double {
-        let count = recentAccelerations.count
-        guard count > 1 else { return 1.0 }
+        // Calculate acceleration magnitude (excluding gravity)
+        let mag = sqrt(
+            motion.userAcceleration.x * motion.userAcceleration.x +
+            motion.userAcceleration.y * motion.userAcceleration.y +
+            motion.userAcceleration.z * motion.userAcceleration.z
+        )
+        accelerationMagnitude = mag
 
-        var sum = 0.0
-        for val in recentAccelerations { sum += val }
-        let mean = sum / Double(count)
-
-        var sumSqDiff = 0.0
-        for val in recentAccelerations {
-            let diff = val - mean
-            sumSqDiff += diff * diff
+        // Track variance for Kalman Filter process noise adjustment
+        recentMagnitudes.append(mag)
+        if recentMagnitudes.count > varianceWindowSize {
+            recentMagnitudes.removeFirst()
         }
-
-        let variance = sumSqDiff / Double(count - 1)
-        // Clamp to a reasonable range: minimum 0.01 (stationary), maximum 50.0 (sprinting)
-        return max(0.01, min(variance, 50.0))
+        updateVariance()
     }
 
-    // MARK: - Reset
+    private func updateVariance() {
+        guard recentMagnitudes.count >= 5 else {
+            accelerationVariance = 1.0
+            return
+        }
+        let mean = recentMagnitudes.reduce(0, +) / Double(recentMagnitudes.count)
+        accelerationVariance = recentMagnitudes.reduce(0) {
+            $0 + ($1 - mean) * ($1 - mean)
+        } / Double(recentMagnitudes.count)
+    }
 
-    func reset() {
-        stop()
-        recentAccelerations.removeAll()
+    /// Get heading direction from device motion (radians)
+    func getHeading() -> Double? {
+        guard let attitude = attitude else { return nil }
+        return attitude.yaw
     }
 }

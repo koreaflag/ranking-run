@@ -135,6 +135,38 @@ class AuthService:
             )
 
     # -----------------------------------------------------------------------
+    # Google login
+    # -----------------------------------------------------------------------
+
+    async def verify_google_token(self, id_token: str) -> dict:
+        """Verify Google id_token using Google's tokeninfo endpoint."""
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}",
+                timeout=10.0,
+            )
+
+        if response.status_code != 200:
+            raise AuthenticationError(
+                code="GOOGLE_AUTH_FAILED",
+                message="Google token verification failed",
+            )
+
+        data = response.json()
+        if data.get("aud") != self._settings.GOOGLE_CLIENT_ID:
+            raise AuthenticationError(
+                code="GOOGLE_AUTH_FAILED",
+                message="Google token audience mismatch",
+            )
+
+        return {
+            "provider_id": data["sub"],
+            "email": data.get("email"),
+            "nickname": data.get("name"),
+            "profile_image_url": data.get("picture"),
+        }
+
+    # -----------------------------------------------------------------------
     # Find or create user
     # -----------------------------------------------------------------------
 
@@ -268,6 +300,8 @@ class AuthService:
             social_info = await self.verify_kakao_token(token)
         elif provider == "apple":
             social_info = await self.verify_apple_token(token, nonce)
+        elif provider == "google":
+            social_info = await self.verify_google_token(token)
         else:
             raise AuthenticationError(code="INVALID_PROVIDER", message=f"Unknown provider: {provider}")
 

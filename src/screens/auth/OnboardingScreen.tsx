@@ -9,19 +9,71 @@ import {
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
+  ActivityIndicator,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
-import Button from '../../components/common/Button';
-import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
+import { authService } from '../../services/authService';
+import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
+import { useTheme } from '../../hooks/useTheme';
 
 export default function OnboardingScreen() {
+  const colors = useTheme();
   const { completeOnboarding, isLoading } = useAuthStore();
   const [nickname, setNickname] = useState('');
-  const [avatarEmoji, setAvatarEmoji] = useState('🏃');
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const isValidNickname = nickname.length >= 2 && nickname.length <= 12;
+  const isBusy = isLoading || isUploading;
 
-  const emojiOptions = ['🏃', '🏃‍♀️', '🏃‍♂️', '🐎', '⚡', '🔥', '🌟', '🎯'];
+  const handlePickAvatar = () => {
+    Alert.alert('프로필 사진', '사진을 어디서 가져올까요?', [
+      {
+        text: '카메라',
+        onPress: () => pickImage('camera'),
+      },
+      {
+        text: '앨범에서 선택',
+        onPress: () => pickImage('library'),
+      },
+      { text: '취소', style: 'cancel' },
+    ]);
+  };
+
+  const pickImage = async (source: 'camera' | 'library') => {
+    const permissionResult =
+      source === 'camera'
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permissionResult.granted) {
+      Alert.alert('권한 필요', '사진에 접근하려면 권한을 허용해 주세요.');
+      return;
+    }
+
+    const result =
+      source === 'camera'
+        ? await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+          });
+
+    if (!result.canceled && result.assets[0]) {
+      setAvatarUri(result.assets[0].uri);
+    }
+  };
 
   const handleComplete = async () => {
     if (!isValidNickname) {
@@ -30,86 +82,127 @@ export default function OnboardingScreen() {
     }
 
     try {
-      await completeOnboarding(nickname);
-      // On success, authStore sets isAuthenticated=true and isNewUser=false,
-      // which causes RootNavigator to switch to the Main stack.
+      let uploadedUrl: string | undefined;
+
+      if (avatarUri) {
+        setIsUploading(true);
+        try {
+          const response = await authService.uploadAvatar(avatarUri);
+          uploadedUrl = response.url;
+        } catch {
+          Alert.alert('사진 업로드 실패', '프로필 사진 없이 계속할까요?', [
+            { text: '취소', style: 'cancel' },
+            {
+              text: '계속',
+              onPress: async () => {
+                setIsUploading(false);
+                await completeOnboarding(nickname);
+              },
+            },
+          ]);
+          setIsUploading(false);
+          return;
+        }
+        setIsUploading(false);
+      }
+
+      await completeOnboarding(nickname, uploadedUrl);
     } catch {
       Alert.alert('프로필 설정 실패', '다시 시도해 주세요.', [{ text: '확인' }]);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={colors.statusBar} backgroundColor={colors.background} />
+
       <KeyboardAvoidingView
         style={styles.content}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>프로필 설정</Text>
-          <Text style={styles.subtitle}>
-            RunCrew에서 사용할 프로필을 설정해 주세요
+          <Text style={[styles.title, { color: colors.text }]}>프로필 설정</Text>
+          <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
+            RunCrew에서 사용할 프로필을 만들어 주세요
           </Text>
         </View>
 
         {/* Avatar Selection */}
         <View style={styles.avatarSection}>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>{avatarEmoji}</Text>
-          </View>
-          <View style={styles.emojiGrid}>
-            {emojiOptions.map((emoji) => (
-              <TouchableOpacity
-                key={emoji}
-                style={[
-                  styles.emojiOption,
-                  avatarEmoji === emoji && styles.emojiOptionSelected,
-                ]}
-                onPress={() => setAvatarEmoji(emoji)}
-              >
-                <Text style={styles.emojiText}>{emoji}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <TouchableOpacity style={styles.photoButton}>
-            <Text style={styles.photoButtonText}>사진에서 선택</Text>
+          <TouchableOpacity
+            style={[styles.avatarRing, { backgroundColor: colors.background, borderColor: colors.primary }]}
+            onPress={handlePickAvatar}
+            activeOpacity={0.7}
+          >
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+            ) : (
+              <View style={[styles.avatarCircle, { backgroundColor: colors.surface }]}>
+                <Ionicons name="person" size={48} color={colors.textTertiary} />
+              </View>
+            )}
+            <View style={[styles.cameraBadge, { backgroundColor: colors.primary }]}>
+              <Ionicons name="camera" size={14} color="#FFFFFF" />
+            </View>
           </TouchableOpacity>
+          <Text style={[styles.avatarHint, { color: colors.textTertiary }]}>
+            탭하여 프로필 사진 설정
+          </Text>
         </View>
 
         {/* Nickname Input */}
         <View style={styles.inputSection}>
-          <Text style={styles.inputLabel}>닉네임</Text>
+          <Text style={[styles.inputLabel, { color: colors.text }]}>닉네임</Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              { color: colors.text, borderBottomColor: colors.border },
+              isFocused && { borderBottomColor: colors.primary },
+            ]}
             value={nickname}
             onChangeText={setNickname}
             placeholder="2~12자로 입력해 주세요"
-            placeholderTextColor={COLORS.textTertiary}
+            placeholderTextColor={colors.textTertiary}
             maxLength={12}
             autoFocus
             returnKeyType="done"
             onSubmitEditing={handleComplete}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
           />
-          <Text style={styles.charCount}>
-            {nickname.length}/12
-          </Text>
-          {nickname.length > 0 && !isValidNickname && (
-            <Text style={styles.errorText}>
-              닉네임은 2자 이상 입력해 주세요
+          <View style={styles.inputFooter}>
+            {nickname.length > 0 && !isValidNickname ? (
+              <Text style={[styles.errorText, { color: colors.error }]}>
+                닉네임은 2자 이상 입력해 주세요
+              </Text>
+            ) : (
+              <View />
+            )}
+            <Text style={[styles.charCount, { color: colors.textTertiary }]}>
+              {nickname.length}/12
             </Text>
-          )}
+          </View>
         </View>
 
         {/* Submit */}
         <View style={styles.buttonSection}>
-          <Button
-            title="시작하기"
+          <TouchableOpacity
+            style={[
+              styles.ctaButton,
+              { backgroundColor: colors.primary },
+              (!isValidNickname || isBusy) && styles.ctaButtonDisabled,
+            ]}
             onPress={handleComplete}
-            disabled={!isValidNickname}
-            loading={isLoading}
-            fullWidth
-            size="lg"
-          />
+            disabled={!isValidNickname || isBusy}
+            activeOpacity={0.8}
+          >
+            {isBusy ? (
+              <ActivityIndicator size="small" color={colors.white} />
+            ) : (
+              <Text style={styles.ctaText}>시작하기</Text>
+            )}
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -119,103 +212,120 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
   },
   content: {
     flex: 1,
     paddingHorizontal: SPACING.xxl,
     justifyContent: 'space-between',
   },
+
+  // -- Header ------------------------------------------------
   header: {
-    paddingTop: SPACING.xxxl,
+    paddingTop: SPACING.xxxl + SPACING.lg,
     gap: SPACING.sm,
   },
   title: {
     fontSize: FONT_SIZES.title,
-    fontWeight: '800',
-    color: COLORS.text,
+    fontWeight: '900',
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: FONT_SIZES.lg,
-    color: COLORS.textSecondary,
+    fontWeight: '400',
     lineHeight: 24,
   },
+
+  // -- Avatar ------------------------------------------------
   avatarSection: {
     alignItems: 'center',
-    gap: SPACING.lg,
+    gap: SPACING.md,
   },
-  avatarCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: COLORS.surfaceLight,
+  avatarRing: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: COLORS.primary,
   },
-  avatarText: {
-    fontSize: 48,
-  },
-  emojiGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  avatarCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     justifyContent: 'center',
-    gap: SPACING.sm,
+    alignItems: 'center',
   },
-  emojiOption: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.surface,
+  avatarImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+  },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: COLORS.transparent,
+    borderColor: '#FFFFFF',
   },
-  emojiOptionSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.surfaceLight,
+  avatarHint: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '500',
   },
-  emojiText: {
-    fontSize: 22,
-  },
-  photoButton: {
-    paddingVertical: SPACING.sm,
-  },
-  photoButtonText: {
-    fontSize: FONT_SIZES.md,
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
+
+  // -- Input -------------------------------------------------
   inputSection: {
-    gap: SPACING.sm,
+    gap: SPACING.xs,
   },
   inputLabel: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   input: {
-    backgroundColor: COLORS.surface,
-    borderRadius: BORDER_RADIUS.md,
-    paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.lg,
-    fontSize: FONT_SIZES.lg,
-    color: COLORS.text,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    fontSize: FONT_SIZES.xl,
+    fontWeight: '600',
+    borderBottomWidth: 2,
+  },
+  inputFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: SPACING.xs,
   },
   charCount: {
     fontSize: FONT_SIZES.sm,
-    color: COLORS.textTertiary,
-    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
   },
   errorText: {
     fontSize: FONT_SIZES.sm,
-    color: COLORS.error,
   },
+
+  // -- CTA ---------------------------------------------------
   buttonSection: {
     paddingBottom: SPACING.xxxl,
+  },
+  ctaButton: {
+    width: '100%',
+    borderRadius: BORDER_RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.lg + 2,
+    ...SHADOWS.md,
+  },
+  ctaButtonDisabled: {
+    opacity: 0.35,
+  },
+  ctaText: {
+    fontSize: FONT_SIZES.xl,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
   },
 });

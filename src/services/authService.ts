@@ -18,8 +18,18 @@ export const authService = {
    * and returns JWT tokens.
    */
   async login(request: LoginRequest): Promise<AuthResponse> {
-    const response = await api.post<AuthResponse>('/auth/login', request);
-    return response.data;
+    return api.post<AuthResponse>('/auth/login', request);
+  },
+
+  /**
+   * Dev-only login: creates or reuses a test user and returns tokens.
+   * Only works when backend APP_ENV=development.
+   */
+  async devLogin(nickname?: string, email?: string): Promise<AuthResponse> {
+    return api.post<AuthResponse>('/auth/dev-login', {
+      nickname: nickname ?? 'dev_user',
+      email: email ?? 'dev@runcrew.test',
+    });
   },
 
   /**
@@ -27,8 +37,7 @@ export const authService = {
    * Uses refresh token rotation for security.
    */
   async refreshToken(request: RefreshRequest): Promise<RefreshResponse> {
-    const response = await api.post<RefreshResponse>('/auth/refresh', request);
-    return response.data;
+    return api.post<RefreshResponse>('/auth/refresh', request);
   },
 
   /**
@@ -36,8 +45,7 @@ export const authService = {
    * Used on app launch to validate the stored token.
    */
   async getProfile(): Promise<UserProfile> {
-    const response = await api.get<UserProfile>('/users/me');
-    return response.data;
+    return api.get<UserProfile>('/users/me');
   },
 
   /**
@@ -47,11 +55,7 @@ export const authService = {
   async setupProfile(
     request: ProfileSetupRequest,
   ): Promise<ProfileSetupResponse> {
-    const response = await api.post<ProfileSetupResponse>(
-      '/users/me/profile',
-      request,
-    );
-    return response.data;
+    return api.post<ProfileSetupResponse>('/users/me/profile', request);
   },
 
   /**
@@ -59,17 +63,22 @@ export const authService = {
    */
   async updateProfile(
     request: ProfileUpdateRequest,
-  ): Promise<{ id: string; nickname: string; avatar_url: string | null }> {
-    const response = await api.patch<{
-      id: string;
-      nickname: string;
-      avatar_url: string | null;
-    }>('/users/me/profile', request);
-    return response.data;
+  ): Promise<{
+    id: string;
+    nickname: string;
+    avatar_url: string | null;
+    birthday: string | null;
+    height_cm: number | null;
+    weight_kg: number | null;
+    bio: string | null;
+    instagram_username: string | null;
+  }> {
+    return api.patch('/users/me/profile', request);
   },
 
   /**
    * Upload avatar image. Returns the public URL to use with updateProfile.
+   * Uses FormData with raw fetch headers to bypass JSON serialization.
    */
   async uploadAvatar(fileUri: string): Promise<AvatarUploadResponse> {
     const formData = new FormData();
@@ -83,11 +92,6 @@ export const authService = {
       type,
     } as unknown as Blob);
 
-    const response = await api.post<AvatarUploadResponse>(
-      '/uploads/avatar',
-      formData,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
-    );
-    return response.data;
+    return api.post<AvatarUploadResponse>('/uploads/avatar', formData);
   },
 };

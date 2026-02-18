@@ -119,6 +119,12 @@ class CourseMarker(BaseModel):
     start_lng: float
     distance_meters: int
     total_runs: int = 0
+    difficulty: str | None = None
+    avg_rating: float | None = None
+    active_runners: int = 0
+    is_new: bool = False
+    elevation_gain_meters: int = 0
+    creator_nickname: str | None = None
 
 
 class NearbyCourse(BaseModel):

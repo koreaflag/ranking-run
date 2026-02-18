@@ -2,6 +2,7 @@ import api from './api';
 import type {
   CourseListResponse,
   CourseListParams,
+  CourseReview,
   NearbyCourse,
   CourseMarker,
   CourseDetail,
@@ -10,16 +11,34 @@ import type {
   CourseCreateResponse,
   MyCourse,
   MyBestRecord,
+  FavoriteToggleResponse,
+  FavoriteCourseItem,
+  LikeToggleResponse,
+  LikeStatusResponse,
 } from '../types/api';
 import { PAGINATION } from '../utils/constants';
+
+/**
+ * Build a query string from a params object, omitting undefined values.
+ */
+function toQuery(params: Record<string, string | number | boolean | undefined>): string {
+  const entries = Object.entries(params).filter(
+    (entry): entry is [string, string | number | boolean] => entry[1] !== undefined,
+  );
+  if (entries.length === 0) return '';
+  const qs = new URLSearchParams(
+    entries.map(([k, v]) => [k, String(v)]),
+  ).toString();
+  return `?${qs}`;
+}
 
 export const courseService = {
   /**
    * Fetch paginated course list with optional filters and sorting.
    */
   async getCourses(params?: CourseListParams): Promise<CourseListResponse> {
-    const response = await api.get<CourseListResponse>('/courses', { params });
-    return response.data;
+    const query = params ? toQuery(params as Record<string, string | number | boolean | undefined>) : '';
+    return api.get<CourseListResponse>(`/courses${query}`);
   },
 
   /**
@@ -31,10 +50,8 @@ export const courseService = {
     radius: number = 5000,
     limit: number = PAGINATION.HOME_NEARBY_LIMIT,
   ): Promise<NearbyCourse[]> {
-    const response = await api.get<NearbyCourse[]>('/courses/nearby', {
-      params: { lat, lng, radius, limit },
-    });
-    return response.data;
+    const query = toQuery({ lat, lng, radius, limit });
+    return api.get<NearbyCourse[]>(`/courses/nearby${query}`);
   },
 
   /**
@@ -47,38 +64,35 @@ export const courseService = {
     neLng: number,
     limit: number = 50,
   ): Promise<CourseMarker[]> {
-    const response = await api.get<CourseMarker[]>('/courses/bounds', {
-      params: { sw_lat: swLat, sw_lng: swLng, ne_lat: neLat, ne_lng: neLng, limit },
+    const query = toQuery({
+      sw_lat: swLat,
+      sw_lng: swLng,
+      ne_lat: neLat,
+      ne_lng: neLng,
+      limit,
     });
-    return response.data;
+    return api.get<CourseMarker[]>(`/courses/bounds${query}`);
   },
 
   /**
    * Fetch full course detail including route geometry.
    */
   async getCourseDetail(courseId: string): Promise<CourseDetail> {
-    const response = await api.get<CourseDetail>(`/courses/${courseId}`);
-    return response.data;
+    return api.get<CourseDetail>(`/courses/${courseId}`);
   },
 
   /**
    * Fetch course statistics (total runs, avg pace, etc.)
    */
   async getCourseStats(courseId: string): Promise<CourseDetailStats> {
-    const response = await api.get<CourseDetailStats>(
-      `/courses/${courseId}/stats`,
-    );
-    return response.data;
+    return api.get<CourseDetailStats>(`/courses/${courseId}/stats`);
   },
 
   /**
    * Fetch the current user's best record on a specific course.
    */
   async getMyBest(courseId: string): Promise<MyBestRecord | null> {
-    const response = await api.get<MyBestRecord | null>(
-      `/courses/${courseId}/my-best`,
-    );
-    return response.data;
+    return api.get<MyBestRecord | null>(`/courses/${courseId}/my-best`);
   },
 
   /**
@@ -87,16 +101,14 @@ export const courseService = {
   async createCourse(
     request: CourseCreateRequest,
   ): Promise<CourseCreateResponse> {
-    const response = await api.post<CourseCreateResponse>('/courses', request);
-    return response.data;
+    return api.post<CourseCreateResponse>('/courses', request);
   },
 
   /**
    * Fetch courses created by the current user.
    */
   async getMyCourses(): Promise<MyCourse[]> {
-    const response = await api.get<MyCourse[]>('/users/me/courses');
-    return response.data;
+    return api.get<MyCourse[]>('/users/me/courses');
   },
 
   /**
@@ -119,5 +131,47 @@ export const courseService = {
    */
   async deleteCourse(courseId: string): Promise<void> {
     await api.delete(`/courses/${courseId}`);
+  },
+
+  /**
+   * Toggle favorite status for a course.
+   */
+  async toggleFavorite(courseId: string): Promise<FavoriteToggleResponse> {
+    return api.post<FavoriteToggleResponse>(`/favorites/courses/${courseId}`);
+  },
+
+  /**
+   * Fetch all favorited courses for the current user.
+   */
+  async getFavoriteCourses(): Promise<FavoriteCourseItem[]> {
+    return api.get<FavoriteCourseItem[]>('/favorites/courses');
+  },
+
+  /**
+   * Check whether a specific course is favorited.
+   */
+  async checkFavoriteStatus(courseId: string): Promise<FavoriteToggleResponse> {
+    return api.get<FavoriteToggleResponse>(`/favorites/courses/${courseId}/status`);
+  },
+
+  /**
+   * Toggle like status for a course (like / unlike).
+   */
+  async toggleLike(courseId: string): Promise<LikeToggleResponse> {
+    return api.post<LikeToggleResponse>(`/courses/${courseId}/like`);
+  },
+
+  /**
+   * Fetch the current user's like status for a course.
+   */
+  async getLikeStatus(courseId: string): Promise<LikeStatusResponse> {
+    return api.get<LikeStatusResponse>(`/courses/${courseId}/like/status`);
+  },
+
+  /**
+   * Reply to a review as the course creator.
+   */
+  async replyToReview(courseId: string, reviewId: string, content: string): Promise<CourseReview> {
+    return api.post<CourseReview>(`/courses/${courseId}/reviews/${reviewId}/reply`, { content });
   },
 };

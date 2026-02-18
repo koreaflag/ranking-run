@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    String,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -68,6 +69,18 @@ class RunRecord(Base, UUIDPrimaryKeyMixin):
     course_completed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     route_match_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_deviation_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # External import tracking
+    source: Mapped[str] = mapped_column(
+        String(20),
+        default="app",
+        server_default="app",
+    )
+    external_import_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("external_imports.id"),
+        nullable=True,
+    )
 
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -33,8 +33,22 @@ class Settings(BaseSettings):
     KAKAO_CLIENT_ID: str = ""
 
     # Apple Sign In
-    APPLE_BUNDLE_ID: str = "com.runcrew.app"
+    APPLE_BUNDLE_ID: str = "app.runcrew"
     APPLE_TEAM_ID: str = ""
+
+    # Google OAuth
+    GOOGLE_CLIENT_ID: str = ""
+
+    # Strava OAuth
+    STRAVA_CLIENT_ID: str = ""
+    STRAVA_CLIENT_SECRET: str = ""
+    STRAVA_REDIRECT_URI: str = ""
+
+    # OpenWeatherMap
+    OPENWEATHER_API_KEY: str = ""
+
+    # Mapbox
+    MAPBOX_ACCESS_TOKEN: str = ""
 
     # File Upload
     UPLOAD_DIR: str = "./uploads"

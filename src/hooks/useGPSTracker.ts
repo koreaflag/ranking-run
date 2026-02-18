@@ -86,9 +86,27 @@ export function useGPSTracker() {
 
     subscriptionsRef.current = [locationSub, statusSub];
 
+    // Fetch current GPS status in case we missed the initial event
+    const pollStatus = () => {
+      GPSTrackerModule.getCurrentStatus()
+        .then((status: string) => {
+          if (status === 'locked' || status === 'searching' || status === 'lost' || status === 'disabled') {
+            updateGPSStatus(status as any);
+          }
+        })
+        .catch(() => {});
+    };
+
+    // Initial check + poll every 3 seconds until locked
+    pollStatus();
+    const pollInterval = setInterval(() => {
+      pollStatus();
+    }, 3000);
+
     return () => {
       subscriptionsRef.current.forEach((sub) => sub.remove());
       subscriptionsRef.current = [];
+      clearInterval(pollInterval);
     };
   }, [phase, updateLocation, updateGPSStatus]);
 

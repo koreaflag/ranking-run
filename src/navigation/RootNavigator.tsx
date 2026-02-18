@@ -1,27 +1,49 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { NavigationContainer } from '@react-navigation/native';
 import type { RootStackParamList } from '../types/navigation';
 import { useAuthStore } from '../stores/authStore';
 import AuthStack from './AuthStack';
 import TabNavigator from './TabNavigator';
-import { COLORS } from '../utils/constants';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { useTheme } from '../hooks/useTheme';
+import { ActivityIndicator, View, StatusBar } from 'react-native';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
   const { isAuthenticated, isLoading, isNewUser, loadStoredAuth } =
     useAuthStore();
+  const colors = useTheme();
 
   useEffect(() => {
     loadStoredAuth();
   }, [loadStoredAuth]);
 
+  const navTheme = useMemo(
+    () => ({
+      dark: colors.statusBar === 'light-content',
+      colors: {
+        primary: colors.primary,
+        background: colors.background,
+        card: colors.surface,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.accent,
+      },
+      fonts: {
+        regular: { fontFamily: 'System', fontWeight: '400' as const },
+        medium: { fontFamily: 'System', fontWeight: '500' as const },
+        bold: { fontFamily: 'System', fontWeight: '700' as const },
+        heavy: { fontFamily: 'System', fontWeight: '900' as const },
+      },
+    }),
+    [colors],
+  );
+
   if (isLoading) {
     return (
-      <View style={styles.splash}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -29,25 +51,8 @@ export default function RootNavigator() {
   const showAuth = !isAuthenticated || isNewUser;
 
   return (
-    <NavigationContainer
-      theme={{
-        dark: true,
-        colors: {
-          primary: COLORS.primary,
-          background: COLORS.background,
-          card: COLORS.surface,
-          text: COLORS.text,
-          border: COLORS.border,
-          notification: COLORS.accent,
-        },
-        fonts: {
-          regular: { fontFamily: 'System', fontWeight: '400' },
-          medium: { fontFamily: 'System', fontWeight: '500' },
-          bold: { fontFamily: 'System', fontWeight: '700' },
-          heavy: { fontFamily: 'System', fontWeight: '900' },
-        },
-      }}
-    >
+    <NavigationContainer theme={navTheme}>
+      <StatusBar barStyle={colors.statusBar} />
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {showAuth ? (
           <Stack.Screen name="Auth" component={AuthStack} />
@@ -58,12 +63,3 @@ export default function RootNavigator() {
     </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  splash: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.background,
-  },
-});

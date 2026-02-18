@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { COLORS, FONT_SIZES, SPACING } from '../../utils/constants';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../hooks/useTheme';
+import type { ThemeColors } from '../../utils/constants';
+import { FONT_SIZES, SPACING } from '../../utils/constants';
 
 interface ScreenHeaderProps {
   title: string;
@@ -13,12 +16,15 @@ export default function ScreenHeader({
   onBack,
   rightAction,
 }: ScreenHeaderProps) {
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <View style={styles.container}>
       <View style={styles.leftSection}>
         {onBack && (
           <TouchableOpacity onPress={onBack} style={styles.backButton}>
-            <Text style={styles.backText}>{'<'}</Text>
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
         )}
       </View>
@@ -30,37 +36,33 @@ export default function ScreenHeader({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    paddingTop: SPACING.xl,
-    backgroundColor: COLORS.background,
-  },
-  leftSection: {
-    width: 44,
-    alignItems: 'flex-start',
-  },
-  rightSection: {
-    width: 44,
-    alignItems: 'flex-end',
-  },
-  title: {
-    flex: 1,
-    fontSize: FONT_SIZES.xl,
-    fontWeight: '700',
-    color: COLORS.text,
-    textAlign: 'center',
-  },
-  backButton: {
-    padding: SPACING.xs,
-  },
-  backText: {
-    fontSize: FONT_SIZES.xxl,
-    color: COLORS.text,
-    fontWeight: '300',
-  },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: SPACING.lg,
+      paddingVertical: SPACING.md,
+      paddingTop: SPACING.lg,
+      backgroundColor: c.background,
+    },
+    leftSection: {
+      width: 44,
+      alignItems: 'flex-start',
+    },
+    rightSection: {
+      width: 44,
+      alignItems: 'flex-end',
+    },
+    title: {
+      flex: 1,
+      fontSize: FONT_SIZES.xl,
+      fontWeight: '700',
+      color: c.text,
+      textAlign: 'center',
+    },
+    backButton: {
+      padding: SPACING.xs,
+    },
+  });

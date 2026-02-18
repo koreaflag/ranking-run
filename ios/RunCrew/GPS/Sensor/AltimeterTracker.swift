@@ -1,105 +1,72 @@
 import Foundation
 import CoreMotion
 
-// MARK: - AltimeterTracker
-// Wraps CMAltimeter to provide barometric altitude changes.
-//
-// CMAltimeter.relativeAltitude gives the altitude change from the start
-// point with ~0.1m resolution. This is MUCH more accurate than GPS altitude
-// (which has 10-30m error). The filtered altitude profile should use this
-// value instead of GPS altitude.
-//
-// Note: CMAltimeter only provides RELATIVE altitude, not absolute.
-// The initial absolute altitude comes from the first GPS reading.
+/// Tracks relative altitude changes using CMAltimeter (barometer)
+class AltimeterTracker {
+    private let altimeter = CMAltimeter()
+    private let queue = OperationQueue()
 
-protocol AltimeterTrackerDelegate: AnyObject {
-    func altimeterTracker(
-        _ tracker: AltimeterTracker,
-        didUpdateRelativeAltitude relativeAltitude: Double, // meters from start
-        pressure: Double                                     // kilopascals
-    )
-}
+    private(set) var relativeAltitude: Double = 0   // meters from start
+    private(set) var pressure: Double = 0            // kPa
+    private(set) var isActive = false
 
-final class AltimeterTracker {
+    // Elevation gain/loss tracking
+    private(set) var totalElevationGain: Double = 0
+    private(set) var totalElevationLoss: Double = 0
+    private var lastAltitude: Double?
+    private let elevationChangeThreshold: Double = 1.0 // meters, ignore small fluctuations
 
-    weak var delegate: AltimeterTrackerDelegate?
-
-    private let altimeter: CMAltimeter
-    private var isRunning: Bool = false
-
-    /// The most recent relative altitude reading (meters from session start)
-    private(set) var currentRelativeAltitude: Double = 0.0
-
-    /// The most recent pressure reading (kPa)
-    private(set) var currentPressure: Double = 0.0
-
-    /// Base GPS altitude set from the first valid GPS reading
-    private(set) var baseGPSAltitude: Double?
-
-    // MARK: - Initialization
+    var isAvailable: Bool { CMAltimeter.isRelativeAltitudeAvailable() }
 
     init() {
-        altimeter = CMAltimeter()
+        queue.name = "com.runcrew.altimeter"
+        queue.maxConcurrentOperationCount = 1
     }
-
-    // MARK: - Availability Check
-
-    static var isAvailable: Bool {
-        return CMAltimeter.isRelativeAltitudeAvailable()
-    }
-
-    // MARK: - Start / Stop
 
     func start() {
-        guard AltimeterTracker.isAvailable, !isRunning else { return }
+        guard CMAltimeter.isRelativeAltitudeAvailable() else { return }
 
-        isRunning = true
+        isActive = true
+        relativeAltitude = 0
+        totalElevationGain = 0
+        totalElevationLoss = 0
+        lastAltitude = nil
 
-        altimeter.startRelativeAltitudeUpdates(to: .main) { [weak self] data, error in
+        altimeter.startRelativeAltitudeUpdates(to: queue) { [weak self] data, error in
             guard let self = self, let data = data, error == nil else { return }
-
-            self.currentRelativeAltitude = data.relativeAltitude.doubleValue
-            self.currentPressure = data.pressure.doubleValue
-
-            self.delegate?.altimeterTracker(
-                self,
-                didUpdateRelativeAltitude: data.relativeAltitude.doubleValue,
-                pressure: data.pressure.doubleValue
-            )
+            self.processAltimeterData(data)
         }
     }
 
     func stop() {
-        guard isRunning else { return }
         altimeter.stopRelativeAltitudeUpdates()
-        isRunning = false
+        isActive = false
     }
 
-    // MARK: - GPS Altitude Baseline
+    private func processAltimeterData(_ data: CMAltitudeData) {
+        let newAltitude = data.relativeAltitude.doubleValue
+        pressure = data.pressure.doubleValue
 
-    /// Sets the base GPS altitude from the first valid GPS reading.
-    /// All subsequent altitudes are computed as: baseGPSAltitude + relativeAltitude.
-    func setBaseAltitude(_ gpsAltitude: Double) {
-        if baseGPSAltitude == nil {
-            baseGPSAltitude = gpsAltitude
+        // Track elevation gain/loss
+        if let last = lastAltitude {
+            let change = newAltitude - last
+            if abs(change) >= elevationChangeThreshold {
+                if change > 0 {
+                    totalElevationGain += change
+                } else {
+                    totalElevationLoss += abs(change)
+                }
+                lastAltitude = newAltitude
+            }
+        } else {
+            lastAltitude = newAltitude
         }
+
+        relativeAltitude = newAltitude
     }
 
-    /// Returns the current best-estimate altitude.
-    /// Uses barometer-corrected altitude if available, falls back to GPS altitude.
-    func getCorrectedAltitude(gpsAltitude: Double) -> Double {
-        if let base = baseGPSAltitude {
-            return base + currentRelativeAltitude
-        }
-        return gpsAltitude
-    }
-
-    // MARK: - Reset
-
-    func reset() {
-        stop()
-        currentRelativeAltitude = 0.0
-        currentPressure = 0.0
-        baseGPSAltitude = nil
+    /// Get corrected altitude (base GPS altitude + barometer relative change)
+    func getCorrectedAltitude(baseGPSAltitude: Double) -> Double {
+        return baseGPSAltitude + relativeAltitude
     }
 }
