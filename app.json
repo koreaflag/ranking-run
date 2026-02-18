@@ -42,9 +42,7 @@
     "plugins": [
       "expo-secure-store",
       "expo-asset",
-      "expo-font",
-      "expo-apple-authentication",
-      "expo-crypto"
+      "expo-font"
     ],
     "extra": {
       "eas": {
