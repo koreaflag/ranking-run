@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import type { LocationUpdateEvent, GPSStatus, FilteredLocation } from '../types/gps';
 import type { Split, PauseInterval } from '../types/api';
+import { haversineDistance } from '../utils/geo';
+
+// Loop detection constants
+const LOOP_MIN_DISTANCE_M = 300;      // Min distance before checking (avoid false positive at start)
+const LOOP_PROXIMITY_RADIUS_M = 30;   // "Near start" radius
+const LOOP_APPROACH_RADIUS_M = 100;   // "Approaching start" radius (pre-warning)
+const LOOP_COOLDOWN_MS = 60_000;      // Don't re-trigger for 60s after detection
 
 export type RunningPhase = 'idle' | 'countdown' | 'running' | 'paused' | 'completed';
 
@@ -42,12 +49,21 @@ interface RunningState {
   chunkSequence: number;
   lastChunkTimestamp: number;
 
+  // Loop detection (free running only)
+  startPoint: { latitude: number; longitude: number } | null;
+  distanceToStart: number;       // live distance to start point (meters)
+  isApproachingStart: boolean;   // within 100m of start
+  isNearStart: boolean;          // within 30m of start
+  loopDetected: boolean;         // confirmed round-trip
+  loopDetectedAt: number | null; // timestamp of detection (for cooldown)
+
   // Timer
   startTime: number | null;
   elapsedBeforePause: number;
 
   // Actions
   startSession: (sessionId: string, courseId: string | null) => void;
+  updateSessionId: (serverSessionId: string) => void;
   updateLocation: (event: LocationUpdateEvent) => void;
   updateGPSStatus: (status: GPSStatus) => void;
   updateDuration: (seconds: number) => void;
@@ -93,6 +109,13 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   chunkSequence: 0,
   lastChunkTimestamp: 0,
 
+  startPoint: null,
+  distanceToStart: 0,
+  isApproachingStart: false,
+  isNearStart: false,
+  loopDetected: false,
+  loopDetectedAt: null,
+
   startTime: null,
   elapsedBeforePause: 0,
 
@@ -122,17 +145,28 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       lastChunkTimestamp: Date.now(),
       startTime: Date.now(),
       elapsedBeforePause: 0,
+      startPoint: null,
+      distanceToStart: 0,
+      isApproachingStart: false,
+      isNearStart: false,
+      loopDetected: false,
+      loopDetectedAt: null,
     });
+  },
+
+  updateSessionId: (serverSessionId) => {
+    set({ sessionId: serverSessionId });
   },
 
   updateLocation: (event) => {
     const state = get();
     if (state.phase !== 'running' || state.isPaused) return;
 
-    const newRoutePoints = [
-      ...state.routePoints,
-      { latitude: event.latitude, longitude: event.longitude },
-    ];
+    const currentPos = { latitude: event.latitude, longitude: event.longitude };
+    const newRoutePoints = [...state.routePoints, currentPos];
+
+    // Save start point from first GPS fix
+    const startPoint = state.startPoint ?? currentPos;
 
     // Calculate pace from speed (m/s)
     const currentPace =
@@ -147,6 +181,38 @@ export const useRunningStore = create<RunningState>((set, get) => ({
     // Estimate calories: ~60 kcal/km for ~65kg person
     const caloriesBurned = Math.round((distance / 1000) * 60);
 
+    // --- Loop detection (free running only) ---
+    let distanceToStart = 0;
+    let isApproachingStart = state.isApproachingStart;
+    let isNearStart = state.isNearStart;
+    let loopDetected = state.loopDetected;
+    let loopDetectedAt = state.loopDetectedAt;
+
+    // Only run loop detection in free running (no courseId) and after traveling enough distance
+    if (!state.courseId && distance > LOOP_MIN_DISTANCE_M) {
+      distanceToStart = haversineDistance(currentPos, startPoint);
+
+      // Check cooldown: don't re-trigger within 60s of last detection
+      const cooldownActive = loopDetectedAt && (Date.now() - loopDetectedAt) < LOOP_COOLDOWN_MS;
+
+      if (!cooldownActive) {
+        isApproachingStart = distanceToStart <= LOOP_APPROACH_RADIUS_M;
+        isNearStart = distanceToStart <= LOOP_PROXIMITY_RADIUS_M;
+
+        if (isNearStart && !state.isNearStart) {
+          // Just entered the proximity zone — confirm loop
+          loopDetected = true;
+          loopDetectedAt = Date.now();
+        }
+      } else {
+        // During cooldown, clear flags if user moves away
+        if (distanceToStart > LOOP_APPROACH_RADIUS_M) {
+          isApproachingStart = false;
+          isNearStart = false;
+        }
+      }
+    }
+
     set({
       currentLocation: event,
       distanceMeters: distance,
@@ -155,6 +221,12 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       avgPaceSecondsPerKm: avgPace,
       routePoints: newRoutePoints,
       calories: caloriesBurned,
+      startPoint,
+      distanceToStart,
+      isApproachingStart,
+      isNearStart,
+      loopDetected,
+      loopDetectedAt,
       // Auto-set GPS locked when we receive a location update
       ...(state.gpsStatus !== 'locked' ? { gpsStatus: 'locked' as const } : {}),
     });
@@ -222,6 +294,12 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       watchConnected: false,
       chunkSequence: 0,
       lastChunkTimestamp: 0,
+      startPoint: null,
+      distanceToStart: 0,
+      isApproachingStart: false,
+      isNearStart: false,
+      loopDetected: false,
+      loopDetectedAt: null,
       startTime: null,
       elapsedBeforePause: 0,
     });

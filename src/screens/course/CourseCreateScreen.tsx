@@ -84,7 +84,7 @@ export default function CourseCreateScreen() {
         },
       ]);
     } catch {
-      Alert.alert('오류', '코스 등록에 실패했습니다. 다시 시도해주세요.');
+      Alert.alert('앗...!', '코스 등록에 실패했습니다. 다시 시도해주세요.');
     } finally {
       setIsSubmitting(false);
     }

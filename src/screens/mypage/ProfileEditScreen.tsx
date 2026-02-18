@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Platform,
   ActivityIndicator,
   KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,6 +47,17 @@ export default function ProfileEditScreen() {
   const [instagram, setInstagram] = useState(user?.instagram_username ?? '');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const birthdayYPosition = useRef(0);
+
+  const handleOpenDatePicker = useCallback(() => {
+    Keyboard.dismiss();
+    setShowDatePicker(true);
+    // Scroll to birthday field after picker renders
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({ y: birthdayYPosition.current - 80, animated: true });
+    }, 100);
+  }, []);
 
   const isValidNickname = nickname.length >= 2 && nickname.length <= 12;
 
@@ -142,7 +154,7 @@ export default function ProfileEditScreen() {
 
       navigation.goBack();
     } catch {
-      Alert.alert('저장 실패', '프로필 저장에 실패했습니다. 다시 시도해 주세요.');
+      Alert.alert('앗...!', '프로필 저장에 실패했습니다. 다시 시도해 주세요.');
     } finally {
       setIsSaving(false);
     }
@@ -187,6 +199,7 @@ export default function ProfileEditScreen() {
         </View>
 
         <ScrollView
+          ref={scrollViewRef}
           style={styles.scrollView}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
@@ -270,11 +283,14 @@ export default function ProfileEditScreen() {
           </View>
 
           {/* Birthday */}
-          <View style={styles.fieldGroup}>
+          <View
+            style={styles.fieldGroup}
+            onLayout={(e) => { birthdayYPosition.current = e.nativeEvent.layout.y; }}
+          >
             <Text style={styles.fieldLabel}>생년월일</Text>
             <TouchableOpacity
               style={styles.selectInput}
-              onPress={() => setShowDatePicker(true)}
+              onPress={handleOpenDatePicker}
               activeOpacity={0.7}
             >
               <Text
@@ -290,18 +306,29 @@ export default function ProfileEditScreen() {
           </View>
 
           {showDatePicker && (
-            <DateTimePicker
-              value={birthday ?? new Date(2000, 0, 1)}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              themeVariant={darkMode ? 'dark' : 'light'}
-              maximumDate={new Date()}
-              minimumDate={new Date(1920, 0, 1)}
-              onChange={(_, selectedDate) => {
-                setShowDatePicker(Platform.OS === 'ios');
-                if (selectedDate) setBirthday(selectedDate);
-              }}
-            />
+            <View>
+              <DateTimePicker
+                value={birthday ?? new Date(2000, 0, 1)}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                themeVariant={darkMode ? 'dark' : 'light'}
+                maximumDate={new Date()}
+                minimumDate={new Date(1920, 0, 1)}
+                onChange={(_, selectedDate) => {
+                  if (Platform.OS !== 'ios') setShowDatePicker(false);
+                  if (selectedDate) setBirthday(selectedDate);
+                }}
+              />
+              {Platform.OS === 'ios' && (
+                <TouchableOpacity
+                  style={styles.dateConfirmButton}
+                  onPress={() => setShowDatePicker(false)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.dateConfirmText}>확인</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
 
           {/* Height & Weight */}
@@ -503,6 +530,21 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '600',
       color: c.textTertiary,
       paddingBottom: SPACING.md,
+    },
+
+    // Date picker confirm
+    dateConfirmButton: {
+      alignSelf: 'center',
+      paddingVertical: SPACING.md,
+      paddingHorizontal: SPACING.xxxl,
+      backgroundColor: c.primary,
+      borderRadius: BORDER_RADIUS.full,
+      marginTop: SPACING.sm,
+    },
+    dateConfirmText: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '700',
+      color: '#FFFFFF',
     },
 
     // Info box

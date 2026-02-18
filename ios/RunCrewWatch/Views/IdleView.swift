@@ -8,6 +8,7 @@ struct IdleView: View {
             Image(systemName: "figure.run")
                 .font(.system(size: 40))
                 .foregroundColor(.green)
+                .accessibilityHidden(true)
 
             Text("RunCrew")
                 .font(.system(size: 18, weight: .bold))
@@ -22,19 +23,14 @@ struct IdleView: View {
                 Circle()
                     .fill(viewModel.isPhoneReachable ? Color.green : Color.red)
                     .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
                 Text(viewModel.isPhoneReachable ? "폰 연결됨" : "폰 미연결")
                     .font(.system(size: 11))
                     .foregroundColor(.gray)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(viewModel.isPhoneReachable ? "아이폰 연결됨" : "아이폰 연결 안 됨")
 
-            // Debug: WCSession status
-            Text("act:\(viewModel.debugActivation) poll:\(viewModel.debugPollCount)")
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(.yellow)
-            Text(viewModel.debugLastResult)
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundColor(.yellow)
-                .lineLimit(1)
         }
         .onAppear {
             viewModel.updateReachability()

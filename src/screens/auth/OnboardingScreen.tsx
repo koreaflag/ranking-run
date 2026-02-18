@@ -90,7 +90,7 @@ export default function OnboardingScreen() {
           const response = await authService.uploadAvatar(avatarUri);
           uploadedUrl = response.url;
         } catch {
-          Alert.alert('사진 업로드 실패', '프로필 사진 없이 계속할까요?', [
+          Alert.alert('앗...!', '프로필 사진 없이 계속할까요?', [
             { text: '취소', style: 'cancel' },
             {
               text: '계속',
@@ -108,7 +108,7 @@ export default function OnboardingScreen() {
 
       await completeOnboarding(nickname, uploadedUrl);
     } catch {
-      Alert.alert('프로필 설정 실패', '다시 시도해 주세요.', [{ text: '확인' }]);
+      Alert.alert('앗...!', '다시 시도해 주세요.', [{ text: '확인' }]);
     }
   };
 

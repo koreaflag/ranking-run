@@ -6,9 +6,11 @@ import WatchConnectivity
 class RunSessionViewModel: ObservableObject {
     @Published var state = WatchRunState()
     @Published var isPhoneReachable = false
+    #if DEBUG
     @Published var debugPollCount = 0
     @Published var debugLastResult = "init"
     @Published var debugActivation = "?"
+    #endif
 
     let heartRateManager = HeartRateManager()
     private var cancellables = Set<AnyCancellable>()
@@ -66,13 +68,6 @@ class RunSessionViewModel: ObservableObject {
             self?.state.heartRate = bpm
             WatchSessionService.shared.sendHeartRate(bpm)
         }
-
-        heartRateManager.$currentHeartRate
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] bpm in
-                self?.state.heartRate = bpm
-            }
-            .store(in: &cancellables)
     }
 
     // MARK: - Message Handlers
@@ -252,7 +247,7 @@ class RunSessionViewModel: ObservableObject {
 
         switch newPhase {
         case "running":
-            startStateSyncTimer(interval: 3.0)  // backup polling
+            startStateSyncTimer(interval: 5.0)  // backup polling (phone pushes updates)
             if oldPhase == "paused" {
                 HapticManager.shared.resumed()
             } else {
@@ -265,7 +260,7 @@ class RunSessionViewModel: ObservableObject {
             startHeartRateMonitoring()
 
         case "paused":
-            startStateSyncTimer(interval: 3.0)  // backup polling
+            startStateSyncTimer(interval: 5.0)  // backup polling
             HapticManager.shared.paused()
             stopDurationTimer()
 
@@ -331,34 +326,31 @@ class RunSessionViewModel: ObservableObject {
         stopStateSyncTimer()
         stateSyncTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            self.debugPollCount += 1
             self.isPhoneReachable = WCSession.default.isReachable
+
+            #if DEBUG
+            self.debugPollCount += 1
             self.debugActivation = "\(WCSession.default.activationState.rawValue)"
+            #endif
 
             WatchSessionService.shared.requestCurrentState { [weak self] reply in
+                #if DEBUG
                 if let err = reply["error"] as? String {
                     self?.debugLastResult = "err:\(err.prefix(20))"
                 } else {
                     let phase = reply["phase"] as? String ?? "nil"
                     self?.debugLastResult = "ok:\(phase)"
                 }
+                #endif
+                _ = reply // suppress unused warning in release
             }
         }
     }
 
-    /// Called from ContentView as backup polling
+    /// Called from IdleView as manual poll trigger
     func pollState() {
-        debugPollCount += 1
         isPhoneReachable = WCSession.default.isReachable
-        debugActivation = "\(WCSession.default.activationState.rawValue)"
-        WatchSessionService.shared.requestCurrentState { [weak self] reply in
-            if let err = reply["error"] as? String {
-                self?.debugLastResult = "err:\(err.prefix(20))"
-            } else {
-                let phase = reply["phase"] as? String ?? "nil"
-                self?.debugLastResult = "ok:\(phase)"
-            }
-        }
+        WatchSessionService.shared.requestCurrentState { _ in }
     }
 
     private func stopStateSyncTimer() {

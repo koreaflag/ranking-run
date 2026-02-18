@@ -229,6 +229,21 @@ async def recover_run_session(
     )
 
 
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+@inject
+async def delete_run_record(
+    run_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    run_service: RunService = Depends(Provide[Container.run_service]),
+) -> None:
+    """Delete a run record and its associated data."""
+    await run_service.delete_run_record(db=db, run_id=run_id, user_id=current_user.id)
+    # Decrement user stats
+    current_user.total_runs = max(0, current_user.total_runs - 1)
+    await db.commit()
+
+
 @router.get("/{run_id}", response_model=RunRecordDetail)
 @inject
 async def get_run_record_detail(

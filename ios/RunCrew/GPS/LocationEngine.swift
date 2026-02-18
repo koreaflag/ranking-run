@@ -26,6 +26,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
     private var currentGPSStatus: String = "searching"
     private var batteryOptimizer: BatteryOptimizer?
+    private var lastHeading: Double = -1  // magnetometer heading (true north)
 
     override init() {
         super.init()
@@ -37,12 +38,16 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
     private func setupLocationManager() {
         locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        // Navigation-grade accuracy: GPS + magnetometer + gyroscope + accelerometer
+        // Highest fidelity on iOS, ideal for running route recording
+        locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         locationManager.distanceFilter = kCLDistanceFilterNone
         locationManager.activityType = .fitness
         locationManager.allowsBackgroundLocationUpdates = true
         locationManager.pausesLocationUpdatesAutomatically = false
         locationManager.showsBackgroundLocationIndicator = true
+        // Heading updates for better bearing between GPS fixes
+        locationManager.headingFilter = 5 // degrees
         batteryOptimizer = BatteryOptimizer(locationManager: locationManager)
     }
 
@@ -91,6 +96,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
         DispatchQueue.main.async { [weak self] in
             self?.locationManager.startUpdatingLocation()
+            self?.locationManager.startUpdatingHeading()
         }
 
         updateGPSStatus("searching")
@@ -106,6 +112,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
         DispatchQueue.main.async { [weak self] in
             self?.locationManager.stopUpdatingLocation()
+            self?.locationManager.stopUpdatingHeading()
         }
     }
 
@@ -167,6 +174,15 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        // Use true heading if available (calibrated with GPS), else magnetic
+        if newHeading.trueHeading >= 0 {
+            lastHeading = newHeading.trueHeading
+        } else if newHeading.magneticHeading >= 0 {
+            lastHeading = newHeading.magneticHeading
+        }
+    }
+
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         switch manager.authorizationStatus {
         case .authorizedWhenInUse, .authorizedAlways:
@@ -196,7 +212,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
         // Cold start check
         if session.state == .starting {
-            if location.horizontalAccuracy <= 15.0 {
+            if location.horizontalAccuracy <= 10.0 {
                 session.markLocked()
                 coldStartTimer?.invalidate()
                 coldStartTimer = nil
@@ -216,8 +232,15 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         )
 
         // Layer 3: Kalman Filter
+        let gpsSpeedValid = validLocation.speed >= 0
+        let gpsSpeed = gpsSpeedValid ? validLocation.speed : 0
+
         let speedAccuracy: Double
-        if #available(iOS 15.0, *) {
+        if !gpsSpeedValid {
+            // Speed unknown — use huge noise so filter ignores speed measurement
+            // and infers velocity purely from position changes
+            speedAccuracy = -999
+        } else if #available(iOS 15.0, *) {
             speedAccuracy = validLocation.speedAccuracy
         } else {
             speedAccuracy = -1
@@ -227,8 +250,8 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             lat: validLocation.coordinate.latitude,
             lon: validLocation.coordinate.longitude,
             alt: validLocation.altitude,
-            speed: max(validLocation.speed, 0),
-            bearing: max(validLocation.course, 0),
+            speed: gpsSpeed,
+            bearing: validLocation.course >= 0 ? validLocation.course : (lastHeading >= 0 ? lastHeading : 0),
             horizontalAccuracy: validLocation.horizontalAccuracy,
             speedAccuracy: speedAccuracy,
             timestamp: validLocation.timestamp.timeIntervalSince1970 * 1000
@@ -260,13 +283,21 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
         // Calculate distance
         var distanceFromPrevious: Double = 0
-        if let lastLoc = lastFilteredLocation, !stationaryDetector.isStationary {
-            distanceFromPrevious = GeoMath.distance(
+        if let lastLoc = lastFilteredLocation {
+            let rawDist = GeoMath.distance(
                 lat1: lastLoc.latitude, lon1: lastLoc.longitude,
                 lat2: filtered.lat, lon2: filtered.lon
             )
-            // Sanity check: ignore tiny movements that might be noise
-            if distanceFromPrevious < 0.5 { distanceFromPrevious = 0 }
+            if stationaryDetector.isStationary {
+                // Safety net: if detector says stationary but movement is clearly
+                // significant (> 2m), the detector is wrong — still count distance
+                if rawDist > 2.0 {
+                    distanceFromPrevious = rawDist
+                }
+            } else {
+                // Normal case: ignore tiny movements (< 0.3m) as noise
+                distanceFromPrevious = rawDist >= 0.3 ? rawDist : 0
+            }
             cumulativeDistance += distanceFromPrevious
         }
 

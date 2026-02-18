@@ -304,6 +304,41 @@ class RunService:
         )
         return result.scalar_one_or_none()
 
+    async def delete_run_record(
+        self,
+        db: AsyncSession,
+        run_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """Delete a run record and its associated session/chunks."""
+        record = await self.get_run_record(db, run_id, user_id)
+        if record is None:
+            raise NotFoundError(code="NOT_FOUND", message="Run record not found")
+
+        session_id = record.session_id
+
+        # Delete chunks
+        if session_id:
+            chunks = await db.execute(
+                select(RunChunk).where(RunChunk.session_id == session_id)
+            )
+            for chunk in chunks.scalars():
+                await db.delete(chunk)
+
+        # Delete the run record
+        await db.delete(record)
+
+        # Delete the session
+        if session_id:
+            session_result = await db.execute(
+                select(RunSession).where(RunSession.id == session_id)
+            )
+            session = session_result.scalar_one_or_none()
+            if session:
+                await db.delete(session)
+
+        await db.flush()
+
     # -----------------------------------------------------------------------
     # Private helpers
     # -----------------------------------------------------------------------

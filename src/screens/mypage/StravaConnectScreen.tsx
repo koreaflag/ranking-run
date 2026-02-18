@@ -68,7 +68,7 @@ export default function StravaConnectScreen() {
       );
       setAlreadyImported(imported);
     } catch {
-      Alert.alert('오류', 'Strava 활동을 불러오지 못했습니다.');
+      Alert.alert('앗...!', 'Strava 활동을 불러오지 못했습니다.');
     } finally {
       setIsLoadingActivities(false);
     }
@@ -103,12 +103,12 @@ export default function StravaConnectScreen() {
       const returnedState = parsed.queryParams?.state as string | undefined;
 
       if (!code) {
-        Alert.alert('연결 실패', 'Strava 인증 코드를 받지 못했습니다.');
+        Alert.alert('앗...!', 'Strava 인증 코드를 받지 못했습니다.');
         return;
       }
 
       if (returnedState !== stateRef.current) {
-        Alert.alert('연결 실패', '인증 상태가 일치하지 않습니다.');
+        Alert.alert('앗...!', '인증 상태가 일치하지 않습니다.');
         return;
       }
 
@@ -118,7 +118,7 @@ export default function StravaConnectScreen() {
       );
       setStatus(newStatus);
     } catch {
-      Alert.alert('연결 실패', 'Strava 연결 중 오류가 발생했습니다.');
+      Alert.alert('앗...!', 'Strava 연결 중 오류가 발생했습니다.');
     } finally {
       setIsConnecting(false);
     }
@@ -142,7 +142,7 @@ export default function StravaConnectScreen() {
             });
             setActivities([]);
           } catch {
-            Alert.alert('오류', '연결 해제에 실패했습니다.');
+            Alert.alert('앗...!', '연결 해제에 실패했습니다.');
           }
         },
       },
@@ -161,7 +161,7 @@ export default function StravaConnectScreen() {
     } catch (err: any) {
       const detail =
         err?.data?.detail ?? '활동 가져오기에 실패했습니다.';
-      Alert.alert('오류', detail);
+      Alert.alert('앗...!', detail);
     } finally {
       setSyncingIds((prev) => {
         const next = new Set(prev);

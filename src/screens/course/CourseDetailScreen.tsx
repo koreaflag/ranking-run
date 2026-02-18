@@ -119,7 +119,7 @@ export default function CourseDetailScreen() {
               navigation.goBack();
             } catch (err) {
               const msg = err instanceof Error ? err.message : '알 수 없는 오류';
-              Alert.alert('오류', `코스 삭제에 실패했습니다.\n(${msg})`);
+              Alert.alert('앗...!', `코스 삭제에 실패했습니다.\n(${msg})`);
             }
           },
         },

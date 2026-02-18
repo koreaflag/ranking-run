@@ -63,7 +63,7 @@ export default function ImportActivityScreen() {
               `${formatDistance(dist)} 러닝 기록이 추가되었습니다.${courseMatch}`,
             );
           } else {
-            Alert.alert('Import 실패', status.error_message || '파일 처리 중 오류가 발생했습니다.');
+            Alert.alert('앗...!', status.error_message || '파일 처리 중 오류가 발생했습니다.');
           }
         }
       } catch {
@@ -98,7 +98,7 @@ export default function ImportActivityScreen() {
         setPollingId(response.import_id);
         loadImports();
       } catch {
-        Alert.alert('업로드 실패', '파일 업로드 중 오류가 발생했습니다.');
+        Alert.alert('앗...!', '파일 업로드 중 오류가 발생했습니다.');
       } finally {
         setIsUploading(false);
       }
@@ -121,7 +121,7 @@ export default function ImportActivityScreen() {
               await importService.deleteImport(importItem.id);
               loadImports();
             } catch {
-              Alert.alert('오류', '삭제에 실패했습니다.');
+              Alert.alert('앗...!', '삭제에 실패했습니다.');
             }
           },
         },

@@ -25,8 +25,13 @@ class StationaryDetector {
     private var consecutiveMovingCount = 0
     private let requiredConsecutiveCount = 3
 
+    /// Grace period: don't transition to stationary until we have enough data
+    private var totalUpdateCount = 0
+    private let graceUpdates = 10  // Ignore first 10 speed readings
+
     /// Update with new GPS speed
     func updateWithSpeed(_ speed: Double) {
+        totalUpdateCount += 1
         recentSpeeds.append(speed)
         if recentSpeeds.count > speedWindowSize {
             recentSpeeds.removeFirst()
@@ -36,6 +41,9 @@ class StationaryDetector {
 
         switch state {
         case .moving:
+            // Grace period: don't transition to stationary too early
+            // GPS speed may report -1/0 for the first few readings
+            guard totalUpdateCount > graceUpdates else { return }
             if avgSpeed < stationarySpeedThreshold {
                 consecutiveStationaryCount += 1
                 consecutiveMovingCount = 0
@@ -90,5 +98,6 @@ class StationaryDetector {
         recentSpeeds.removeAll()
         consecutiveStationaryCount = 0
         consecutiveMovingCount = 0
+        totalUpdateCount = 0
     }
 }

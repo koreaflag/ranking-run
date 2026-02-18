@@ -2,6 +2,8 @@
 // App-wide Constants
 // ============================================================
 
+// DEV: Direct connection to AWS backend.
+// Info.plist has NSExceptionDomains for 13.125.244.10 to allow HTTP.
 export const API_BASE_URL = __DEV__
   ? 'http://13.125.244.10:8000/api/v1'
   : 'https://api.runcrew.app/api/v1';

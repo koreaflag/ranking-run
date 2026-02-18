@@ -112,8 +112,9 @@ export default function RunResultScreen() {
         });
         setResult(response);
         setSubmitted(true);
-      } catch {
-        // Silently fail - data is saved locally via chunks
+      } catch (error) {
+        console.warn('[RunResult] completeRun failed:', sessionId, error);
+        // Data is saved locally via chunks — user can still browse result
       } finally {
         setIsSubmitting(false);
       }

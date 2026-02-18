@@ -59,7 +59,7 @@ export default function LoginScreen() {
       await login('apple', credential.identityToken, rawNonce);
     } catch (e: any) {
       if (e.code === 'ERR_REQUEST_CANCELED') return; // user cancelled
-      Alert.alert('로그인 실패', 'Apple 로그인에 실패했습니다. 다시 시도해 주세요.');
+      Alert.alert('앗...!', 'Apple 로그인에 실패했습니다. 다시 시도해 주세요.');
     } finally {
       setLoadingProvider(null);
     }
@@ -82,7 +82,7 @@ export default function LoginScreen() {
     } catch (e: any) {
       // statusCodes.SIGN_IN_CANCELLED = '12501'
       if (e.code === '12501' || e.code === 'SIGN_IN_CANCELLED') return;
-      Alert.alert('로그인 실패', 'Google 로그인에 실패했습니다. 다시 시도해 주세요.');
+      Alert.alert('앗...!', 'Google 로그인에 실패했습니다. 다시 시도해 주세요.');
     } finally {
       setLoadingProvider(null);
     }
@@ -102,7 +102,7 @@ export default function LoginScreen() {
     } catch (e: any) {
       // User cancelled
       if (e.message?.includes('cancelled') || e.message?.includes('cancel')) return;
-      Alert.alert('로그인 실패', '카카오 로그인에 실패했습니다. 다시 시도해 주세요.');
+      Alert.alert('앗...!', '카카오 로그인에 실패했습니다. 다시 시도해 주세요.');
     } finally {
       setLoadingProvider(null);
     }
@@ -114,7 +114,7 @@ export default function LoginScreen() {
       setLoadingProvider('dev');
       await devLogin('dev_runner', 'dev@runcrew.test');
     } catch {
-      Alert.alert('로그인 실패', error ?? '다시 시도해 주세요.');
+      Alert.alert('앗...!', error ?? '다시 시도해 주세요.');
     } finally {
       setLoadingProvider(null);
     }

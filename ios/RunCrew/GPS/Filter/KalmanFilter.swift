@@ -9,9 +9,9 @@ class KalmanFilter {
     private var converter: CoordinateConverter?
     private var lastTimestamp: TimeInterval = 0
 
-    // Process noise base values
-    private let processNoisePosition: Double = 0.5
-    private let processNoiseVelocity: Double = 2.0
+    // Process noise base values (higher = more responsive to actual movement)
+    private let processNoisePosition: Double = 1.0
+    private let processNoiseVelocity: Double = 4.0
     private var dynamicProcessNoise: Double = 1.0
 
     init() {
@@ -150,7 +150,16 @@ class KalmanFilter {
     private func measurementNoiseMatrix(horizontalAccuracy: Double,
                                          speedAccuracy: Double) -> [[Double]] {
         let posVar = horizontalAccuracy * horizontalAccuracy
-        let spdVar = speedAccuracy > 0 ? speedAccuracy * speedAccuracy : 4.0
+        let spdVar: Double
+        if speedAccuracy < -100 {
+            // GPS speed unknown (CLLocation.speed == -1) — effectively ignore
+            // speed measurement so filter infers velocity from position changes
+            spdVar = 1e6
+        } else if speedAccuracy > 0 {
+            spdVar = speedAccuracy * speedAccuracy
+        } else {
+            spdVar = 4.0
+        }
         let altVar: Double = 100.0 // GPS altitude is typically inaccurate
         return [
             [posVar, 0,      0,      0,      0,      0],

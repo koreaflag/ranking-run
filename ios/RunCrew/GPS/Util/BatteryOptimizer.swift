@@ -8,7 +8,7 @@ class BatteryOptimizer {
     private var stationaryStartTime: Date?
 
     /// Time to wait before switching to low accuracy when stationary (seconds)
-    private let stationaryThreshold: TimeInterval = 10.0
+    private let stationaryThreshold: TimeInterval = 30.0
 
     init(locationManager: CLLocationManager) {
         self.locationManager = locationManager
@@ -37,14 +37,14 @@ class BatteryOptimizer {
 
     private func switchToLowAccuracy() {
         DispatchQueue.main.async { [weak self] in
-            self?.locationManager?.desiredAccuracy = kCLLocationAccuracyHundredMeters
+            self?.locationManager?.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
             self?.isHighAccuracy = false
         }
     }
 
     private func switchToHighAccuracy() {
         DispatchQueue.main.async { [weak self] in
-            self?.locationManager?.desiredAccuracy = kCLLocationAccuracyBest
+            self?.locationManager?.desiredAccuracy = kCLLocationAccuracyBestForNavigation
             self?.isHighAccuracy = true
         }
     }

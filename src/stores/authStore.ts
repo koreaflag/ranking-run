@@ -161,30 +161,65 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loadStoredAuth: async () => {
     set({ isLoading: true });
 
-    // DEV mode: skip auth and go straight to main screen
+    // DEV mode: try real devLogin for valid JWT, fall back to offline stub
     if (__DEV__) {
-      set({
-        user: {
-          id: 'dev-user-001',
-          email: 'dev@runcrew.app',
-          nickname: 'TestRunner',
-          avatar_url: null,
-          birthday: null,
-          height_cm: 175,
-          weight_kg: 70,
-          bio: null,
-          instagram_username: null,
-          total_distance_meters: 0,
-          total_runs: 0,
-          created_at: new Date().toISOString(),
-        },
-        accessToken: 'dev-token',
-        refreshToken: 'dev-refresh-token',
-        isAuthenticated: true,
-        isNewUser: false,
-        isLoading: false,
-      });
-      return;
+      console.log('[Auth] DEV loadStoredAuth — checking stored tokens...');
+      // First check if we already have real tokens stored
+      const storedToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
+      if (storedToken && storedToken !== 'dev-token') {
+        console.log('[Auth] Found stored real token, validating...');
+        // Already have real tokens — validate via profile fetch
+        set({ accessToken: storedToken });
+        try {
+          const profile = await authService.getProfile();
+          const refreshToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
+          set({
+            user: profile,
+            refreshToken,
+            isAuthenticated: true,
+            isNewUser: false,
+            isLoading: false,
+          });
+          console.log('[Auth] Stored token valid, authenticated as:', profile.nickname);
+          return;
+        } catch (e) {
+          console.warn('[Auth] Stored token invalid:', e);
+          // Token expired — fall through to devLogin
+        }
+      }
+
+      // Call backend devLogin to get real JWT tokens
+      console.log('[Auth] Calling devLogin...');
+      try {
+        await get().devLogin('TestRunner', 'dev@runcrew.app');
+        console.log('[Auth] devLogin success — real JWT obtained');
+        return;
+      } catch (e) {
+        console.warn('[Auth] devLogin FAILED — backend unreachable:', e);
+        // Backend unreachable — use offline stub for UI-only testing
+        set({
+          user: {
+            id: 'dev-user-001',
+            email: 'dev@runcrew.app',
+            nickname: 'TestRunner',
+            avatar_url: null,
+            birthday: null,
+            height_cm: 175,
+            weight_kg: 70,
+            bio: null,
+            instagram_username: null,
+            total_distance_meters: 0,
+            total_runs: 0,
+            created_at: new Date().toISOString(),
+          },
+          accessToken: 'dev-token',
+          refreshToken: 'dev-refresh-token',
+          isAuthenticated: true,
+          isNewUser: false,
+          isLoading: false,
+        });
+        return;
+      }
     }
 
     try {

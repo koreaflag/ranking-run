@@ -16,21 +16,6 @@ import { courseService } from '../services/courseService';
 import { rankingService } from '../services/rankingService';
 import { reviewService } from '../services/reviewService';
 
-// DEV mode mock data for World screen
-const DEV_MAP_MARKERS: CourseMarker[] = [
-  { id: 'dev-c1', title: '한강 반포 코스', start_lat: 37.5085, start_lng: 126.9960, distance_meters: 5200, total_runs: 128, difficulty: 'easy', avg_rating: 4.3, elevation_gain_meters: 15 },
-  { id: 'dev-c2', title: '올림픽공원 순환', start_lat: 37.5209, start_lng: 127.1215, distance_meters: 7800, total_runs: 89, difficulty: 'normal', avg_rating: 4.6, elevation_gain_meters: 42 },
-  { id: 'dev-c3', title: '여의도 한강공원', start_lat: 37.5283, start_lng: 126.9328, distance_meters: 4100, total_runs: 215, difficulty: 'easy', avg_rating: 4.1, elevation_gain_meters: 8 },
-  { id: 'dev-c4', title: '남산 순환 코스', start_lat: 37.5512, start_lng: 126.9882, distance_meters: 6300, total_runs: 67, difficulty: 'hard', avg_rating: 4.8, elevation_gain_meters: 185 },
-  { id: 'dev-c5', title: '뚝섬 한강공원', start_lat: 37.5317, start_lng: 127.0660, distance_meters: 3500, total_runs: 156, difficulty: 'easy', avg_rating: 4.0, elevation_gain_meters: 5 },
-  { id: 'dev-c6', title: '서울숲 코스', start_lat: 37.5443, start_lng: 127.0374, distance_meters: 4800, total_runs: 73, difficulty: 'easy', avg_rating: 4.4, elevation_gain_meters: 20 },
-];
-
-const DEV_NEARBY_COURSES: NearbyCourse[] = [
-  { id: 'dev-c1', title: '한강 반포 코스', thumbnail_url: null, distance_meters: 5200, estimated_duration_seconds: 1800, total_runs: 128, avg_pace_seconds_per_km: 345, creator_nickname: '런크루장', distance_from_user_meters: 320, difficulty: 'easy', avg_rating: 4.3, active_runners: 3 },
-  { id: 'dev-c3', title: '여의도 한강공원', thumbnail_url: null, distance_meters: 4100, estimated_duration_seconds: 1500, total_runs: 215, avg_pace_seconds_per_km: 366, creator_nickname: '달리는하마', distance_from_user_meters: 1200, difficulty: 'easy', avg_rating: 4.1, active_runners: 0 },
-];
-
 type ViewMode = 'list' | 'map';
 
 interface CourseState {
@@ -200,16 +185,9 @@ export const useCourseStore = create<CourseState>((set, get) => ({
   fetchNearbyCourses: async (lat, lng) => {
     try {
       const courses = await courseService.getNearbyCourses(lat, lng);
-      if (courses.length > 0) {
-        set({ nearbyCourses: courses });
-      } else if (__DEV__) {
-        set({ nearbyCourses: DEV_NEARBY_COURSES });
-      }
+      set({ nearbyCourses: courses });
     } catch {
-      // In DEV mode, show mock nearby courses
-      if (__DEV__) {
-        set({ nearbyCourses: DEV_NEARBY_COURSES });
-      }
+      // silently fail — empty list stays
     }
   },
 
@@ -253,16 +231,9 @@ export const useCourseStore = create<CourseState>((set, get) => ({
         neLat,
         neLng,
       );
-      if (markers.length > 0) {
-        set({ mapMarkers: markers });
-      } else if (__DEV__) {
-        set({ mapMarkers: DEV_MAP_MARKERS });
-      }
+      set({ mapMarkers: markers });
     } catch {
-      // In DEV mode, show mock map markers
-      if (__DEV__) {
-        set({ mapMarkers: DEV_MAP_MARKERS });
-      }
+      // silently fail — empty list stays
     }
   },
 

@@ -129,7 +129,7 @@ export default function MyPageScreen() {
           nickname: updated.nickname,
         });
       } catch {
-        Alert.alert('업로드 실패', '프로필 사진 변경에 실패했습니다.');
+        Alert.alert('앗...!', '프로필 사진 변경에 실패했습니다.');
       }
     }
   };
@@ -143,7 +143,7 @@ export default function MyPageScreen() {
         nickname: updated.nickname,
       });
     } catch {
-      Alert.alert('오류', '프로필 사진 제거에 실패했습니다.');
+      Alert.alert('앗...!', '프로필 사진 제거에 실패했습니다.');
     }
   };
 
@@ -542,7 +542,7 @@ export default function MyPageScreen() {
             </View>
             <Switch
               value={darkMode}
-              onValueChange={(v) => { setTimeout(() => setDarkMode(v), 250); }}
+              onValueChange={setDarkMode}
               trackColor={{ false: '#D1D5DB', true: '#FF7A33' }}
               thumbColor="#FFFFFF"
             />

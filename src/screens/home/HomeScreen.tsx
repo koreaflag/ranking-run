@@ -30,7 +30,7 @@ import {
   formatPace,
   formatRelativeTime,
 } from '../../utils/format';
-import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
+import { API_BASE_URL, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
 
@@ -130,29 +130,38 @@ export default function HomeScreen() {
   const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
   const [activityFeed, setActivityFeed] = useState<ActivityFeedItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [usingMockData, setUsingMockData] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [connectivityDetail, setConnectivityDetail] = useState<string>('확인중...');
 
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const loadHomeData = useCallback(async () => {
     try {
       const [runs, summary, feed] = await Promise.all([
-        userService.getRecentRuns(3).catch(() => [] as RecentRun[]),
-        userService.getWeeklySummary().catch(() => null),
-        userService.getActivityFeed(10).catch(() => [] as ActivityFeedItem[]),
+        userService.getRecentRuns(3).catch((e) => { console.warn('[Home] getRecentRuns failed:', e); return [] as RecentRun[]; }),
+        userService.getWeeklySummary().catch((e) => { console.warn('[Home] getWeeklySummary failed:', e); return null; }),
+        userService.getActivityFeed(10).catch((e) => { console.warn('[Home] getActivityFeed failed:', e); return [] as ActivityFeedItem[]; }),
       ]);
-      // Use DEV mock data as fallback when API returns empty
-      setRecentRuns(runs.length > 0 ? runs : (__DEV__ ? DEV_RECENT_RUNS : []));
-      setWeeklySummary(summary ?? (__DEV__ ? DEV_WEEKLY_SUMMARY : null));
-      setActivityFeed(feed.length > 0 ? feed : (__DEV__ ? DEV_ACTIVITY_FEED : []));
+
+      // Server responded — use real data (even if empty)
+      setRecentRuns(runs);
+      setWeeklySummary(summary);
+      setActivityFeed(feed);
+      setUsingMockData(false);
+      setServerError(null);
 
       // Fetch favorite courses
       await fetchFavoriteCourses();
-    } catch {
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setServerError(msg);
       // In DEV mode, show mock data even on total failure
       if (__DEV__) {
         setRecentRuns(DEV_RECENT_RUNS);
         setWeeklySummary(DEV_WEEKLY_SUMMARY);
         setActivityFeed(DEV_ACTIVITY_FEED);
+        setUsingMockData(true);
       }
     }
   }, [fetchFavoriteCourses]);
@@ -167,6 +176,29 @@ export default function HomeScreen() {
       NativeModules.GPSTrackerModule.requestLocationPermission?.();
     }
   }, []);
+
+  // Direct connectivity test when mock data is detected
+  useEffect(() => {
+    if (!usingMockData) return;
+    const testUrl = API_BASE_URL.replace('/api/v1', '/docs');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    fetch(testUrl, { signal: controller.signal })
+      .then((res) => {
+        clearTimeout(timeout);
+        setConnectivityDetail(`${testUrl} → HTTP ${res.status}`);
+      })
+      .catch((err) => {
+        clearTimeout(timeout);
+        const name = err?.name ?? '';
+        const msg = err?.message ?? String(err);
+        if (name === 'AbortError') {
+          setConnectivityDetail(`타임아웃 (8초) — 서버 또는 포트 접근 불가`);
+        } else {
+          setConnectivityDetail(`${name}: ${msg}`);
+        }
+      });
+  }, [usingMockData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -193,6 +225,17 @@ export default function HomeScreen() {
           />
         }
       >
+        {/* DEV: Server connection debug banner */}
+        {__DEV__ && usingMockData && (
+          <View style={styles.debugBanner}>
+            <Text style={styles.debugBannerText}>
+              서버 연결 안됨 — 테스트 데이터 표시중
+            </Text>
+            <Text style={styles.debugBannerDetail}>API: {API_BASE_URL}</Text>
+            <Text style={styles.debugBannerDetail}>{connectivityDetail}</Text>
+          </View>
+        )}
+
         {/* Greeting */}
         <View style={styles.greetingSection}>
           <Text style={styles.greeting}>
@@ -279,25 +322,35 @@ export default function HomeScreen() {
         )}
 
         {/* Friend Activity Feed */}
-        {activityFeed.length > 0 && (
-            <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>친구 활동</Text>
-                </View>
-                <View style={styles.activityList}>
-                    {activityFeed.slice(0, 5).map((item, index) => (
-                        <ActivityItem key={`${item.type}-${item.run_id || item.course_id}-${index}`} item={item} />
-                    ))}
-                </View>
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>친구 활동</Text>
+          </View>
+          {activityFeed.length > 0 ? (
+            <View style={styles.activityList}>
+              {activityFeed.slice(0, 5).map((item, index) => (
+                <ActivityItem key={`${item.type}-${item.run_id || item.course_id}-${index}`} item={item} />
+              ))}
             </View>
-        )}
+          ) : (
+            <View style={styles.emptyCardWrapper}>
+              <Card>
+                <EmptyState
+                  icon="—"
+                  title="아직 친구 활동이 없습니다"
+                  description="다른 러너를 팔로우해 보세요!"
+                />
+              </Card>
+            </View>
+          )}
+        </View>
 
         {/* Favorite Courses */}
-        {favoriteCourses.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>즐겨찾기 코스</Text>
-            </View>
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>즐겨찾기 코스</Text>
+          </View>
+          {favoriteCourses.length > 0 ? (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -311,8 +364,18 @@ export default function HomeScreen() {
                 />
               ))}
             </ScrollView>
-          </View>
-        )}
+          ) : (
+            <View style={styles.emptyCardWrapper}>
+              <Card>
+                <EmptyState
+                  icon="—"
+                  title="즐겨찾기 코스가 없습니다"
+                  description="마음에 드는 코스를 즐겨찾기에 추가해 보세요!"
+                />
+              </Card>
+            </View>
+          )}
+        </View>
 
         {/* Recent Runs */}
         <View style={styles.section}>
@@ -490,6 +553,22 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  debugBanner: {
+    backgroundColor: '#EF4444',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xl,
+    alignItems: 'center',
+  },
+  debugBannerText: {
+    color: '#FFFFFF',
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+  },
+  debugBannerDetail: {
+    color: '#FFFFFF99',
+    fontSize: FONT_SIZES.xs,
+    marginTop: 2,
   },
   contentContainer: {
     paddingBottom: 120,

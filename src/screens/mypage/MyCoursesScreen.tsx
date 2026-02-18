@@ -201,7 +201,7 @@ export default function MyCoursesScreen() {
       });
       setEditCourse(null);
     } catch {
-      Alert.alert('저장 실패', '다시 시도해 주세요.');
+      Alert.alert('앗...!', '다시 시도해 주세요.');
     } finally {
       setIsSaving(false);
     }

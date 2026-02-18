@@ -8,11 +8,11 @@ class OutlierDetector {
     private let maxRecentSpeeds = 10
 
     // Thresholds
-    private let maxHorizontalAccuracy: Double = 30.0  // meters
+    private let maxHorizontalAccuracy: Double = 20.0  // meters (tighter: reject noisy fixes)
     private let maxSpeed: Double = 15.0                // m/s (~54 km/h)
     private let maxAcceleration: Double = 8.0          // m/s²
-    private let maxTimestampAge: TimeInterval = 10.0   // seconds
-    private let minTimeBetweenUpdates: TimeInterval = 0.1 // seconds
+    private let maxTimestampAge: TimeInterval = 5.0    // seconds (fresher data only)
+    private let minTimeBetweenUpdates: TimeInterval = 0.05 // seconds (allow more frequent updates)
 
     private var lastTimestamp: TimeInterval = 0
     private var previousPoints: [(location: CLLocation, speed: Double)] = []

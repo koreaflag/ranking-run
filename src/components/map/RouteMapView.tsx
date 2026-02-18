@@ -198,7 +198,8 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
 
   // For non-interactive route mode, use controlled `region` prop instead of
   // initialRegion+fitToCoordinates — the latter is unreliable inside ScrollView on iOS.
-  const routeRegion = isRouteMode && routePoints.length > 0 && !isInteractive
+  // Skip when followsUserLocation is on — controlled region fights with follow mode.
+  const routeRegion = isRouteMode && routePoints.length > 0 && !isInteractive && !followsUserLocation
     ? computeRegionFromPoints(routePoints)
     : undefined;
 
@@ -296,20 +297,32 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         {startPoint && (
           <Marker
             coordinate={startPoint}
-            anchor={{ x: 0.5, y: 0.5 }}
+            anchor={{ x: 0.5, y: 1 }}
             tracksViewChanges={false}
+            zIndex={1}
           >
-            <View style={styles.startDot} />
+            <View style={styles.labelMarkerWrapper}>
+              <View style={[styles.labelMarkerPin, { backgroundColor: COLORS.primary }]}>
+                <Text style={styles.labelMarkerText}>출발</Text>
+              </View>
+              <View style={[styles.labelMarkerTail, { borderTopColor: COLORS.primary }]} />
+            </View>
           </Marker>
         )}
 
         {endPoint && (
           <Marker
             coordinate={endPoint}
-            anchor={{ x: 0.5, y: 0.5 }}
+            anchor={{ x: 0.5, y: 1 }}
             tracksViewChanges={false}
+            zIndex={2}
           >
-            <View style={styles.endDot} />
+            <View style={[styles.labelMarkerWrapper, { marginLeft: 24 }]}>
+              <View style={[styles.labelMarkerPin, { backgroundColor: COLORS.accent }]}>
+                <Text style={[styles.labelMarkerText, { color: COLORS.black }]}>도착</Text>
+              </View>
+              <View style={[styles.labelMarkerTail, { borderTopColor: COLORS.accent }]} />
+            </View>
           </Marker>
         )}
 
@@ -492,22 +505,37 @@ const styles = StyleSheet.create({
     minHeight: 200,
   },
 
-  // ---- Route start / end markers (PaceOff: bold neon) ----
-  startDot: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: COLORS.primary,
-    borderWidth: 3,
-    borderColor: COLORS.black,
+  // ---- Route start / end label markers ----
+  labelMarkerWrapper: {
+    alignItems: 'center',
   },
-  endDot: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: COLORS.accent,
-    borderWidth: 3,
-    borderColor: COLORS.black,
+  labelMarkerPin: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.9)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  labelMarkerText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.white,
+    letterSpacing: 0.5,
+  },
+  labelMarkerTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 7,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    marginTop: -1,
   },
 
   // ---- Course marker (modern minimal pin) ----

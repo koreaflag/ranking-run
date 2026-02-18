@@ -9,9 +9,11 @@ struct CompletedView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 36))
                     .foregroundColor(.green)
+                    .accessibilityHidden(true)
 
                 Text("런닝 완료!")
                     .font(.system(size: 18, weight: .bold))
+                    .accessibilityAddTraits(.isHeader)
 
                 // Summary stats
                 VStack(spacing: 8) {

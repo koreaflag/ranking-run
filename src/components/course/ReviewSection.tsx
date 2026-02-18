@@ -115,7 +115,7 @@ function ReplyForm({
       setContent('');
     } catch (err) {
       const msg = err instanceof Error ? err.message : '알 수 없는 오류';
-      Alert.alert('오류', `답글 등록에 실패했습니다.\n(${msg})`);
+      Alert.alert('앗...!', `답글 등록에 실패했습니다.\n(${msg})`);
     } finally {
       setIsSubmitting(false);
     }
@@ -180,7 +180,7 @@ function ReviewForm({
       onCancel?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : '알 수 없는 오류';
-      Alert.alert('오류', `리뷰 저장에 실패했습니다.\n(${msg})`);
+      Alert.alert('앗...!', `리뷰 저장에 실패했습니다.\n(${msg})`);
     } finally {
       setIsSubmitting(false);
     }

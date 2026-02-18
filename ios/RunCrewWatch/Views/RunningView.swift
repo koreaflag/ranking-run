@@ -10,6 +10,7 @@ struct RunningView: View {
                 .font(.system(size: 36, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
                 .padding(.top, 4)
+                .accessibilityLabel("시간 \(viewModel.formattedDuration())")
 
             // Distance
             HStack(alignment: .lastTextBaseline, spacing: 2) {
@@ -21,6 +22,8 @@ struct RunningView: View {
                     .foregroundColor(.gray)
             }
             .padding(.top, 2)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("거리 \(viewModel.formattedDistance()) 킬로미터")
 
             // Pace + Heart Rate row
             HStack(spacing: 16) {
@@ -70,6 +73,7 @@ struct RunningView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("일시정지")
 
                 // Stop button
                 Button(action: { viewModel.sendStopCommand() }) {
@@ -81,6 +85,7 @@ struct RunningView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("런닝 종료")
             }
             .padding(.bottom, 8)
         }

@@ -15,6 +15,7 @@ struct PausedView: View {
             Text(viewModel.formattedDuration())
                 .font(.system(size: 28, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
+                .accessibilityLabel("시간 \(viewModel.formattedDuration())")
 
             // Distance
             HStack(alignment: .lastTextBaseline, spacing: 2) {
@@ -25,6 +26,8 @@ struct PausedView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.gray)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("거리 \(viewModel.formattedDistance()) 킬로미터")
 
             Spacer()
 
@@ -40,6 +43,7 @@ struct PausedView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("다시 시작")
 
                 // Stop button
                 Button(action: { viewModel.sendStopCommand() }) {
@@ -51,6 +55,7 @@ struct PausedView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("런닝 종료")
             }
             .padding(.bottom, 8)
         }

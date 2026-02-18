@@ -56,7 +56,12 @@ export default function RunningScreen() {
     heartRate,
     watchConnected,
     currentLocation,
+    isApproachingStart,
+    isNearStart,
+    loopDetected,
+    distanceToStart,
     startSession,
+    updateSessionId,
     pause,
     resume,
     complete,
@@ -70,6 +75,18 @@ export default function RunningScreen() {
   useRunTimer();
 
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [loopHapticFired, setLoopHapticFired] = useState(false);
+
+  // Haptic feedback on loop detection (free running only)
+  useEffect(() => {
+    if (loopDetected && !loopHapticFired && !courseId && hapticFeedback) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setLoopHapticFired(true);
+    }
+    if (!loopDetected && loopHapticFired) {
+      setLoopHapticFired(false);
+    }
+  }, [loopDetected, loopHapticFired, courseId, hapticFeedback]);
 
   // Reset stale state from previous run on mount
   useEffect(() => {
@@ -120,37 +137,43 @@ export default function RunningScreen() {
 
     setCountdown(null);
 
-    try {
-      // Create session on server
-      const response = await runService.createSession({
-        course_id: courseId,
-        started_at: new Date().toISOString(),
-        device_info: {
-          platform: Platform.OS as 'android' | 'ios',
-          os_version: Platform.Version.toString(),
-          device_model: 'Unknown',
-          app_version: '1.0.0',
-        },
-      });
+    // Start GPS tracking IMMEDIATELY with a local session ID.
+    // The server session is created in the background — network latency
+    // must never block the running experience.
+    const localSessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    startSession(localSessionId, courseId);
+    await startTracking();
 
-      startSession(response.session_id, courseId);
-      await startTracking();
-
-      if (hapticFeedback) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-    } catch {
-      // Network failure: generate local session ID
-      const localSessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      startSession(localSessionId, courseId);
-      await startTracking();
+    if (hapticFeedback) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
+
+    // Register session on server in background (non-blocking).
+    // When successful, update the store with the real server session ID
+    // so that completeRun uses the correct ID.
+    runService.createSession({
+      course_id: courseId,
+      started_at: new Date().toISOString(),
+      device_info: {
+        platform: Platform.OS as 'android' | 'ios',
+        os_version: Platform.Version.toString(),
+        device_model: 'Unknown',
+        app_version: '1.0.0',
+      },
+    }).then((response) => {
+      if (response?.session_id) {
+        updateSessionId(response.session_id);
+      }
+    }).catch(() => {
+      // Server unreachable — local session ID stays as fallback
+    });
   }, [
     courseId,
     countdownSeconds,
     hapticFeedback,
     setPhase,
     startSession,
+    updateSessionId,
     startTracking,
   ]);
 
@@ -312,6 +335,7 @@ export default function RunningScreen() {
           previewPolyline={courseRoute ?? undefined}
           showUserLocation
           followsUserLocation
+          interactive
           style={styles.miniMap}
         />
 
@@ -345,6 +369,22 @@ export default function RunningScreen() {
           <View style={styles.offCourseBanner}>
             <Ionicons name="warning" size={16} color={colors.white} />
             <Text style={styles.offCourseText}>코스를 이탈했습니다</Text>
+          </View>
+        )}
+
+        {/* Loop detection banners (free running only) */}
+        {!courseId && loopDetected && (
+          <View style={styles.loopArrivedBanner}>
+            <Ionicons name="flag" size={16} color={colors.white} />
+            <Text style={styles.loopArrivedText}>출발점 도착! 왕복 완료</Text>
+          </View>
+        )}
+        {!courseId && isApproachingStart && !isNearStart && !loopDetected && (
+          <View style={styles.loopApproachBanner}>
+            <Ionicons name="navigate" size={16} color={colors.text} />
+            <Text style={styles.loopApproachText}>
+              출발점 접근 중 ~{Math.round(distanceToStart)}m
+            </Text>
           </View>
         )}
 
@@ -389,21 +429,19 @@ export default function RunningScreen() {
           <View style={styles.dashboardDivider} />
 
           <View style={styles.dashboardCell}>
-            <Text style={styles.dashboardLabel}>현재 페이스</Text>
+            <Text style={styles.dashboardLabel}>페이스</Text>
             <Text style={styles.dashboardValue}>
               {formatPace(currentPaceSecondsPerKm)}
             </Text>
-            <Text style={styles.dashboardUnit}>min/km</Text>
           </View>
 
           <View style={styles.dashboardDivider} />
 
           <View style={styles.dashboardCell}>
-            <Text style={styles.dashboardLabel}>평균 페이스</Text>
+            <Text style={styles.dashboardLabel}>평균</Text>
             <Text style={styles.dashboardValue}>
               {formatPace(avgPaceSecondsPerKm)}
             </Text>
-            <Text style={styles.dashboardUnit}>min/km</Text>
           </View>
 
           {heartRate > 0 && (
@@ -414,7 +452,6 @@ export default function RunningScreen() {
                 <Text style={[styles.dashboardValue, { color: colors.error }]}>
                   {Math.round(heartRate)}
                 </Text>
-                <Text style={styles.dashboardUnit}>BPM</Text>
               </View>
             </>
           )}
@@ -951,6 +988,41 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: FONT_SIZES.md,
     fontWeight: '700',
     color: c.white,
+  },
+
+  // Loop detection banners
+  loopArrivedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    backgroundColor: c.success,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.sm,
+    marginTop: SPACING.md,
+  },
+  loopArrivedText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: c.white,
+  },
+  loopApproachBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    backgroundColor: c.surface,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.sm,
+    marginTop: SPACING.md,
+    borderWidth: 1,
+    borderColor: c.primary,
+  },
+  loopApproachText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: c.text,
+    fontVariant: ['tabular-nums'] as const,
   },
 
   // Course progress
