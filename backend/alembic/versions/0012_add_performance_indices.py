@@ -16,14 +16,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Course queries - listing, sorting, spatial
+    # Course queries - additional single-column indices
+    # (idx_courses_public_created and idx_courses_creator already exist in 0001)
     op.create_index("ix_courses_created_at", "courses", ["created_at"])
     op.create_index("ix_courses_is_public", "courses", ["is_public"])
-    op.create_index("ix_courses_creator_id", "courses", ["creator_id"])
     op.create_index("ix_courses_distance_meters", "courses", ["distance_meters"])
 
-    # Run records - history, filtering
-    op.create_index("ix_run_records_user_id_finished_at", "run_records", ["user_id", "finished_at"])
+    # Run records - additional indices
+    # (idx_runs_user_finished and idx_runs_course_duration already exist in 0001)
     op.create_index("ix_run_records_course_id", "run_records", ["course_id"])
     op.create_index("ix_run_records_finished_at", "run_records", ["finished_at"])
 
@@ -31,46 +31,23 @@ def upgrade() -> None:
     op.create_index("ix_rankings_course_id_rank", "rankings", ["course_id", "rank"])
     op.create_index("ix_rankings_user_id", "rankings", ["user_id"])
 
-    # Social - follows
-    op.create_index("ix_follows_follower_id", "follows", ["follower_id"])
-    op.create_index("ix_follows_following_id", "follows", ["following_id"])
-
-    # Reviews
-    op.create_index("ix_reviews_course_id", "reviews", ["course_id"])
-
-    # Social accounts - login lookup
-    op.create_index("ix_social_accounts_provider_id", "social_accounts", ["provider", "provider_id"])
-
-    # Refresh tokens - validation
-    op.create_index("ix_refresh_tokens_user_id", "refresh_tokens", ["user_id"])
+    # Refresh tokens - single-column for expires_at
+    # (idx_refresh_user compound already exists in 0001)
     op.create_index("ix_refresh_tokens_expires_at", "refresh_tokens", ["expires_at"])
 
-    # Events
+    # Events - date range queries
     op.create_index("ix_events_starts_at", "events", ["starts_at"])
     op.create_index("ix_events_ends_at", "events", ["ends_at"])
 
-    # Course likes & favorites
-    op.create_index("ix_course_likes_course_id", "course_likes", ["course_id"])
-    op.create_index("ix_course_favorites_user_id", "course_favorites", ["user_id"])
-
 
 def downgrade() -> None:
-    op.drop_index("ix_course_favorites_user_id")
-    op.drop_index("ix_course_likes_course_id")
     op.drop_index("ix_events_ends_at")
     op.drop_index("ix_events_starts_at")
     op.drop_index("ix_refresh_tokens_expires_at")
-    op.drop_index("ix_refresh_tokens_user_id")
-    op.drop_index("ix_social_accounts_provider_id")
-    op.drop_index("ix_reviews_course_id")
-    op.drop_index("ix_follows_following_id")
-    op.drop_index("ix_follows_follower_id")
     op.drop_index("ix_rankings_user_id")
     op.drop_index("ix_rankings_course_id_rank")
     op.drop_index("ix_run_records_finished_at")
     op.drop_index("ix_run_records_course_id")
-    op.drop_index("ix_run_records_user_id_finished_at")
     op.drop_index("ix_courses_distance_meters")
-    op.drop_index("ix_courses_creator_id")
     op.drop_index("ix_courses_is_public")
     op.drop_index("ix_courses_created_at")
