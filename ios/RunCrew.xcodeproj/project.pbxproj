@@ -389,12 +389,11 @@
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
 				5899896285D1349FBA0D247E /* [CP] Embed Pods Frameworks */,
-				WATCH_COPY_001 /* Embed Watch Content */,
+				/* WATCH_COPY_001 Embed Watch Content - temporarily disabled */
 			);
 			buildRules = (
 			);
 			dependencies = (
-				WATCH_DEP_001 /* PBXTargetDependency */,
 			);
 			name = RunCrew;
 			productName = RunCrew;
