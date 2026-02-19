@@ -32,12 +32,19 @@ function smoothHeading(
   return smoothed;
 }
 
+export interface CompassDebug {
+  accuracy: number;
+  trueHeading: number;
+  magneticHeading: number;
+}
+
 export function useCompassHeading(
   updateInterval = 100,
   /** GPS course/bearing in degrees (0-360). Pass when moving for best accuracy. */
   gpsBearing?: number | null,
-): number {
+): { heading: number; debug: CompassDebug } {
   const [heading, setHeading] = useState(0);
+  const [debug, setDebug] = useState<CompassDebug>({ accuracy: -1, trueHeading: -1, magneticHeading: -1 });
   const smoothedRef = useRef(0);
   const useGpsRef = useRef(false);
 
@@ -61,7 +68,15 @@ export function useCompassHeading(
     // Register listener FIRST so hasListeners=true before events fire
     const subscription = emitter.addListener(
       'GPSTracker_onHeadingUpdate',
-      (event: { heading: number }) => {
+      (event: { heading: number; accuracy?: number; trueHeading?: number; magneticHeading?: number }) => {
+        // Update debug info
+        if (event.accuracy != null) {
+          setDebug({
+            accuracy: event.accuracy ?? -1,
+            trueHeading: event.trueHeading ?? -1,
+            magneticHeading: event.magneticHeading ?? -1,
+          });
+        }
         if (useGpsRef.current) return;
         if (event.heading >= 0) {
           const result = smoothHeading(smoothedRef, event.heading, NATIVE_ALPHA);
@@ -80,5 +95,5 @@ export function useCompassHeading(
     };
   }, []);
 
-  return heading;
+  return { heading, debug };
 }

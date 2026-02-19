@@ -189,6 +189,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   const cameraRef = useRef<Mapbox.Camera>(null);
   const colors = useTheme();
   const isDark = colors.statusBar === 'light-content';
+  const mapBearingRef = useRef(0);
 
   // Determine mode
   const isRouteMode = routePoints.length > 0;
@@ -273,6 +274,10 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   // Region change callback
   const handleRegionDidChange = useCallback(
     (feature: any) => {
+      // Track map bearing for heading cone compensation
+      const bearing = feature?.properties?.heading;
+      if (bearing != null) mapBearingRef.current = bearing;
+
       if (!onRegionChange) return;
       const bounds = feature?.properties?.visibleBounds;
       if (!bounds || bounds.length < 2) return;
@@ -519,7 +524,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
                 <View
                   style={[
                     styles.headingConeWrapper,
-                    { transform: [{ rotate: `${customUserHeading}deg` }] },
+                    { transform: [{ rotate: `${((customUserHeading - mapBearingRef.current) % 360 + 360) % 360}deg` }] },
                   ]}
                 >
                   <View style={styles.headingCone} />

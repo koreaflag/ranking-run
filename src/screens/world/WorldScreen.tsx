@@ -146,7 +146,7 @@ export default function WorldScreen() {
   // Weather state
   const [weather, setWeather] = useState<WeatherData | null>(null);
   // Heading — use shared compass hook for smooth rotation (avoids re-renders)
-  const headingAnim = useCompassHeading();
+  const { heading: headingAnim } = useCompassHeading();
 
   // Selected marker state
   const [selectedMarker, setSelectedMarker] = useState<CourseMarkerData | null>(null);
@@ -872,7 +872,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -0.5,
   },
-
   // -- Bottom overlay --
   bottomOverlay: {
     position: 'absolute',
