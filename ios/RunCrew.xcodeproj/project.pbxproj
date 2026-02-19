@@ -19,6 +19,7 @@
 		2B7B5AB016F53F703101260F /* RunSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 145AFB599CC8B1488AA8BA6E /* RunSession.swift */; };
 		2CDE6DEA2DBE0738D467F6EC /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFD75EA8A035BB4B5684611 /* ContentView.swift */; };
 		306821BFEDFF9F3E00B55AB6 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F563E5AB1BC162FFA0AB77E /* HapticManager.swift */; };
+		3CABB75F6A663B0D98C07D70 /* libPods-RunCrew.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5C936CE9C388703A82467D33 /* libPods-RunCrew.a */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		4274A2FB4F7BE8CC44189E9A /* HeartRateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8ABA79F8337CDC75B3CFBBF /* HeartRateManager.swift */; };
 		43BC916F90CCA882B15C5833 /* CoordinateConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA905B0A3DCFF3DE81BB4F45 /* CoordinateConverter.swift */; };
@@ -32,7 +33,6 @@
 		7A3DAF2430A2E41C8DD4F7DA /* WatchMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CB363B4A1EA35D9BB02DB7 /* WatchMessage.swift */; };
 		8711395128334C34B4188838 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1FA1B7C7CEB8D9C1433392A2 /* PrivacyInfo.xcprivacy */; };
 		8F9DB380AF3B34C960213AC8 /* LocationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6FE64330D8041998CDF36B /* LocationEngine.swift */; };
-		96905EF65AED1B983A6B3ABC /* libPods-RunCrew.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 58EEBF8E8E6FB1BC6CAF49B5 /* libPods-RunCrew.a */; };
 		9EB1D5F3875D84A6CB4DFDED /* GeoMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827B5F7E33D2E3BFEEE93F8 /* GeoMath.swift */; };
 		A8E53FF8C84BC51FFA91F02C /* StationaryDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D24E92F8EFCDDCA87BF7F9 /* StationaryDetector.swift */; };
 		B18059E884C0ABDD17F3DC3D /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC715A2D49A985799AEE119 /* ExpoModulesProvider.swift */; };
@@ -43,6 +43,7 @@
 		C44709053764FEE1BA111497 /* CompletedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2C54373AEC7799F16DD9F0D /* CompletedView.swift */; };
 		CE3CF588755FA31E4A391FD7 /* CountdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D5A328F7D095939AC5C83AA /* CountdownView.swift */; };
 		D1A2B3C4E5F60718293A4B5C /* CourseNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* CourseNavigationView.swift */; };
+		D79283A1C1DAEA8340642A5B /* main.jsbundle in Resources */ = {isa = PBXBuildFile; fileRef = 13EE5B7D8FFCF78C1DA04FB3 /* main.jsbundle */; };
 		DE3E68B8EBE9DC7C26B0E96C /* RunCrewWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 792EFC1A398B9726AF9C506F /* RunCrewWatchApp.swift */; };
 		DF77140FD489E8326C6A0D4C /* WatchRunState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D3EA53C449D4691B845758 /* WatchRunState.swift */; };
 		E2FF90CBD5E420B5A9FC9D40 /* WatchSessionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DD646D26F6716EFC3EAE18D /* WatchSessionService.swift */; };
@@ -51,32 +52,7 @@
 		FBE70347F8E60CEDD539C4E0 /* GPSTrackerModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909473F9413E3A85CD4D8D1D /* GPSTrackerModule.swift */; };
 		FE4FCAD09D937B791916CE8A /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC30CCA13FB0CBAD7F791D16 /* WatchSessionManager.swift */; };
 		FFAAFA5B30D6367426D343A6 /* GPSTrackerModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 0BE70551443B1C23DDD6950C /* GPSTrackerModule.m */; };
-		WATCH_EMBED_001 /* RunCrew Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 7D877B030C22BC36F5C9BEB4 /* RunCrew Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		WATCH_PROXY_001 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 7910D078E6D3D3B4111A7372;
-			remoteInfo = "RunCrew Watch App";
-		};
-/* End PBXContainerItemProxy section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		WATCH_COPY_001 /* Embed Watch Content */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
-			dstSubfolderSpec = 16;
-			files = (
-				WATCH_EMBED_001 /* RunCrew Watch App.app in Embed Watch Content */,
-			);
-			name = "Embed Watch Content";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		01A849E6BDBD56885F613276 /* PausedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PausedView.swift; sourceTree = "<group>"; };
@@ -89,6 +65,7 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = RunCrew/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = RunCrew/Info.plist; sourceTree = "<group>"; };
 		13B07FB71A68108700A75B9A /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = main.m; path = RunCrew/main.m; sourceTree = "<group>"; };
+		13EE5B7D8FFCF78C1DA04FB3 /* main.jsbundle */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; path = main.jsbundle; sourceTree = "<group>"; };
 		145AFB599CC8B1488AA8BA6E /* RunSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RunSession.swift; sourceTree = "<group>"; };
 		187C1E20B93C32B28C9E9A39 /* PedometerTracker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PedometerTracker.swift; sourceTree = "<group>"; };
 		1C0D5E99EBB32668804A57B8 /* WatchBridgeModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchBridgeModule.swift; sourceTree = "<group>"; };
@@ -97,13 +74,12 @@
 		42E39802E5031682A0308681 /* OutlierDetector.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutlierDetector.swift; sourceTree = "<group>"; };
 		42F6E86EC0F37719B3DCB30B /* IdleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdleView.swift; sourceTree = "<group>"; };
 		5162480224957A552E6277ED /* SensorFusionManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SensorFusionManager.swift; sourceTree = "<group>"; };
-		58EEBF8E8E6FB1BC6CAF49B5 /* libPods-RunCrew.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-RunCrew.a"; sourceTree = BUILT_PRODUCTS_DIR; };
-		6C2E3173556A471DD304B334 /* Pods-RunCrew.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunCrew.debug.xcconfig"; path = "Target Support Files/Pods-RunCrew/Pods-RunCrew.debug.xcconfig"; sourceTree = "<group>"; };
+		57DDD89489C04FE777D3C0FA /* Pods-RunCrew.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunCrew.release.xcconfig"; path = "Target Support Files/Pods-RunCrew/Pods-RunCrew.release.xcconfig"; sourceTree = "<group>"; };
+		5C936CE9C388703A82467D33 /* libPods-RunCrew.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-RunCrew.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6DD646D26F6716EFC3EAE18D /* WatchSessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionService.swift; sourceTree = "<group>"; };
 		6F257DADDE52A1B98EA1A679 /* RunningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunningView.swift; sourceTree = "<group>"; };
 		71F15C34D5DBDE3AD2B1B0E5 /* KalmanFilter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KalmanFilter.swift; sourceTree = "<group>"; };
 		792EFC1A398B9726AF9C506F /* RunCrewWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunCrewWatchApp.swift; sourceTree = "<group>"; };
-		7A4D352CD337FB3A3BF06240 /* Pods-RunCrew.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunCrew.release.xcconfig"; path = "Target Support Files/Pods-RunCrew/Pods-RunCrew.release.xcconfig"; sourceTree = "<group>"; };
 		7D877B030C22BC36F5C9BEB4 /* RunCrew Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "RunCrew Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		89D3EA53C449D4691B845758 /* WatchRunState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRunState.swift; sourceTree = "<group>"; };
 		8D5A328F7D095939AC5C83AA /* CountdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountdownView.swift; sourceTree = "<group>"; };
@@ -114,6 +90,7 @@
 		A12ED3E9D449DD54528D5789 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* CourseNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseNavigationView.swift; sourceTree = "<group>"; };
 		A2CB363B4A1EA35D9BB02DB7 /* WatchMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMessage.swift; sourceTree = "<group>"; };
+		AA084EF6CBD1D1511D2A1C87 /* Pods-RunCrew.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunCrew.debug.xcconfig"; path = "Target Support Files/Pods-RunCrew/Pods-RunCrew.debug.xcconfig"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = RunCrew/SplashScreen.storyboard; sourceTree = "<group>"; };
 		AAFD75EA8A035BB4B5684611 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AED3B68D7E54F6B9A9CE010C /* BatteryOptimizer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatteryOptimizer.swift; sourceTree = "<group>"; };
@@ -139,7 +116,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				96905EF65AED1B983A6B3ABC /* libPods-RunCrew.a in Frameworks */,
+				3CABB75F6A663B0D98C07D70 /* libPods-RunCrew.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -194,6 +171,7 @@
 				1FA1B7C7CEB8D9C1433392A2 /* PrivacyInfo.xcprivacy */,
 				12E205E2E9C5AD8A6CA2205D /* GPS */,
 				B71E42A5C16A34FFEDF1923F /* Watch */,
+				13EE5B7D8FFCF78C1DA04FB3 /* main.jsbundle */,
 			);
 			name = RunCrew;
 			sourceTree = "<group>";
@@ -217,7 +195,7 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				58EEBF8E8E6FB1BC6CAF49B5 /* libPods-RunCrew.a */,
+				5C936CE9C388703A82467D33 /* libPods-RunCrew.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -330,8 +308,8 @@
 		D65327D7A22EEC0BE12398D9 /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				6C2E3173556A471DD304B334 /* Pods-RunCrew.debug.xcconfig */,
-				7A4D352CD337FB3A3BF06240 /* Pods-RunCrew.release.xcconfig */,
+				AA084EF6CBD1D1511D2A1C87 /* Pods-RunCrew.debug.xcconfig */,
+				57DDD89489C04FE777D3C0FA /* Pods-RunCrew.release.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
@@ -381,15 +359,14 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "RunCrew" */;
 			buildPhases = (
-				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
+				0BCCEF448EA52350217ABF01 /* [CP] Check Pods Manifest.lock */,
 				354D9ACAD62C1B1299C0A357 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
-				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				5899896285D1349FBA0D247E /* [CP] Embed Pods Frameworks */,
-				/* WATCH_COPY_001 Embed Watch Content - temporarily disabled */
+				27F5D5ECF10883AE624E66A1 /* [CP] Embed Pods Frameworks */,
+				1C0CBC02EC4F7208F60D27C8 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -458,6 +435,7 @@
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				0738A9A3CFB96EDA6A4AF2AB /* PrivacyInfo.xcprivacy in Resources */,
+				D79283A1C1DAEA8340642A5B /* main.jsbundle in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -487,7 +465,7 @@
 			shellPath = /bin/sh;
 			shellScript = "if [[ -f \"$PODS_ROOT/../.xcode.env\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env\"\nfi\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n# The project root by default is one level up from the ios directory\nexport PROJECT_ROOT=\"$PROJECT_DIR\"/..\n\nif [[ \"$CONFIGURATION\" = *Debug* ]]; then\n  export SKIP_BUNDLING=1\nfi\nif [[ -z \"$ENTRY_FILE\" ]]; then\n  # Set the entry JS file using the bundler's entry resolution.\n  export ENTRY_FILE=\"$(\"$NODE_BINARY\" -e \"require('expo/scripts/resolveAppEntry')\" \"$PROJECT_ROOT\" ios absolute | tail -n 1)\"\nfi\n\nif [[ -z \"$CLI_PATH\" ]]; then\n  # Use Expo CLI\n  export CLI_PATH=\"$(\"$NODE_BINARY\" --print \"require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })\")\"\nfi\nif [[ -z \"$BUNDLE_COMMAND\" ]]; then\n  # Default Expo CLI command for bundling\n  export BUNDLE_COMMAND=\"export:embed\"\nfi\n\n# Source .xcode.env.updates if it exists to allow\n# SKIP_BUNDLING to be unset if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.updates\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.updates\"\nfi\n# Source local changes to allow overrides\n# if needed\nif [[ -f \"$PODS_ROOT/../.xcode.env.local\" ]]; then\n  source \"$PODS_ROOT/../.xcode.env.local\"\nfi\n\n`\"$NODE_BINARY\" --print \"require('path').dirname(require.resolve('react-native/package.json')) + '/scripts/react-native-xcode.sh'\"`\n\n";
 		};
-		08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */ = {
+		0BCCEF448EA52350217ABF01 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -509,26 +487,57 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		354D9ACAD62C1B1299C0A357 /* [Expo] Configure project */ = {
+		1C0CBC02EC4F7208F60D27C8 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
-			inputFileListPaths = (
-			);
 			inputPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-RunCrew/Pods-RunCrew-resources.sh",
+				"${PODS_CONFIGURATION_BUILD_DIR}/AppAuth/AppAuthCore_Privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/GTMAppAuth/GTMAppAuth_Privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/GTMSessionFetcher/GTMSessionFetcher_Core_Privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/GoogleSignIn/GoogleSignIn.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/GoogleUtilities/GoogleUtilities_Privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/PromisesObjC/FBLPromises_Privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/RCT-Folly/RCT-Folly_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/RNCAsyncStorage/RNCAsyncStorage_resources.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/boost/boost_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-launcher/EXDevLauncher.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-menu/EXDevMenu.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/glog/glog_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/react-native-maps/ReactNativeMapsPrivacy.bundle",
 			);
-			name = "[Expo] Configure project";
-			outputFileListPaths = (
-			);
+			name = "[CP] Copy Pods Resources";
 			outputPaths = (
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/AppAuthCore_Privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GTMAppAuth_Privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GTMSessionFetcher_Core_Privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleSignIn.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleUtilities_Privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/FBLPromises_Privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RCT-Folly_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNCAsyncStorage_resources.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/boost_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevLauncher.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevMenu.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/glog_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ReactNativeMapsPrivacy.bundle",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-RunCrew/expo-configure-project.sh\"\n";
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-RunCrew/Pods-RunCrew-resources.sh\"\n";
+			showEnvVarsInLog = 0;
 		};
-		5899896285D1349FBA0D247E /* [CP] Embed Pods Frameworks */ = {
+		27F5D5ECF10883AE624E66A1 /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -554,53 +563,24 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-RunCrew/Pods-RunCrew-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
+		354D9ACAD62C1B1299C0A357 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-RunCrew/Pods-RunCrew-resources.sh",
-				"${PODS_CONFIGURATION_BUILD_DIR}/AppAuth/AppAuthCore_Privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/GTMAppAuth/GTMAppAuth_Privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/GTMSessionFetcher/GTMSessionFetcher_Core_Privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/GoogleSignIn/GoogleSignIn.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/GoogleUtilities/GoogleUtilities_Privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/PromisesObjC/FBLPromises_Privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/RCT-Folly/RCT-Folly_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/boost/boost_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-launcher/EXDevLauncher.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-menu/EXDevMenu.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/glog/glog_privacy.bundle",
-				"${PODS_CONFIGURATION_BUILD_DIR}/react-native-maps/ReactNativeMapsPrivacy.bundle",
+			inputFileListPaths = (
 			);
-			name = "[CP] Copy Pods Resources";
+			inputPaths = (
+			);
+			name = "[Expo] Configure project";
+			outputFileListPaths = (
+			);
 			outputPaths = (
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/AppAuthCore_Privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GTMAppAuth_Privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GTMSessionFetcher_Core_Privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleSignIn.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleUtilities_Privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/FBLPromises_Privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RCT-Folly_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/boost_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevLauncher.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevMenu.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/glog_privacy.bundle",
-				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ReactNativeMapsPrivacy.bundle",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-RunCrew/Pods-RunCrew-resources.sh\"\n";
-			showEnvVarsInLog = 0;
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-RunCrew/expo-configure-project.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -659,18 +639,10 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
-/* Begin PBXTargetDependency section */
-		WATCH_DEP_001 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 7910D078E6D3D3B4111A7372 /* RunCrew Watch App */;
-			targetProxy = WATCH_PROXY_001 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 6C2E3173556A471DD304B334 /* Pods-RunCrew.debug.xcconfig */;
+			baseConfigurationReference = AA084EF6CBD1D1511D2A1C87 /* Pods-RunCrew.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -707,7 +679,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 7A4D352CD337FB3A3BF06240 /* Pods-RunCrew.release.xcconfig */;
+			baseConfigurationReference = 57DDD89489C04FE777D3C0FA /* Pods-RunCrew.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;

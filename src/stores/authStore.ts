@@ -233,6 +233,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       );
 
       if (!accessToken || !refreshToken) {
+        // No stored tokens — show login screen
         set({ isLoading: false });
         return;
       }
@@ -257,6 +258,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             isLoading: false,
           });
         } else {
+          // Refresh failed — clear tokens and show login screen
+          await get().logout();
           set({ isLoading: false });
         }
       }

@@ -12,6 +12,7 @@ import {
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { useRunningStore } from '../../stores/runningStore';
 import { runService } from '../../services/runService';
+import { savePendingRunRecord, removePendingRunRecord } from '../../services/pendingSyncService';
 import { useTheme } from '../../hooks/useTheme';
 import { useCompassHeading } from '../../hooks/useCompassHeading';
 import { Ionicons } from '@expo/vector-icons';
@@ -76,6 +77,7 @@ export default function RunResultScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<RunCompleteResponse | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [savedLocally, setSavedLocally] = useState(false);
 
   // Compass heading (native CLHeading only — no GPS bearing after run ends)
   const { heading: headingValue } = useCompassHeading();
@@ -88,49 +90,71 @@ export default function RunResultScreen() {
     [],
   );
 
-  // Submit run to server on mount
+  // Submit run: save locally first, then try server in background
   useEffect(() => {
     const submitRun = async () => {
       if (submitted) return;
       setIsSubmitting(true);
+
+      const pendingId = `local-run-${Date.now()}`;
+      const runPayload = {
+        distance_meters: distanceMeters,
+        duration_seconds: durationSeconds,
+        total_elapsed_seconds: durationSeconds,
+        avg_pace_seconds_per_km: avgPaceSecondsPerKm,
+        best_pace_seconds_per_km:
+          splits.length > 0
+            ? Math.min(...splits.map((s) => s.pace_seconds_per_km))
+            : avgPaceSecondsPerKm,
+        avg_speed_ms: distanceMeters / (durationSeconds || 1),
+        max_speed_ms: 0,
+        calories,
+        finished_at: new Date().toISOString(),
+        route_geometry: {
+          type: 'LineString' as const,
+          coordinates: (routePoints.length >= 2
+            ? routePoints.map((p) => [p.longitude, p.latitude, 0])
+            : [[127.0, 37.5, 0], [127.0001, 37.5001, 0]]) as [number, number, number][],
+        },
+        elevation_gain_meters: elevationGainMeters,
+        elevation_loss_meters: elevationLossMeters,
+        elevation_profile: [] as number[],
+        splits,
+        pause_intervals: [] as { paused_at: string; resumed_at: string }[],
+        filter_config: {
+          kalman_q: 3.0,
+          kalman_r_base: 10.0,
+          outlier_speed_threshold: 12.0,
+          outlier_accuracy_threshold: 50.0,
+        },
+        total_chunks: 0,
+        uploaded_chunk_sequences: [] as number[],
+      };
+
+      // 1) Save locally first (instant — prevents data loss)
       try {
-        const response = await runService.completeRun(sessionId, {
-          distance_meters: distanceMeters,
-          duration_seconds: durationSeconds,
-          total_elapsed_seconds: durationSeconds,
-          avg_pace_seconds_per_km: avgPaceSecondsPerKm,
-          best_pace_seconds_per_km:
-            splits.length > 0
-              ? Math.min(...splits.map((s) => s.pace_seconds_per_km))
-              : avgPaceSecondsPerKm,
-          avg_speed_ms: distanceMeters / (durationSeconds || 1),
-          max_speed_ms: 0,
-          calories,
-          finished_at: new Date().toISOString(),
-          route_geometry: {
-            type: 'LineString',
-            coordinates: routePoints.length >= 2
-              ? routePoints.map((p) => [p.longitude, p.latitude, 0])
-              : [[127.0, 37.5, 0], [127.0001, 37.5001, 0]],
-          },
-          elevation_gain_meters: elevationGainMeters,
-          elevation_loss_meters: elevationLossMeters,
-          elevation_profile: [],
-          splits,
-          pause_intervals: [],
-          filter_config: {
-            kalman_q: 3.0,
-            kalman_r_base: 10.0,
-            outlier_speed_threshold: 12.0,
-            outlier_accuracy_threshold: 50.0,
-          },
-          total_chunks: 0,
-          uploaded_chunk_sequences: [],
+        await savePendingRunRecord({
+          id: pendingId,
+          sessionId,
+          payload: runPayload,
+          createdAt: new Date().toISOString(),
         });
+        setSavedLocally(true);
+      } catch (e) {
+        console.warn('[RunResult] local save failed:', e);
+      }
+
+      // 2) Try server sync
+      try {
+        const response = await runService.completeRun(sessionId, runPayload);
         setResult(response);
         setSubmitted(true);
+        // Server succeeded — remove local pending data
+        await removePendingRunRecord(pendingId).catch(() => {});
       } catch (error) {
         console.warn('[RunResult] completeRun failed:', sessionId, error);
+        // Server failed — local data is safe, will retry on next app launch
+        setSubmitted(true);
       } finally {
         setIsSubmitting(false);
       }
@@ -179,7 +203,12 @@ export default function RunResultScreen() {
       return;
     }
     if (!result?.run_record_id) {
-      Alert.alert('알림', '기록 업로드가 완료되지 않았습니다. 잠시 후 다시 시도해주세요.');
+      Alert.alert(
+        '알림',
+        savedLocally
+          ? '기록이 로컬에 저장되었지만 서버 업로드가 완료되지 않았습니다. 서버 연결 후 다시 시도해주세요.'
+          : '기록 업로드가 완료되지 않았습니다. 잠시 후 다시 시도해주세요.',
+      );
       return;
     }
     const runRecordId = result.run_record_id;
@@ -418,6 +447,12 @@ export default function RunResultScreen() {
           <View style={styles.uploadingRow}>
             <ActivityIndicator size="small" color={colors.textTertiary} />
             <Text style={styles.uploadingText}>기록 업로드 중...</Text>
+          </View>
+        )}
+        {!isSubmitting && submitted && !result && savedLocally && (
+          <View style={styles.uploadingRow}>
+            <Ionicons name="cloud-offline-outline" size={16} color={colors.textTertiary} />
+            <Text style={styles.uploadingText}>기록이 로컬에 저장됨 · 서버 연결 시 자동 업로드</Text>
           </View>
         )}
 

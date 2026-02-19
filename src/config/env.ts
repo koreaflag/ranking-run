@@ -12,10 +12,7 @@ const extra = Constants.expoConfig?.extra ?? {};
 
 // ---- API ----
 export const API_BASE_URL: string =
-  extra.API_BASE_URL ??
-  (__DEV__
-    ? 'http://13.125.244.10/api/v1'
-    : 'https://runvs.run/api/v1');
+  extra.API_BASE_URL ?? 'https://runvs.run/api/v1';
 
 // ---- Mapbox ----
 // Token MUST be provided via EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN env var

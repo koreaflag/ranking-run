@@ -243,7 +243,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
         // Cold start check
         if session.state == .starting {
-            if location.horizontalAccuracy <= 10.0 {
+            if location.horizontalAccuracy <= 25.0 {
                 session.markLocked()
                 coldStartTimer?.invalidate()
                 coldStartTimer = nil

@@ -13,6 +13,7 @@ import {
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { courseService } from '../../services/courseService';
 import { useCourseStore } from '../../stores/courseStore';
+import { savePendingCourse, removePendingCourse } from '../../services/pendingSyncService';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../../components/common/Button';
 import RouteMapView from '../../components/map/RouteMapView';
@@ -59,46 +60,62 @@ export default function CourseCreateScreen() {
     }
 
     setIsSubmitting(true);
-    try {
-      const response = await courseService.createCourse({
-        run_record_id: runRecordId,
-        title: title.trim(),
-        description: description.trim() || undefined,
-        route_geometry: {
-          type: 'LineString',
-          coordinates: routePoints.length >= 2
-            ? routePoints.map((p) => [p.longitude, p.latitude, 0])
-            : [[127.0, 37.5, 0], [127.0001, 37.5001, 0]],
-        },
-        distance_meters: Math.max(Math.round(distanceMeters), 1),
-        estimated_duration_seconds: Math.max(Math.round(durationSeconds), 1),
-        elevation_gain_meters: Math.round(elevationGainMeters),
-        elevation_profile: [],
-        is_public: isPublic,
-        tags: [],
-        ...(courseType === 'loop' ? { course_type: 'loop', lap_count: lapCount } : {}),
-      });
 
-      // Refresh course list then go back to it
-      await useCourseStore.getState().fetchCourses();
-      Alert.alert('코스 등록 완료', `"${response.title}" 코스가 등록되었습니다.`, [
-        {
-          text: '확인',
-          onPress: () => {
-            navigation.dispatch(
-              CommonActions.reset({
-                index: 0,
-                routes: [{ name: 'CourseList' }],
-              }),
-            );
-          },
+    const coursePayload = {
+      run_record_id: runRecordId,
+      title: title.trim(),
+      description: description.trim() || undefined,
+      route_geometry: {
+        type: 'LineString' as const,
+        coordinates: routePoints.length >= 2
+          ? routePoints.map((p) => [p.longitude, p.latitude, 0])
+          : [[127.0, 37.5, 0], [127.0001, 37.5001, 0]],
+      },
+      distance_meters: Math.max(Math.round(distanceMeters), 1),
+      estimated_duration_seconds: Math.max(Math.round(durationSeconds), 1),
+      elevation_gain_meters: Math.round(elevationGainMeters),
+      elevation_profile: [],
+      is_public: isPublic,
+      tags: [],
+      ...(courseType === 'loop' ? { course_type: 'loop', lap_count: lapCount } : {}),
+    };
+
+    const pendingId = `local-${Date.now()}`;
+
+    // 1) Save locally first (instant)
+    await savePendingCourse({
+      id: pendingId,
+      payload: coursePayload,
+      createdAt: new Date().toISOString(),
+    });
+
+    // 2) Navigate back immediately
+    setIsSubmitting(false);
+    Alert.alert('코스 저장 완료', `"${title.trim()}" 코스가 저장되었습니다.`, [
+      {
+        text: '확인',
+        onPress: () => {
+          navigation.dispatch(
+            CommonActions.reset({
+              index: 0,
+              routes: [{ name: 'CourseList' }],
+            }),
+          );
         },
-      ]);
-    } catch {
-      Alert.alert('앗...!', '코스 등록에 실패했습니다. 다시 시도해주세요.');
-    } finally {
-      setIsSubmitting(false);
-    }
+      },
+    ]);
+
+    // 3) Try server sync in background (non-blocking)
+    (async () => {
+      try {
+        await courseService.createCourse(coursePayload as unknown as Parameters<typeof courseService.createCourse>[0]);
+        await removePendingCourse(pendingId);
+        // Refresh course list silently
+        useCourseStore.getState().fetchCourses().catch(() => {});
+      } catch {
+        // Server unreachable — pending data stays in queue
+      }
+    })();
   };
 
   const isDisabled = isSubmitting || !title.trim();

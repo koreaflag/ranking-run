@@ -7,6 +7,7 @@ import AuthStack from './AuthStack';
 import TabNavigator from './TabNavigator';
 import { useTheme } from '../hooks/useTheme';
 import { ActivityIndicator, View, StatusBar } from 'react-native';
+import { syncPendingData } from '../services/pendingSyncService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -18,6 +19,13 @@ export default function RootNavigator() {
   useEffect(() => {
     loadStoredAuth();
   }, [loadStoredAuth]);
+
+  // Attempt to sync any pending offline data when app starts
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      syncPendingData().catch(() => {});
+    }
+  }, [isLoading, isAuthenticated]);
 
   const navTheme = useMemo(
     () => ({
@@ -48,8 +56,7 @@ export default function RootNavigator() {
     );
   }
 
-  // TODO: 소셜 로그인 연동 완료 후 원복
-  const showAuth = false; // !isAuthenticated || isNewUser;
+  const showAuth = !isAuthenticated || isNewUser;
 
   return (
     <NavigationContainer theme={navTheme}>

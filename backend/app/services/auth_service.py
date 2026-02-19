@@ -1,5 +1,6 @@
 """Authentication service: social login verification, user creation, token management."""
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Tuple
 from uuid import UUID
@@ -90,8 +91,10 @@ class AuthService:
                 issuer="https://appleid.apple.com",
             )
 
-            if nonce and payload.get("nonce") != nonce:
-                raise AuthenticationError(code="APPLE_AUTH_FAILED", message="Nonce mismatch")
+            if nonce:
+                expected_nonce = hashlib.sha256(nonce.encode()).hexdigest()
+                if payload.get("nonce") != expected_nonce:
+                    raise AuthenticationError(code="APPLE_AUTH_FAILED", message="Nonce mismatch")
 
             return {
                 "provider_id": payload["sub"],

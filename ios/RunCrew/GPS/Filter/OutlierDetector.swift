@@ -8,7 +8,7 @@ class OutlierDetector {
     private let maxRecentSpeeds = 10
 
     // Thresholds
-    private let maxHorizontalAccuracy: Double = 20.0  // meters (tighter: reject noisy fixes)
+    private let maxHorizontalAccuracy: Double = 50.0  // meters (allow noisier fixes; Kalman filter handles smoothing)
     private let maxSpeed: Double = 15.0                // m/s (~54 km/h)
     private let maxAcceleration: Double = 8.0          // m/s²
     private let maxTimestampAge: TimeInterval = 5.0    // seconds (fresher data only)

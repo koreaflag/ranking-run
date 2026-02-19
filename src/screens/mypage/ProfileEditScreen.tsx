@@ -23,6 +23,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { authService } from '../../services/authService';
+import { savePendingProfile, clearPendingProfile } from '../../services/pendingSyncService';
 import { useTheme } from '../../hooks/useTheme';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
@@ -188,47 +189,68 @@ export default function ProfileEditScreen() {
     }
 
     setIsSaving(true);
-    try {
-      let uploadedAvatarUrl: string | null | undefined;
 
-      if (avatarUri === '__remove__') {
-        uploadedAvatarUrl = null;
-      } else if (avatarUri) {
-        const uploadResponse = await authService.uploadAvatar(avatarUri);
-        uploadedAvatarUrl = uploadResponse.url;
-      }
+    // 1) Save locally first (instant)
+    const localProfile = {
+      ...user!,
+      nickname,
+      birthday: birthday ? birthday.toISOString().split('T')[0] : null,
+      height_cm: parsedHeight,
+      weight_kg: parsedWeight,
+      bio: bio.trim() || null,
+      instagram_username: instagram.trim() || null,
+      country,
+      activity_region: activityRegion.trim() || undefined,
+    };
 
-      const updated = await authService.updateProfile({
-        nickname,
-        ...(uploadedAvatarUrl !== undefined && { avatar_url: uploadedAvatarUrl }),
-        birthday: birthday ? birthday.toISOString().split('T')[0] : null,
-        height_cm: parsedHeight,
-        weight_kg: parsedWeight,
-        bio: bio.trim() || null,
-        instagram_username: instagram.trim() || null,
-        country,
-        activity_region: activityRegion.trim() || null,
-      });
-
-      setUser({
-        ...user!,
-        nickname: updated.nickname,
-        avatar_url: updated.avatar_url,
-        birthday: updated.birthday,
-        height_cm: updated.height_cm,
-        weight_kg: updated.weight_kg,
-        bio: updated.bio,
-        instagram_username: updated.instagram_username,
-        country: updated.country,
-        activity_region: updated.activity_region,
-      });
-
-      navigation.goBack();
-    } catch {
-      Alert.alert('앗...!', '프로필 저장에 실패했습니다. 다시 시도해 주세요.');
-    } finally {
-      setIsSaving(false);
+    if (avatarUri === '__remove__') {
+      localProfile.avatar_url = null;
+    } else if (avatarUri) {
+      localProfile.avatar_url = avatarUri;
     }
+
+    setUser(localProfile);
+
+    const profilePayload = {
+      nickname,
+      birthday: birthday ? birthday.toISOString().split('T')[0] : null,
+      height_cm: parsedHeight,
+      weight_kg: parsedWeight,
+      bio: bio.trim() || null,
+      instagram_username: instagram.trim() || null,
+      country,
+      activity_region: activityRegion.trim() || null,
+    };
+
+    // Queue for sync
+    await savePendingProfile(profilePayload);
+
+    // 2) Navigate back immediately
+    setIsSaving(false);
+    navigation.goBack();
+
+    // 3) Try server sync in background (non-blocking)
+    (async () => {
+      try {
+        let uploadedAvatarUrl: string | null | undefined;
+        if (avatarUri === '__remove__') {
+          uploadedAvatarUrl = null;
+        } else if (avatarUri) {
+          const uploadResponse = await authService.uploadAvatar(avatarUri);
+          uploadedAvatarUrl = uploadResponse.url;
+        }
+
+        await authService.updateProfile({
+          ...profilePayload,
+          ...(uploadedAvatarUrl !== undefined && { avatar_url: uploadedAvatarUrl }),
+        });
+
+        // Server succeeded — clear pending
+        await clearPendingProfile();
+      } catch {
+        // Server unreachable — pending data stays in queue for next sync
+      }
+    })();
   };
 
   const displayAvatarUri =
