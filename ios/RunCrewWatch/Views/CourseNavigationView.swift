@@ -1,5 +1,7 @@
 import SwiftUI
 
+private let appOrange = Color(red: 1.0, green: 0.478, blue: 0.2)
+
 struct CourseNavigationView: View {
     @EnvironmentObject var viewModel: RunSessionViewModel
 
@@ -14,7 +16,7 @@ struct CourseNavigationView: View {
             // Direction arrow
             Image(systemName: detailedDirectionIcon())
                 .font(.system(size: 44, weight: .bold))
-                .foregroundColor(.green)
+                .foregroundColor(appOrange)
                 .padding(.top, 4)
 
             // Turn instruction text (distance countdown or simple direction)
@@ -51,7 +53,7 @@ struct CourseNavigationView: View {
             // Progress bar
             VStack(spacing: 4) {
                 ProgressView(value: max(0, min(100, viewModel.state.navProgress)), total: 100)
-                    .tint(.green)
+                    .tint(appOrange)
                 Text(String(format: "%.0f%%", max(0, viewModel.state.navProgress)))
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundColor(.gray)

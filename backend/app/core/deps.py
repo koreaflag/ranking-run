@@ -50,6 +50,32 @@ async def get_current_user(
     return user
 
 
+async def get_optional_current_user(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Depends(bearer_scheme),
+    ],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User | None:
+    """Try to extract the current user, returning None if not authenticated."""
+    if credentials is None:
+        return None
+
+    token = credentials.credentials
+    try:
+        payload = decode_access_token(token)
+        user_id_str: str | None = payload.get("sub")
+        if user_id_str is None:
+            return None
+        user_id = UUID(user_id_str)
+    except (JWTError, ValueError):
+        return None
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    return result.scalar_one_or_none()
+
+
 # Type aliases for cleaner endpoint signatures
 CurrentUser = Annotated[User, Depends(get_current_user)]
+OptionalCurrentUser = Annotated[User | None, Depends(get_optional_current_user)]
 DbSession = Annotated[AsyncSession, Depends(get_db)]

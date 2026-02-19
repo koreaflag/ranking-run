@@ -34,6 +34,8 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     bio: Mapped[str | None] = mapped_column(String(100), nullable=True)
     instagram_username: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    activity_region: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(50), nullable=True)
     total_distance_meters: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     total_runs: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
@@ -44,6 +46,11 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         lazy="selectin",
     )
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="noload",
+    )
+    gear_items: Mapped[list["UserGear"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         lazy="noload",

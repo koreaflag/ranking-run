@@ -1,14 +1,14 @@
-# RunCrew API — Caddy reverse proxy with automatic HTTPS
+# RUNVS API — Caddy reverse proxy with automatic HTTPS
 #
 # Usage:
-#   1. Set DOMAIN env var or replace api.runcrew.app below
+#   1. Set DOMAIN env var or replace api.runvs.app below
 #   2. DNS A record must point to this server's IP
 #   3. Caddy auto-provisions Let's Encrypt SSL certificate
 #
 # Development: use localhost for local testing (self-signed cert)
 # Production:  use your actual domain (auto Let's Encrypt)
 
-{$DOMAIN:api.runcrew.app} {
+{$DOMAIN:api.runvs.app} {
 	# Reverse proxy to FastAPI backend
 	reverse_proxy backend:8000
 

@@ -42,6 +42,10 @@ class GPSTrackerModule: RCTEventEmitter {
             WatchSessionManager.shared.sendMilestone(km: km, splitPace: splitPace, totalTime: totalTime)
         }
 
+        engine.onHeadingUpdate = { [weak self] event in
+            self?.sendEventIfListening("GPSTracker_onHeadingUpdate", body: event)
+        }
+
         locationEngine = engine
     }
 
@@ -51,7 +55,8 @@ class GPSTrackerModule: RCTEventEmitter {
         return [
             "GPSTracker_onLocationUpdate",
             "GPSTracker_onGPSStatusChange",
-            "GPSTracker_onRunningStateChange"
+            "GPSTracker_onRunningStateChange",
+            "GPSTracker_onHeadingUpdate"
         ]
     }
 
@@ -77,6 +82,7 @@ class GPSTrackerModule: RCTEventEmitter {
     @objc
     func startTracking(_ resolve: @escaping RCTPromiseResolveBlock,
                         rejecter reject: @escaping RCTPromiseRejectBlock) {
+        hasListeners = true
         DispatchQueue.main.async { [weak self] in
             self?.locationEngine?.startTracking()
             resolve(nil)
@@ -142,6 +148,27 @@ class GPSTrackerModule: RCTEventEmitter {
     func requestLocationPermission() {
         DispatchQueue.main.async { [weak self] in
             self?.locationEngine?.requestPermission()
+        }
+    }
+
+    @objc
+    func startHeadingUpdates(_ resolve: @escaping RCTPromiseResolveBlock,
+                              rejecter reject: @escaping RCTPromiseRejectBlock) {
+        // Force-enable listeners — NativeEventEmitter may not call startObserving()
+        // in newer React Native versions, causing all events to be silently dropped.
+        hasListeners = true
+        DispatchQueue.main.async { [weak self] in
+            self?.locationEngine?.startHeadingOnly()
+            resolve(nil)
+        }
+    }
+
+    @objc
+    func stopHeadingUpdates(_ resolve: @escaping RCTPromiseResolveBlock,
+                             rejecter reject: @escaping RCTPromiseRejectBlock) {
+        DispatchQueue.main.async { [weak self] in
+            self?.locationEngine?.stopHeadingOnly()
+            resolve(nil)
         }
     }
 }

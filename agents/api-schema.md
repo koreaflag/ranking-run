@@ -1,4 +1,4 @@
-# RunCrew API 통신 스키마
+# RUNVS API 통신 스키마
 
 앱의 각 시점(moment)에서 어떤 데이터를 보내고 받는지 정의한다.
 백엔드는 FastAPI (Python), DB는 PostgreSQL + PostGIS.

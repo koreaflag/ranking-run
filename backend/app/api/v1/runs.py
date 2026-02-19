@@ -170,7 +170,8 @@ async def complete_run_session(
         distance_meters=run_record.distance_meters,
     )
 
-    if run_record.course_id and run_record.course_completed:
+    # Only update rankings if run is not flagged for speed anomaly
+    if run_record.course_id and run_record.course_completed and not run_record.is_flagged:
         background_tasks.add_task(
             recalculate_course_ranking,
             course_id=run_record.course_id,
@@ -185,6 +186,8 @@ async def complete_run_session(
 
     return RunCompleteResponse(
         run_record_id=str(run_record.id),
+        is_flagged=run_record.is_flagged,
+        flag_reason=run_record.flag_reason,
         user_stats_update=user_stats_update,
         missing_chunk_sequences=missing_chunks,
     )

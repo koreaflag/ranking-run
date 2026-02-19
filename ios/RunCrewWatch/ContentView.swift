@@ -7,25 +7,16 @@ struct ContentView: View {
         Group {
             switch viewModel.state.phase {
             case "running":
-                if viewModel.state.isCourseRun {
-                    TabView {
-                        RunningView()
-                        CourseNavigationView()
-                    }
-                    .tabViewStyle(.page)
-                } else {
+                TabView {
                     RunningView()
-                }
-            case "paused":
-                if viewModel.state.isCourseRun {
-                    TabView {
-                        PausedView()
+                    ControlView()
+                    if viewModel.state.isCourseRun {
                         CourseNavigationView()
                     }
-                    .tabViewStyle(.page)
-                } else {
-                    PausedView()
                 }
+                .tabViewStyle(.page)
+            case "paused":
+                PausedView()
             case "completed":
                 CompletedView()
             case "countdown":

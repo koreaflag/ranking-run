@@ -70,9 +70,9 @@ export default function CourseCreateScreen() {
             ? routePoints.map((p) => [p.longitude, p.latitude, 0])
             : [[127.0, 37.5, 0], [127.0001, 37.5001, 0]],
         },
-        distance_meters: Math.max(distanceMeters, 1),
-        estimated_duration_seconds: Math.max(durationSeconds, 1),
-        elevation_gain_meters: elevationGainMeters,
+        distance_meters: Math.max(Math.round(distanceMeters), 1),
+        estimated_duration_seconds: Math.max(Math.round(durationSeconds), 1),
+        elevation_gain_meters: Math.round(elevationGainMeters),
         elevation_profile: [],
         is_public: isPublic,
         tags: [],

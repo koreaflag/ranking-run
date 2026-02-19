@@ -27,6 +27,7 @@ export interface LocationUpdateEvent {
   timestamp: number;
   distanceFromStart: number;
   isMoving: boolean;
+  cadence?: number; // steps per minute
 }
 
 export interface GPSStatusChangeEvent {

@@ -26,4 +26,10 @@ RCT_EXTERN_METHOD(getCurrentStatus:(RCTPromiseResolveBlock)resolve
 
 RCT_EXTERN_METHOD(requestLocationPermission)
 
+RCT_EXTERN_METHOD(startHeadingUpdates:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(stopHeadingUpdates:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end

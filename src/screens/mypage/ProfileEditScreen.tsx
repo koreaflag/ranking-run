@@ -109,6 +109,7 @@ export default function ProfileEditScreen() {
   const [bio, setBio] = useState(user?.bio ?? '');
   const [instagram, setInstagram] = useState(user?.instagram_username ?? '');
   const [country, setCountry] = useState<string | null>(user?.country ?? null);
+  const [activityRegion, setActivityRegion] = useState(user?.activity_region ?? '');
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -206,6 +207,7 @@ export default function ProfileEditScreen() {
         bio: bio.trim() || null,
         instagram_username: instagram.trim() || null,
         country,
+        activity_region: activityRegion.trim() || null,
       });
 
       setUser({
@@ -218,6 +220,7 @@ export default function ProfileEditScreen() {
         bio: updated.bio,
         instagram_username: updated.instagram_username,
         country: updated.country,
+        activity_region: updated.activity_region,
       });
 
       navigation.goBack();
@@ -370,6 +373,20 @@ export default function ProfileEditScreen() {
               </Text>
               <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
+          </View>
+
+          {/* Activity Region */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>활동지역</Text>
+            <TextInput
+              style={styles.textInput}
+              value={activityRegion}
+              onChangeText={setActivityRegion}
+              placeholder="예: 서울 강남구"
+              placeholderTextColor={colors.textTertiary}
+              maxLength={30}
+              returnKeyType="done"
+            />
           </View>
 
           {/* Birthday */}

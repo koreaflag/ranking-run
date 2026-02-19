@@ -70,6 +70,10 @@ class RunRecord(Base, UUIDPrimaryKeyMixin):
     route_match_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_deviation_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Speed anomaly detection
+    is_flagged: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    flag_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # External import tracking
     source: Mapped[str] = mapped_column(
         String(20),

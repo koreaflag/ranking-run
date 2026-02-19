@@ -1,7 +1,7 @@
 [project]
-name = "runcrew-backend"
+name = "runvs-backend"
 version = "0.1.0"
-description = "RunCrew 런닝 코스 공유 앱 백엔드"
+description = "RUNVS 런닝 코스 공유 앱 백엔드"
 requires-python = ">=3.11"
 dependencies = [
     # Web framework

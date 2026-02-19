@@ -1,4 +1,4 @@
-"""Initial schema - all tables for RunCrew
+"""Initial schema - all tables for RUNVS
 
 Revision ID: 0001
 Revises: None

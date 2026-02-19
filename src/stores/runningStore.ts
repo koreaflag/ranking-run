@@ -26,6 +26,7 @@ interface RunningState {
   elevationGainMeters: number;
   elevationLossMeters: number;
   calories: number;
+  cadence: number; // steps per minute
 
   // GPS
   gpsStatus: GPSStatus;
@@ -94,6 +95,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   elevationGainMeters: 0,
   elevationLossMeters: 0,
   calories: 0,
+  cadence: 0,
 
   gpsStatus: 'searching',
   currentLocation: null,
@@ -137,6 +139,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       elevationGainMeters: 0,
       elevationLossMeters: 0,
       calories: 0,
+      cadence: 0,
       currentLocation: null,
       routePoints: [],
       filteredLocations: [],
@@ -227,6 +230,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       avgPaceSecondsPerKm: avgPace,
       routePoints: newRoutePoints,
       calories: caloriesBurned,
+      cadence: event.cadence ?? state.cadence,
       startPoint,
       distanceToStart,
       isApproachingStart,
@@ -294,6 +298,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       elevationGainMeters: 0,
       elevationLossMeters: 0,
       calories: 0,
+      cadence: 0,
       gpsStatus: 'searching',
       currentLocation: null,
       routePoints: [],

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,14 +7,15 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { useRunningStore } from '../../stores/runningStore';
 import { runService } from '../../services/runService';
 import { useTheme } from '../../hooks/useTheme';
+import { useCompassHeading } from '../../hooks/useCompassHeading';
+import { Ionicons } from '@expo/vector-icons';
 import Button from '../../components/common/Button';
-import Card from '../../components/common/Card';
-import StatItem from '../../components/common/StatItem';
 import RouteMapView from '../../components/map/RouteMapView';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import GlassCard from '../../components/common/GlassCard';
@@ -27,9 +28,11 @@ import {
   formatPace,
   metersToKm,
 } from '../../utils/format';
-import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
+import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 
 type ResultRoute = RouteProp<RunningStackParamList, 'RunResult'>;
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 function getRankColor(rank: number, c: ThemeColors): string {
   if (rank === 1) return c.gold;
@@ -59,19 +62,31 @@ export default function RunResultScreen() {
     avgPaceSecondsPerKm,
     calories,
     routePoints,
-    currentLocation,
     splits,
     elevationGainMeters,
     elevationLossMeters,
     courseId,
     loopDetected,
     stopLocation,
+    heartRate,
+    cadence,
     reset,
   } = useRunningStore();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<RunCompleteResponse | null>(null);
   const [submitted, setSubmitted] = useState(false);
+
+  // Compass heading (native CLHeading only — no GPS bearing after run ends)
+  const headingValue = useCompassHeading();
+  const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  const handleUserLocationChange = useCallback(
+    (coord: { latitude: number; longitude: number; heading?: number }) => {
+      setMyLocation({ latitude: coord.latitude, longitude: coord.longitude });
+    },
+    [],
+  );
 
   // Submit run to server on mount
   useEffect(() => {
@@ -82,7 +97,7 @@ export default function RunResultScreen() {
         const response = await runService.completeRun(sessionId, {
           distance_meters: distanceMeters,
           duration_seconds: durationSeconds,
-          total_elapsed_seconds: durationSeconds, // simplified for MVP
+          total_elapsed_seconds: durationSeconds,
           avg_pace_seconds_per_km: avgPaceSecondsPerKm,
           best_pace_seconds_per_km:
             splits.length > 0
@@ -116,7 +131,6 @@ export default function RunResultScreen() {
         setSubmitted(true);
       } catch (error) {
         console.warn('[RunResult] completeRun failed:', sessionId, error);
-        // Data is saved locally via chunks — user can still browse result
       } finally {
         setIsSubmitting(false);
       }
@@ -164,7 +178,11 @@ export default function RunResultScreen() {
       Alert.alert('알림', '코스 등록은 500m 이상 달려야 가능합니다.');
       return;
     }
-    const runRecordId = result?.run_record_id ?? sessionId;
+    if (!result?.run_record_id) {
+      Alert.alert('알림', '기록 업로드가 완료되지 않았습니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+    const runRecordId = result.run_record_id;
     const params = {
       runRecordId,
       routePoints,
@@ -208,7 +226,7 @@ export default function RunResultScreen() {
           </Text>
         </View>
 
-        {/* Hero Distance -- the BIGGEST element */}
+        {/* Hero Distance */}
         <View style={styles.heroSection}>
           <View style={styles.heroDistanceRow}>
             <Text style={styles.heroDistance}>{metersToKm(distanceMeters)}</Text>
@@ -216,45 +234,74 @@ export default function RunResultScreen() {
           </View>
         </View>
 
-        {/* Stats Grid -- GlassCard */}
+        {/* Stats Grid */}
         <View style={styles.statsGridWrapper}>
           <GlassCard>
             <View style={styles.statsGridInner}>
-              <View style={styles.statCell}>
-                <Text style={styles.statValue}>
-                  {formatDuration(durationSeconds)}
-                </Text>
-                <Text style={styles.statLabel}>시간</Text>
+              <View style={styles.statRow}>
+                <View style={styles.statCell}>
+                  <Text style={styles.statValue}>{formatDuration(durationSeconds)}</Text>
+                  <Text style={styles.statLabel}>시간</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statCell}>
+                  <Text style={styles.statValue}>{formatPace(avgPaceSecondsPerKm)}</Text>
+                  <Text style={styles.statLabel}>평균 페이스</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statCell}>
+                  <Text style={styles.statValue}>{calories}</Text>
+                  <Text style={styles.statLabel}>kcal</Text>
+                </View>
               </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statCell}>
-                <Text style={styles.statValue}>
-                  {formatPace(avgPaceSecondsPerKm)}
-                </Text>
-                <Text style={styles.statLabel}>평균 페이스</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statCell}>
-                <Text style={styles.statValue}>{calories}</Text>
-                <Text style={styles.statLabel}>kcal</Text>
+              <View style={styles.statRowDivider} />
+              <View style={styles.statRow}>
+                <View style={styles.statCell}>
+                  <Text style={[styles.statValue, heartRate > 0 && { color: colors.error }]}>
+                    {heartRate > 0 ? Math.round(heartRate) : '--'}
+                  </Text>
+                  <Text style={styles.statLabel}>심박수</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statCell}>
+                  <Text style={styles.statValue}>{cadence > 0 ? cadence : '--'}</Text>
+                  <Text style={styles.statLabel}>케이던스</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statCell}>
+                  <Text style={styles.statValue}>
+                    {elevationGainMeters > 0 ? `+${Math.round(elevationGainMeters)}` : '--'}
+                  </Text>
+                  <Text style={styles.statLabel}>고도(m)</Text>
+                </View>
               </View>
             </View>
           </GlassCard>
         </View>
 
-        {/* Route Map */}
+        {/* Speed anomaly warning */}
+        {result?.is_flagged && (
+          <View style={styles.flagWarning}>
+            <Ionicons name="warning" size={16} color={COLORS.white} />
+            <View style={styles.flagTextArea}>
+              <Text style={styles.flagTitle}>비정상 속도 감지</Text>
+              <Text style={styles.flagDesc}>
+                {result.flag_reason ?? '인간이 낼 수 없는 속도가 기록되어 랭킹에서 제외됩니다.'}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Route Map with custom user location + heading */}
         <View style={styles.mapContainer}>
           <RouteMapView
             routePoints={routePoints.length >= 2 ? routePoints : undefined}
             showUserLocation
+            interactive
             endPointOverride={stopLocation ?? undefined}
-            lastKnownLocation={
-              currentLocation
-                ? { latitude: currentLocation.latitude, longitude: currentLocation.longitude }
-                : routePoints.length > 0
-                  ? routePoints[routePoints.length - 1]
-                  : undefined
-            }
+            customUserLocation={myLocation ?? undefined}
+            customUserHeading={headingValue}
+            onUserLocationChange={handleUserLocationChange}
             style={styles.mapPreview}
           />
         </View>
@@ -267,7 +314,6 @@ export default function RunResultScreen() {
               { backgroundColor: getRankBgColor(result.ranking.rank, colors) },
             ]}
           >
-            <Text style={styles.rankingLabel}>코스 순위</Text>
             <View style={styles.rankBadgeRow}>
               <View
                 style={[
@@ -375,13 +421,13 @@ export default function RunResultScreen() {
           </View>
         )}
 
-        {/* Action Buttons */}
+        {/* Action Buttons — compact */}
         <View style={styles.actions}>
           <Button
             title="다시 달리기"
             onPress={handleRunAgain}
             fullWidth
-            size="lg"
+            size="md"
           />
           {courseId && (
             <Button
@@ -389,18 +435,20 @@ export default function RunResultScreen() {
               variant="outline"
               onPress={handleWriteReview}
               fullWidth
-              size="lg"
+              size="md"
             />
           )}
           {!courseId && (
             <Button
               title={distanceMeters < MIN_COURSE_DISTANCE_M
                 ? `코스 등록 (${MIN_COURSE_DISTANCE_M}m 이상 필요)`
-                : '코스로 등록'}
+                : isSubmitting
+                  ? '업로드 완료 후 등록 가능'
+                  : '코스로 등록'}
               variant="outline"
               onPress={handleRegisterCourse}
               fullWidth
-              size="lg"
+              size="md"
               disabled={distanceMeters < MIN_COURSE_DISTANCE_M}
             />
           )}
@@ -409,7 +457,7 @@ export default function RunResultScreen() {
             variant="secondary"
             onPress={handleGoHome}
             fullWidth
-            size="lg"
+            size="md"
           />
         </View>
       </ScrollView>
@@ -426,17 +474,17 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: SPACING.xxxl + SPACING.xl,
+    paddingBottom: SPACING.xl,
   },
 
-  // -- Header: minimal, let stats speak --
+  // -- Header --
   header: {
-    paddingTop: SPACING.xxxl,
+    paddingTop: SPACING.md,
     paddingHorizontal: SPACING.xxl,
-    paddingBottom: SPACING.sm,
+    paddingBottom: SPACING.xs,
   },
   headerLabel: {
-    fontSize: FONT_SIZES.md,
+    fontSize: FONT_SIZES.sm,
     fontWeight: '600',
     color: c.textTertiary,
     textTransform: 'uppercase',
@@ -444,10 +492,10 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     textAlign: 'center',
   },
 
-  // -- Hero Distance: the BIGGEST element --
+  // -- Hero Distance --
   heroSection: {
     alignItems: 'center',
-    paddingVertical: SPACING.xl,
+    paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.xxl,
   },
   heroDistanceRow: {
@@ -456,18 +504,18 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     justifyContent: 'center',
   },
   heroDistance: {
-    fontSize: 80,
+    fontSize: 56,
     fontWeight: '900',
     color: c.text,
     fontVariant: ['tabular-nums'],
-    letterSpacing: -3,
-    lineHeight: 88,
+    letterSpacing: -2,
+    lineHeight: 62,
   },
   heroUnit: {
-    fontSize: FONT_SIZES.xxl,
+    fontSize: FONT_SIZES.xl,
     fontWeight: '600',
     color: c.textTertiary,
-    marginLeft: SPACING.sm,
+    marginLeft: SPACING.xs,
     letterSpacing: 1,
   },
 
@@ -476,16 +524,23 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     marginHorizontal: SPACING.xxl,
   },
   statsGridInner: {
+  },
+  statRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  statRowDivider: {
+    height: 1,
+    backgroundColor: c.divider,
+    marginHorizontal: SPACING.lg,
   },
   statCell: {
     flex: 1,
     alignItems: 'center',
-    gap: SPACING.xs,
+    gap: 2,
   },
   statValue: {
-    fontSize: FONT_SIZES.xxl,
+    fontSize: FONT_SIZES.xl,
     fontWeight: '800',
     color: c.text,
     fontVariant: ['tabular-nums'],
@@ -498,52 +553,72 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   statDivider: {
     width: 1,
-    height: 32,
+    height: 28,
     backgroundColor: c.divider,
+  },
+
+  // -- Flag Warning --
+  flagWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+    marginHorizontal: SPACING.xxl,
+    backgroundColor: c.error,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+  },
+  flagTextArea: {
+    flex: 1,
+    gap: 2,
+  },
+  flagTitle: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  flagDesc: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 16,
   },
 
   // -- Route Map --
   mapContainer: {
-    marginTop: SPACING.xl,
-    marginHorizontal: SPACING.xxl,
+    marginTop: SPACING.md,
+    marginHorizontal: SPACING.lg,
     borderRadius: BORDER_RADIUS.lg,
     overflow: 'hidden',
     backgroundColor: c.surface,
   },
   mapPreview: {
-    height: 200,
+    height: SCREEN_HEIGHT * 0.35,
     borderRadius: 0,
   },
 
   // -- Ranking Card --
   rankingCard: {
-    marginTop: SPACING.xl,
+    marginTop: SPACING.md,
     marginHorizontal: SPACING.xxl,
     borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.xl,
-    gap: SPACING.lg,
-  },
-  rankingLabel: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: '600',
-    color: c.textTertiary,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
+    padding: SPACING.lg,
+    gap: SPACING.sm,
   },
   rankBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.lg,
+    gap: SPACING.md,
   },
   rankCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
   rankCircleText: {
-    fontSize: FONT_SIZES.xxl,
+    fontSize: FONT_SIZES.xl,
     fontWeight: '900',
     color: c.white,
   },
@@ -551,29 +626,29 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     gap: 2,
   },
   rankPosition: {
-    fontSize: 40,
+    fontSize: 32,
     fontWeight: '900',
     color: c.text,
     letterSpacing: -1,
   },
   rankSuffix: {
-    fontSize: FONT_SIZES.lg,
+    fontSize: FONT_SIZES.md,
     fontWeight: '700',
   },
   rankTotal: {
-    fontSize: FONT_SIZES.md,
+    fontSize: FONT_SIZES.sm,
     color: c.textSecondary,
     fontWeight: '500',
   },
   pbBadge: {
     backgroundColor: c.accent,
-    paddingVertical: SPACING.sm + 2,
-    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.xs + 2,
+    paddingHorizontal: SPACING.md,
     borderRadius: BORDER_RADIUS.sm,
     alignSelf: 'flex-start',
   },
   pbText: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: FONT_SIZES.xs,
     fontWeight: '800',
     color: c.white,
     letterSpacing: 1,
@@ -581,12 +656,12 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
 
   // -- Split Times --
   splitsSection: {
-    marginTop: SPACING.xl,
+    marginTop: SPACING.md,
     paddingHorizontal: SPACING.xxl,
-    gap: SPACING.md,
+    gap: SPACING.sm,
   },
   sectionTitle: {
-    fontSize: FONT_SIZES.lg,
+    fontSize: FONT_SIZES.md,
     fontWeight: '800',
     color: c.text,
     letterSpacing: -0.3,
@@ -601,7 +676,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm + 2,
+    paddingVertical: SPACING.xs + 2,
     borderBottomWidth: 1,
     borderBottomColor: c.divider,
   },
@@ -617,7 +692,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.lg,
   },
   splitRowAlt: {
@@ -630,7 +705,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     gap: 3,
   },
   splitKm: {
-    fontSize: FONT_SIZES.lg,
+    fontSize: FONT_SIZES.md,
     fontWeight: '700',
     color: c.text,
     fontVariant: ['tabular-nums'],
@@ -641,7 +716,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.textTertiary,
   },
   splitPace: {
-    fontSize: FONT_SIZES.md,
+    fontSize: FONT_SIZES.sm,
     fontWeight: '700',
     color: c.text,
     fontVariant: ['tabular-nums'],
@@ -649,7 +724,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     textAlign: 'center',
   },
   splitTime: {
-    fontSize: FONT_SIZES.md,
+    fontSize: FONT_SIZES.sm,
     fontWeight: '500',
     color: c.textSecondary,
     fontVariant: ['tabular-nums'],
@@ -659,9 +734,9 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
 
   // -- Elevation --
   elevationCard: {
-    marginTop: SPACING.xl,
+    marginTop: SPACING.md,
     marginHorizontal: SPACING.xxl,
-    gap: SPACING.md,
+    gap: SPACING.sm,
   },
   elevationRow: {
     flexDirection: 'row',
@@ -669,23 +744,23 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     backgroundColor: c.surface,
     borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.xl,
+    paddingVertical: SPACING.md,
   },
   elevationItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.md,
+    gap: SPACING.sm,
   },
   elevationArrowUp: {
-    fontSize: FONT_SIZES.lg,
+    fontSize: FONT_SIZES.md,
     color: c.success,
   },
   elevationArrowDown: {
-    fontSize: FONT_SIZES.lg,
+    fontSize: FONT_SIZES.md,
     color: c.error,
   },
   elevationValue: {
-    fontSize: FONT_SIZES.xl,
+    fontSize: FONT_SIZES.lg,
     fontWeight: '800',
     color: c.text,
     fontVariant: ['tabular-nums'],
@@ -697,7 +772,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   elevationDivider: {
     width: 1,
-    height: 40,
+    height: 32,
     backgroundColor: c.divider,
   },
 
@@ -707,8 +782,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: SPACING.sm,
-    paddingVertical: SPACING.md,
-    marginTop: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    marginTop: SPACING.sm,
   },
   uploadingText: {
     fontSize: FONT_SIZES.sm,
@@ -718,8 +793,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
 
   // -- Actions --
   actions: {
-    gap: SPACING.md,
-    paddingTop: SPACING.xxxl,
+    gap: SPACING.sm,
+    paddingTop: SPACING.lg,
     paddingHorizontal: SPACING.xxl,
   },
 });

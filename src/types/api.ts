@@ -1,5 +1,5 @@
 // ============================================================
-// RunCrew API Type Definitions
+// RUNVS API Type Definitions
 // Matches the API schema defined in api-schema.md
 // ============================================================
 
@@ -64,6 +64,7 @@ export interface UserProfile {
   bio: string | null;
   instagram_username: string | null;
   country: string | null;
+  activity_region?: string;
   total_distance_meters: number;
   total_runs: number;
   created_at: string;
@@ -83,6 +84,7 @@ export interface ProfileUpdateRequest {
   bio?: string | null;
   instagram_username?: string | null;
   country?: string | null;
+  activity_region?: string | null;
 }
 
 export interface ProfileSetupResponse {
@@ -252,14 +254,16 @@ export interface CourseCreateRequest {
   elevation_profile: number[];
   is_public: boolean;
   tags?: string[];
+  course_type?: 'normal' | 'loop';
+  lap_count?: number;
 }
 
 export interface CourseCreateResponse {
   id: string;
   title: string;
   distance_meters: number;
-  thumbnail_url: string;
-  share_url: string;
+  thumbnail_url: string | null;
+  share_url: string | null;
   created_at: string;
 }
 
@@ -434,6 +438,8 @@ export interface RunCompleteResponse {
     is_personal_best: boolean;
     previous_best_duration?: number;
   };
+  is_flagged?: boolean;
+  flag_reason?: string;
   user_stats_update: {
     total_distance_meters: number;
     total_runs: number;
@@ -592,6 +598,7 @@ export interface PublicProfile {
   avatar_url: string | null;
   bio: string | null;
   instagram_username: string | null;
+  activity_region?: string;
   total_distance_meters: number;
   total_runs: number;
   created_at: string;
@@ -600,6 +607,8 @@ export interface PublicProfile {
   is_following: boolean;
   courses: PublicProfileCourse[];
   top_rankings: PublicProfileRanking[];
+  primary_gear?: GearItem | null;
+  gear_items?: GearItem[];
 }
 
 // ---- Social Counts ----
@@ -682,6 +691,32 @@ export interface ImportListResponse {
   data: ImportDetailResponse[];
   total_count: number;
   has_next: boolean;
+}
+
+// ---- Gear ----
+
+export interface GearItem {
+  id: string;
+  brand: string;
+  model_name: string;
+  image_url?: string;
+  is_primary: boolean;
+  total_distance_meters: number;
+  created_at: string;
+}
+
+export interface GearCreateRequest {
+  brand: string;
+  model_name: string;
+  image_url?: string;
+  is_primary?: boolean;
+}
+
+export interface GearUpdateRequest {
+  brand?: string;
+  model_name?: string;
+  image_url?: string;
+  is_primary?: boolean;
 }
 
 // ---- Strava Integration ----

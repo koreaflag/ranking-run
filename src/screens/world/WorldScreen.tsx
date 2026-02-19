@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
-  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -19,10 +18,11 @@ import type { WorldStackParamList } from '../../types/navigation';
 import type { GeoJSONLineString } from '../../types/api';
 
 import { useTheme } from '../../hooks/useTheme';
+import { useSettingsStore } from '../../stores/settingsStore';
 import type { ThemeColors } from '../../utils/constants';
 import { formatDistance } from '../../utils/format';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
-import { Magnetometer, Accelerometer } from 'expo-sensors';
+import { useCompassHeading } from '../../hooks/useCompassHeading';
 import api from '../../services/api';
 
 type WorldNav = NativeStackNavigationProp<WorldStackParamList, 'World'>;
@@ -135,6 +135,7 @@ export default function WorldScreen() {
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { mapMarkers, fetchMapMarkers, nearbyCourses, fetchNearbyCourses, pendingFocusCourseId } = useCourseStore();
+  const { map3DStyle, setMap3DStyle } = useSettingsStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<RouteMapViewHandle>(null);
   const [userRegion, setUserRegion] = useState<Region | null>(null);
@@ -144,9 +145,8 @@ export default function WorldScreen() {
 
   // Weather state
   const [weather, setWeather] = useState<WeatherData | null>(null);
-  // Heading — use Animated.Value for smooth rotation (avoids re-renders)
-  const headingAnim = useRef(new Animated.Value(0)).current;
-  const headingRef = useRef(0);
+  // Heading — use shared compass hook for smooth rotation (avoids re-renders)
+  const headingAnim = useCompassHeading();
 
   // Selected marker state
   const [selectedMarker, setSelectedMarker] = useState<CourseMarkerData | null>(null);
@@ -205,60 +205,6 @@ export default function WorldScreen() {
     };
     fetchWeather();
   }, []);
-
-  // Tilt-compensated compass: works both flat on table and held upright
-  const gravRef = useRef({ x: 0, y: 0, z: -1 });
-
-  useEffect(() => {
-    Accelerometer.setUpdateInterval(300);
-    const sub = Accelerometer.addListener((data) => {
-      gravRef.current = data;
-    });
-    return () => sub.remove();
-  }, []);
-
-  useEffect(() => {
-    Magnetometer.setUpdateInterval(300);
-    const subscription = Magnetometer.addListener((mag) => {
-      const { x: ax, y: ay, z: az } = gravRef.current;
-      const { x: mx, y: my, z: mz } = mag;
-
-      // Normalize gravity
-      const gNorm = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
-      const gx = ax / gNorm;
-      const gy = ay / gNorm;
-      const gz = az / gNorm;
-
-      // Pitch & roll from gravity
-      const pitch = Math.asin(Math.max(-1, Math.min(1, -gx)));
-      const roll = Math.atan2(gy, gz);
-
-      // Tilt-compensated magnetic heading
-      const cp = Math.cos(pitch);
-      const sp = Math.sin(pitch);
-      const cr = Math.cos(roll);
-      const sr = Math.sin(roll);
-      const xH = mx * cp + mz * sp;
-      const yH = mx * sr * sp + my * cr - mz * sr * cp;
-      let heading = (Math.atan2(-yH, xH) * (180 / Math.PI) + 360) % 360;
-
-      // Shortest rotation path
-      const prev = headingRef.current;
-      let diff = heading - prev;
-      if (diff > 180) diff -= 360;
-      if (diff < -180) diff += 360;
-      const target = prev + diff;
-      headingRef.current = heading;
-
-      Animated.timing(headingAnim, {
-        toValue: target,
-        duration: 250,
-        useNativeDriver: true,
-      }).start();
-    });
-
-    return () => subscription.remove();
-  }, [headingAnim]);
 
   const handleRegionChange = useCallback(
     (region: Region) => {
@@ -523,11 +469,12 @@ export default function WorldScreen() {
           }
         }}
         followsUserLocation={followUser}
-        showUserLocation={followUser || !myLocation}
-        customUserLocation={!followUser ? (myLocation ?? undefined) : undefined}
-        customUserHeading={!followUser ? headingAnim : undefined}
+        showUserLocation={!myLocation}
+        customUserLocation={myLocation ?? undefined}
+        customUserHeading={headingAnim}
         interactive
-        pitchEnabled={is3DMode}
+        pitchEnabled={map3DStyle || is3DMode}
+        use3DStyle={map3DStyle}
         style={styles.map}
       />
 
@@ -568,8 +515,17 @@ export default function WorldScreen() {
         </SafeAreaView>
       )}
 
-      {/* Right side: My Location button */}
+      {/* Right side: controls */}
       <View style={styles.rightControls} pointerEvents="box-none">
+        <TouchableOpacity
+          style={styles.myLocationButton}
+          onPress={() => setMap3DStyle(!map3DStyle)}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.mapToggleText, { color: colors.text }]}>
+            {map3DStyle ? '3D' : '2D'}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.myLocationButton}
           onPress={handleMyLocation}
@@ -910,6 +866,11 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...SHADOWS.md,
+  },
+  mapToggleText: {
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: -0.5,
   },
 
   // -- Bottom overlay --

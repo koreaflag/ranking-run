@@ -1,4 +1,4 @@
-# RunCrew Backend — 현황 및 잔여 작업
+# RUNVS Backend — 현황 및 잔여 작업
 
 최종 업데이트: 2026-02-19
 

@@ -1,6 +1,8 @@
 import SwiftUI
 import WatchKit
 
+private let appOrange = Color(red: 1.0, green: 0.478, blue: 0.2)
+
 struct CountdownView: View {
     @EnvironmentObject var viewModel: RunSessionViewModel
     @State private var countdown = 3
@@ -13,14 +15,14 @@ struct CountdownView: View {
             if countdown > 0 {
                 Text("\(countdown)")
                     .font(.system(size: 72, weight: .heavy, design: .rounded))
-                    .foregroundColor(.green)
+                    .foregroundColor(appOrange)
                     .scaleEffect(scale)
                     .opacity(opacity)
                     .accessibilityLabel("카운트다운 \(countdown)")
             } else {
                 Text("GO!")
                     .font(.system(size: 52, weight: .heavy, design: .rounded))
-                    .foregroundColor(.green)
+                    .foregroundColor(appOrange)
                     .scaleEffect(scale)
                     .opacity(opacity)
                     .accessibilityLabel("출발")

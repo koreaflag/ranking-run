@@ -1,7 +1,7 @@
 services:
   db:
     image: postgis/postgis:16-3.4
-    container_name: runcrew-db
+    container_name: runvs-db
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-runcrew}
       POSTGRES_USER: ${POSTGRES_USER:-runcrew}
@@ -20,7 +20,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: runcrew-backend
+    container_name: runvs-backend
     expose:
       - "8000"
     env_file:
@@ -39,7 +39,7 @@ services:
 
   caddy:
     image: caddy:2-alpine
-    container_name: runcrew-caddy
+    container_name: runvs-caddy
     ports:
       - "80:80"
       - "443:443"

@@ -13,6 +13,7 @@ from app.models.course import Course
 from app.models.run_chunk import RunChunk
 from app.models.run_record import RunRecord
 from app.models.run_session import RunSession
+from app.services.speed_anomaly_service import analyze_run
 
 
 class RunService:
@@ -180,6 +181,19 @@ class RunService:
             run_record.course_completed = course_completion.get("is_completed", False)
             run_record.route_match_percent = course_completion.get("route_match_percent")
             run_record.max_deviation_meters = course_completion.get("max_deviation_meters")
+
+        # Speed anomaly detection
+        anomaly = analyze_run(
+            distance_meters=run_record.distance_meters,
+            duration_seconds=run_record.duration_seconds,
+            avg_speed_ms=run_record.avg_speed_ms,
+            max_speed_ms=run_record.max_speed_ms,
+            splits=complete_data.get("splits"),
+            best_pace_seconds_per_km=run_record.best_pace_seconds_per_km,
+        )
+        if anomaly.is_flagged:
+            run_record.is_flagged = True
+            run_record.flag_reason = anomaly.flag_reason
 
         db.add(run_record)
 

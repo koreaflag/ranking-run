@@ -46,6 +46,10 @@ class Course(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Geography(geometry_type="LINESTRING", srid=4326),
         nullable=True,
     )
+    raw_route_geometry = mapped_column(
+        Geography(geometry_type="LINESTRING", srid=4326),
+        nullable=True,
+    )
     start_point = mapped_column(
         Geography(geometry_type="POINT", srid=4326),
         nullable=True,
@@ -59,6 +63,8 @@ class Course(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(Text), server_default="{}")
     difficulty: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
+    course_type: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
+    lap_count: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
 
     # Relationships
     creator: Mapped["User"] = relationship("User", lazy="joined")

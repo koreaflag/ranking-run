@@ -16,6 +16,8 @@ class UserResponse(BaseModel):
     weight_kg: float | None = None
     bio: str | None = None
     instagram_username: str | None = None
+    activity_region: str | None = None
+    country: str | None = None
     total_distance_meters: int
     total_runs: int
     created_at: datetime
@@ -27,6 +29,7 @@ class ProfileSetupRequest(BaseModel):
     """Initial profile setup after first login."""
     nickname: str = Field(..., min_length=2, max_length=12)
     avatar_url: str | None = None
+    activity_region: str | None = Field(None, max_length=100)
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -38,6 +41,8 @@ class ProfileUpdateRequest(BaseModel):
     weight_kg: float | None = Field(None, ge=20, le=500)
     bio: str | None = Field(None, max_length=100)
     instagram_username: str | None = Field(None, max_length=30)
+    activity_region: str | None = Field(None, max_length=100)
+    country: str | None = Field(None, max_length=50)
 
 
 class ProfileResponse(BaseModel):
@@ -50,6 +55,8 @@ class ProfileResponse(BaseModel):
     weight_kg: float | None = None
     bio: str | None = None
     instagram_username: str | None = None
+    activity_region: str | None = None
+    country: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -72,6 +79,16 @@ class PublicProfileRanking(BaseModel):
     best_duration_seconds: int
 
 
+class PublicProfileGear(BaseModel):
+    """Gear summary for public profile."""
+    id: str
+    brand: str
+    model_name: str
+    image_url: str | None = None
+    is_primary: bool
+    total_distance_meters: float
+
+
 class PublicProfileResponse(BaseModel):
     """Public profile visible to other users."""
     id: str
@@ -79,6 +96,7 @@ class PublicProfileResponse(BaseModel):
     avatar_url: str | None
     bio: str | None = None
     instagram_username: str | None = None
+    activity_region: str | None = None
     total_distance_meters: int
     total_runs: int
     created_at: datetime
@@ -90,6 +108,9 @@ class PublicProfileResponse(BaseModel):
     courses: list[PublicProfileCourse] = []
     # Top rankings
     top_rankings: list[PublicProfileRanking] = []
+    # Running gear
+    primary_gear: PublicProfileGear | None = None
+    gear_items: list[PublicProfileGear] = []
 
 
 class MonthlyDistance(BaseModel):

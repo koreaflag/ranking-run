@@ -1,7 +1,7 @@
 // ============================================================
 // Geo Utilities
 // Haversine distance, bearing, and polyline distance calculations.
-// Mirrors logic from ios/RunCrew/GPS/Util/GeoMath.swift
+// Mirrors logic from ios/RUNVS/GPS/Util/GeoMath.swift
 // ============================================================
 
 const EARTH_RADIUS = 6371000; // meters

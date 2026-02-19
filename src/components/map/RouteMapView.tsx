@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
-import { StyleSheet, View, Text, Platform, Animated } from 'react-native';
+import { StyleSheet, View, Text, Platform } from 'react-native';
 import Mapbox, { UserTrackingMode } from '@rnmapbox/maps';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, DIFFICULTY_COLORS, DIFFICULTY_LABELS, type DifficultyLevel } from '../../utils/constants';
@@ -88,7 +88,11 @@ interface RouteMapViewProps {
   lastKnownLocation?: { latitude: number; longitude: number };
   endPointOverride?: { latitude: number; longitude: number };
   customUserLocation?: { latitude: number; longitude: number };
-  customUserHeading?: number | Animated.Value;
+  customUserHeading?: number;
+  /** Hide the "출발"/"도착" label markers while still drawing the route polyline */
+  hideRouteMarkers?: boolean;
+  /** false = use basic flat Mapbox styles (2D), true/undefined = use custom 3D styles */
+  use3DStyle?: boolean;
 }
 
 export interface Camera {
@@ -179,6 +183,8 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   endPointOverride,
   customUserLocation,
   customUserHeading,
+  hideRouteMarkers = false,
+  use3DStyle = true,
 }, ref) {
   const cameraRef = useRef<Mapbox.Camera>(null);
   const colors = useTheme();
@@ -226,44 +232,43 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   }));
 
   // Initial camera config
-  const initialCenter: [number, number] = useMemo(() => {
-    if (isRouteMode && routePoints.length > 0) {
+  const cameraDefaults = useMemo(() => {
+    if (isRouteMode && routePoints.length >= 2) {
       const { ne, sw } = computeBounds(routePoints);
-      return [(ne[0] + sw[0]) / 2, (ne[1] + sw[1]) / 2];
+      const latDelta = Math.max((ne[1] - sw[1]) * 2.5, 0.01);
+      return {
+        centerCoordinate: [(ne[0] + sw[0]) / 2, (ne[1] + sw[1]) / 2] as [number, number],
+        zoomLevel: deltaToZoom(latDelta),
+      };
     }
-    return SEOUL_CENTER;
+    return {
+      centerCoordinate: SEOUL_CENTER as [number, number],
+      zoomLevel: followsUserLocation ? 16 : DEFAULT_ZOOM,
+    };
   }, []);
 
-  const initialZoom = useMemo(() => {
-    if (isRouteMode && routePoints.length > 0) {
-      const { ne, sw } = computeBounds(routePoints);
-      const latDelta = Math.max((ne[1] - sw[1]) * 1.5, 0.005);
-      return deltaToZoom(latDelta);
-    }
-    if (followsUserLocation) return 16;
-    return DEFAULT_ZOOM;
-  }, []);
-
-  // Fit map to route points on mount (for interactive route mode)
+  // Fit map to route bounds after map loads
   const handleDidFinishLoadingMap = useCallback(() => {
     if (isRouteMode && routePoints.length >= 2) {
+      // Immediate fit + delayed retry to ensure bounds are applied
+      const { ne, sw } = computeBounds(routePoints);
+      cameraRef.current?.fitBounds(ne, sw, [80, 80, 80, 80], 0);
       setTimeout(() => {
-        const { ne, sw } = computeBounds(routePoints);
-        cameraRef.current?.fitBounds(ne, sw, [50, 50, 50, 50], 0);
-      }, 200);
+        cameraRef.current?.fitBounds(ne, sw, [80, 80, 80, 80], 0);
+      }, 500);
     }
   }, [isRouteMode, routePoints]);
 
-  // Re-fit when routePoints change (interactive route mode)
+  // Re-fit when routePoints change
   useEffect(() => {
-    if (isRouteMode && routePoints.length >= 2 && isInteractive && !followsUserLocation) {
+    if (isRouteMode && routePoints.length >= 2 && !followsUserLocation) {
       const timer = setTimeout(() => {
         const { ne, sw } = computeBounds(routePoints);
-        cameraRef.current?.fitBounds(ne, sw, [50, 50, 50, 50], 500);
+        cameraRef.current?.fitBounds(ne, sw, [80, 80, 80, 80], 500);
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [isRouteMode, routePoints, isInteractive, followsUserLocation]);
+  }, [isRouteMode, routePoints, followsUserLocation]);
 
   // Region change callback
   const handleRegionDidChange = useCallback(
@@ -318,13 +323,18 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     return toLineGeoJSON(previewPolyline);
   }, [previewPolyline]);
 
-  // Use globe projection for the world map mode
-  const projection = isMarkersMode ? 'globe' : 'mercator';
+  // Use globe projection for the world map mode (only in 3D style)
+  const projection = isMarkersMode && use3DStyle ? 'globe' : 'mercator';
+
+  // Map style: 3D = custom Mapbox styles, 2D = basic flat styles
+  const mapStyleURL = use3DStyle
+    ? (isDark ? MAPBOX_DARK_STYLE : MAPBOX_LIGHT_STYLE)
+    : (isDark ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/light-v11');
 
   return (
     <View style={[styles.container, style]}>
       <Mapbox.MapView
-        styleURL={isDark ? MAPBOX_DARK_STYLE : MAPBOX_LIGHT_STYLE}
+        styleURL={mapStyleURL}
         projection={projection}
         logoEnabled={false}
         attributionEnabled={false}
@@ -342,10 +352,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         {/* Camera */}
         <Mapbox.Camera
           ref={cameraRef}
-          defaultSettings={{
-            centerCoordinate: initialCenter,
-            zoomLevel: initialZoom,
-          }}
+          defaultSettings={cameraDefaults}
           followUserLocation={followsUserLocation}
           followUserMode={followsUserLocation ? UserTrackingMode.Follow : undefined}
           animationMode="flyTo"
@@ -376,7 +383,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
           </Mapbox.ShapeSource>
         )}
 
-        {startPoint && (
+        {startPoint && !hideRouteMarkers && (
           <Mapbox.MarkerView
             coordinate={[startPoint.longitude, startPoint.latitude]}
             anchor={{ x: 0.5, y: 1 }}
@@ -390,7 +397,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
           </Mapbox.MarkerView>
         )}
 
-        {endPoint && (
+        {endPoint && !hideRouteMarkers && (
           <Mapbox.MarkerView
             coordinate={[endPoint.longitude, endPoint.latitude]}
             anchor={{ x: 0.5, y: 1 }}
@@ -508,23 +515,16 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             anchor={{ x: 0.5, y: 0.5 }}
           >
             <View style={styles.customUserContainer}>
-              <Animated.View
-                style={[
-                  styles.headingConeWrapper,
-                  {
-                    transform: [{
-                      rotate: customUserHeading instanceof Animated.Value
-                        ? customUserHeading.interpolate({
-                            inputRange: [-360, 360],
-                            outputRange: ['-360deg', '360deg'],
-                          })
-                        : `${customUserHeading ?? 0}deg`,
-                    }],
-                  },
-                ]}
-              >
-                <View style={styles.headingCone} />
-              </Animated.View>
+              {customUserHeading != null && (
+                <View
+                  style={[
+                    styles.headingConeWrapper,
+                    { transform: [{ rotate: `${customUserHeading}deg` }] },
+                  ]}
+                >
+                  <View style={styles.headingCone} />
+                </View>
+              )}
               <View style={styles.customUserDot} />
             </View>
           </Mapbox.MarkerView>
@@ -786,40 +786,40 @@ const styles = StyleSheet.create({
 
   // ---- Custom user location marker with heading ----
   customUserContainer: {
-    width: 36,
-    height: 36,
+    width: 60,
+    height: 60,
     alignItems: 'center',
     justifyContent: 'center',
   },
   headingConeWrapper: {
     position: 'absolute',
-    width: 36,
-    height: 36,
+    width: 60,
+    height: 60,
     alignItems: 'center',
   },
   headingCone: {
     width: 0,
     height: 0,
-    borderLeftWidth: 6,
-    borderRightWidth: 6,
-    borderBottomWidth: 16,
+    borderLeftWidth: 10,
+    borderRightWidth: 10,
+    borderBottomWidth: 28,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderBottomColor: COLORS.primary + '40',
+    borderBottomColor: COLORS.primary + '55',
     marginTop: 0,
   },
   customUserDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: COLORS.primary,
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: COLORS.white,
     shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 6,
+    elevation: 4,
   },
 
   // ---- User location fallback marker ----

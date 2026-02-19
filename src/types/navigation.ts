@@ -64,4 +64,5 @@ export type MyPageStackParamList = {
   UserProfile: { userId: string };
   ImportActivity: undefined;
   StravaConnect: undefined;
+  GearManage: undefined;
 };

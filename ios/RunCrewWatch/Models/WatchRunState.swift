@@ -10,6 +10,7 @@ struct WatchRunState {
     var speed: Double = 0             // m/s
     var heartRate: Double = 0         // BPM
     var calories: Int = 0
+    var cadence: Int = 0              // steps per minute
     var gpsStatus: String = "searching"
     var isMoving: Bool = false
     var lastMilestoneKm: Int = 0

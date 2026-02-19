@@ -51,6 +51,8 @@ async def create_course(
         elevation_profile=body.elevation_profile,
         is_public=body.is_public,
         tags=body.tags,
+        course_type=body.course_type,
+        lap_count=body.lap_count,
     )
 
     background_tasks.add_task(generate_course_thumbnail, course_id=course.id)

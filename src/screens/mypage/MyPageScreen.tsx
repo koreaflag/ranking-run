@@ -450,8 +450,25 @@ export default function MyPageScreen() {
           )}
         </View>
 
-        {/* Import & Integrations */}
+        {/* Gear & Import */}
         <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.importButton}
+            onPress={() => navigation.navigate('GearManage')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.importButtonLeft}>
+              <View style={styles.importIconCircle}>
+                <Ionicons name="footsteps-outline" size={20} color={colors.primary} />
+              </View>
+              <View>
+                <Text style={styles.importButtonTitle}>내 기어</Text>
+                <Text style={styles.importButtonDesc}>러닝화 등록 및 관리</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.importButton}
             onPress={() => navigation.navigate('ImportActivity')}

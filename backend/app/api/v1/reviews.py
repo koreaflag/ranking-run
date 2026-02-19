@@ -6,7 +6,7 @@ from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, Query
 
 from app.core.container import Container
-from app.core.deps import CurrentUser, DbSession
+from app.core.deps import CurrentUser, DbSession, OptionalCurrentUser
 from app.schemas.review import (
     CreatorReplyRequest,
     ReviewAuthorInfo,
@@ -63,8 +63,8 @@ async def create_review(
 @inject
 async def get_course_reviews(
     course_id: UUID,
-    current_user: CurrentUser,
     db: DbSession,
+    current_user: OptionalCurrentUser = None,
     page: int = Query(0, ge=0),
     per_page: int = Query(20, ge=1, le=100),
     review_service: ReviewService = Depends(Provide[Container.review_service]),

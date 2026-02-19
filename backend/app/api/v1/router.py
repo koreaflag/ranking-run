@@ -7,6 +7,8 @@ from app.api.v1.courses import router as courses_router
 from app.api.v1.events import router as events_router
 from app.api.v1.favorites import router as favorites_router
 from app.api.v1.follows import router as follows_router
+from app.api.v1.gear import router as gear_router
+from app.api.v1.gear import public_router as gear_public_router
 from app.api.v1.heatmap import router as heatmap_router
 from app.api.v1.imports import router as imports_router
 from app.api.v1.likes import router as likes_router
@@ -35,5 +37,7 @@ api_router.include_router(imports_router)
 api_router.include_router(uploads_router)
 api_router.include_router(weather_router)
 api_router.include_router(heatmap_router)
+api_router.include_router(gear_router)
+api_router.include_router(gear_public_router)
 api_router.include_router(notifications_router)
 api_router.include_router(strava_router)

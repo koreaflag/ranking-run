@@ -22,6 +22,7 @@ from app.schemas.user import (
     ProfileSetupRequest,
     ProfileUpdateRequest,
     PublicProfileCourse,
+    PublicProfileGear,
     PublicProfileRanking,
     PublicProfileResponse,
     SocialCountsResponse,
@@ -30,6 +31,7 @@ from app.schemas.user import (
     WeeklyStats,
 )
 from app.services.follow_service import FollowService
+from app.services.gear_service import GearService
 from app.services.stats_service import StatsService
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -48,6 +50,7 @@ async def get_my_profile(current_user: CurrentUser) -> UserResponse:
         weight_kg=current_user.weight_kg,
         bio=current_user.bio,
         instagram_username=current_user.instagram_username,
+        activity_region=current_user.activity_region,
         total_distance_meters=current_user.total_distance_meters,
         total_runs=current_user.total_runs,
         created_at=current_user.created_at,
@@ -70,12 +73,15 @@ async def setup_profile(
     current_user.nickname = body.nickname
     if body.avatar_url is not None:
         current_user.avatar_url = body.avatar_url
+    if body.activity_region is not None:
+        current_user.activity_region = body.activity_region
     await db.flush()
 
     return ProfileResponse(
         id=str(current_user.id),
         nickname=current_user.nickname,
         avatar_url=current_user.avatar_url,
+        activity_region=current_user.activity_region,
     )
 
 
@@ -106,6 +112,8 @@ async def update_profile(
         current_user.bio = body.bio
     if body.instagram_username is not None:
         current_user.instagram_username = body.instagram_username
+    if body.activity_region is not None:
+        current_user.activity_region = body.activity_region
 
     await db.flush()
 
@@ -118,6 +126,7 @@ async def update_profile(
         weight_kg=current_user.weight_kg,
         bio=current_user.bio,
         instagram_username=current_user.instagram_username,
+        activity_region=current_user.activity_region,
     )
 
 
@@ -274,6 +283,7 @@ async def get_public_profile(
     current_user: CurrentUser,
     db: DbSession,
     follow_service: FollowService = Depends(Provide[Container.follow_service]),
+    gear_service: GearService = Depends(Provide[Container.gear_service]),
 ) -> PublicProfileResponse:
     """Get a user's public profile."""
     # Fetch user
@@ -334,12 +344,28 @@ async def get_public_profile(
             best_duration_seconds=r.best_duration_seconds,
         ))
 
+    # Running gear
+    gear_items_orm = await gear_service.list_user_gear(db, user_id)
+    gear_items = [
+        PublicProfileGear(
+            id=str(g.id),
+            brand=g.brand,
+            model_name=g.model_name,
+            image_url=g.image_url,
+            is_primary=g.is_primary,
+            total_distance_meters=g.total_distance_meters,
+        )
+        for g in gear_items_orm
+    ]
+    primary_gear = next((g for g in gear_items if g.is_primary), None)
+
     return PublicProfileResponse(
         id=str(user.id),
         nickname=user.nickname,
         avatar_url=user.avatar_url,
         bio=user.bio,
         instagram_username=user.instagram_username,
+        activity_region=user.activity_region,
         total_distance_meters=user.total_distance_meters,
         total_runs=user.total_runs,
         created_at=user.created_at,
@@ -348,4 +374,6 @@ async def get_public_profile(
         is_following=follow_status["is_following"],
         courses=course_items,
         top_rankings=ranking_items,
+        primary_gear=primary_gear,
+        gear_items=gear_items,
     )

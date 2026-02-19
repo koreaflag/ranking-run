@@ -73,6 +73,7 @@ export const authService = {
     bio: string | null;
     instagram_username: string | null;
     country: string | null;
+    activity_region?: string;
   }> {
     return api.patch('/users/me/profile', request);
   },

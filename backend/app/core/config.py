@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    APP_NAME: str = "RunCrew"
+    APP_NAME: str = "RUNVS"
     APP_ENV: str = "development"
     DEBUG: bool = True
 

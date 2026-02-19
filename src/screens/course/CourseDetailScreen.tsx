@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,9 @@ import {
   SafeAreaView,
   TouchableOpacity,
   Alert,
+  Animated,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -71,6 +73,19 @@ export default function CourseDetailScreen() {
   } = useCourseStore();
 
   const isFavorited = favoriteIds.includes(courseId);
+
+  // Tap animation scales
+  const likeScale = useRef(new Animated.Value(1)).current;
+  const favScale = useRef(new Animated.Value(1)).current;
+
+  const animateButton = useCallback((scale: Animated.Value, callback: () => void) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.sequence([
+      Animated.spring(scale, { toValue: 1.4, useNativeDriver: true, speed: 50, bounciness: 12 }),
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 8 }),
+    ]).start();
+    callback();
+  }, []);
 
   useEffect(() => {
     fetchCourseDetail(courseId);
@@ -210,31 +225,35 @@ export default function CourseDetailScreen() {
             </Text>
             <View style={styles.socialButtons}>
               <TouchableOpacity
-                onPress={() => toggleLike(courseId)}
+                onPress={() => animateButton(likeScale, () => toggleLike(courseId))}
                 activeOpacity={0.7}
                 style={styles.likeButton}
               >
-                <Ionicons
-                  name={selectedCourseIsLiked ? 'thumbs-up' : 'thumbs-up-outline'}
-                  size={22}
-                  color={selectedCourseIsLiked ? colors.primary : colors.textTertiary}
-                />
+                <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+                  <Ionicons
+                    name={selectedCourseIsLiked ? 'thumbs-up' : 'thumbs-up-outline'}
+                    size={22}
+                    color={selectedCourseIsLiked ? colors.white : colors.textTertiary}
+                  />
+                </Animated.View>
                 {selectedCourseLikeCount > 0 && (
-                  <Text style={[styles.likeCount, selectedCourseIsLiked && { color: colors.primary }]}>
+                  <Text style={[styles.likeCount, selectedCourseIsLiked && { color: colors.white }]}>
                     {selectedCourseLikeCount}
                   </Text>
                 )}
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => toggleFavorite(courseId)}
+                onPress={() => animateButton(favScale, () => toggleFavorite(courseId))}
                 activeOpacity={0.7}
                 style={styles.favoriteButton}
               >
-                <Ionicons
-                  name={isFavorited ? 'heart' : 'heart-outline'}
-                  size={22}
-                  color={isFavorited ? colors.primary : colors.textTertiary}
-                />
+                <Animated.View style={{ transform: [{ scale: favScale }] }}>
+                  <Ionicons
+                    name={isFavorited ? 'heart' : 'heart-outline'}
+                    size={22}
+                    color={isFavorited ? colors.error : colors.textTertiary}
+                  />
+                </Animated.View>
               </TouchableOpacity>
             </View>
           </View>

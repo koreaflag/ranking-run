@@ -1,7 +1,7 @@
 # Strava Sync Feature
 
 ## Overview
-Strava 계정 연동을 통해 기존 Strava 러닝 기록을 RunCrew로 자동 import하는 기능.
+Strava 계정 연동을 통해 기존 Strava 러닝 기록을 RUNVS로 자동 import하는 기능.
 
 ## 관련 파일
 
@@ -31,7 +31,7 @@ STRAVA_REDIRECT_URI=    # OAuth callback URL (e.g. https://api.runcrew.app/api/v
 | DELETE | `/api/v1/strava/disconnect` | Strava 연결 해제 |
 
 ## 동기화 데이터 매핑
-| Strava | RunCrew | 설명 |
+| Strava | RUNVS | 설명 |
 |--------|---------|------|
 | distance | distance_meters | 총 거리 (m) |
 | moving_time | duration_seconds | 러닝 시간 (s) |

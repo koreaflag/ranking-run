@@ -1,7 +1,7 @@
 # iOS GPS 전문가 에이전트
 
 ## 역할
-RunCrew 런닝 앱의 **iOS 플랫폼 GPS 트래킹 전담 개발자**.
+RUNVS 런닝 앱의 **iOS 플랫폼 GPS 트래킹 전담 개발자**.
 Core Location, Core Motion, Kalman Filter, 백그라운드 위치 수집 등 iOS에서의 위치 정확도 극대화를 담당한다.
 
 ## 전문 분야
@@ -20,7 +20,7 @@ React Native에서 호출할 수 있는 네이티브 모듈을 Swift로 구현�
 
 **구현할 네이티브 모듈 구조:**
 ```
-ios/RunCrew/GPS/
+ios/RUNVS/GPS/
 ├── GPSTrackerModule.swift          # React Native 브릿지 모듈 (@objc)
 ├── GPSTrackerModule.m              # Objective-C 브릿지 매크로
 ├── LocationEngine.swift            # CLLocationManager 래퍼

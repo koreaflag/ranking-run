@@ -90,6 +90,11 @@ class RunSessionViewModel: ObservableObject {
         if let isMoving = message[WatchMessageKeys.isMoving] as? Bool {
             state.isMoving = isMoving
         }
+        if let cadence = message[WatchMessageKeys.cadence] as? Int {
+            state.cadence = cadence
+        } else if let cadence = message[WatchMessageKeys.cadence] as? Double {
+            state.cadence = Int(cadence)
+        }
 
         // Course navigation fields
         if let isCourseRun = message[WatchMessageKeys.isCourseRun] as? Bool {
@@ -165,6 +170,11 @@ class RunSessionViewModel: ObservableObject {
             state.calories = calories
         } else if let calories = message[WatchMessageKeys.calories] as? Double {
             state.calories = Int(calories)
+        }
+        if let cadence = message[WatchMessageKeys.cadence] as? Int {
+            state.cadence = cadence
+        } else if let cadence = message[WatchMessageKeys.cadence] as? Double {
+            state.cadence = Int(cadence)
         }
         if let sessionId = message[WatchMessageKeys.sessionId] as? String {
             state.sessionId = sessionId
@@ -431,6 +441,16 @@ class RunSessionViewModel: ObservableObject {
     func formattedHeartRate() -> String {
         guard state.heartRate > 0 else { return "--" }
         return String(format: "%.0f", state.heartRate)
+    }
+
+    func formattedCadence() -> String {
+        guard state.cadence > 0 else { return "--" }
+        return "\(state.cadence)"
+    }
+
+    func formattedCalories() -> String {
+        guard state.calories > 0 else { return "--" }
+        return "\(state.calories)"
     }
 
     func updateReachability() {

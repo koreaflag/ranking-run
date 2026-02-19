@@ -7,6 +7,7 @@ from app.services.auth_service import AuthService
 from app.services.course_service import CourseService
 from app.services.event_service import EventService
 from app.services.follow_service import FollowService
+from app.services.gear_service import GearService
 from app.services.import_service import ImportService
 from app.services.like_service import LikeService
 from app.services.ranking_service import RankingService
@@ -14,6 +15,7 @@ from app.services.review_service import ReviewService
 from app.services.run_service import RunService
 from app.services.stats_service import StatsService
 from app.services.notification_service import NotificationService
+from app.services.map_matching_service import MapMatchingService
 from app.services.strava_service import StravaService
 
 
@@ -31,6 +33,7 @@ class Container(containers.DeclarativeContainer):
             "app.api.v1.courses",
             "app.api.v1.events",
             "app.api.v1.follows",
+            "app.api.v1.gear",
             "app.api.v1.runs",
             "app.api.v1.rankings",
             "app.api.v1.likes",
@@ -50,8 +53,10 @@ class Container(containers.DeclarativeContainer):
     course_service = providers.Factory(CourseService)
     event_service = providers.Factory(EventService)
     follow_service = providers.Factory(FollowService)
+    gear_service = providers.Factory(GearService)
     import_service = providers.Factory(ImportService)
     like_service = providers.Factory(LikeService)
+    map_matching_service = providers.Singleton(MapMatchingService)
     run_service = providers.Factory(RunService)
     ranking_service = providers.Factory(RankingService)
     review_service = providers.Factory(ReviewService)

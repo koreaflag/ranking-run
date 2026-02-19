@@ -40,6 +40,8 @@ class CourseCreateRequest(BaseModel):
     elevation_profile: list[float] = []
     is_public: bool = True
     tags: list[str] = []
+    course_type: str | None = None  # "normal" or "loop"
+    lap_count: int | None = Field(None, ge=1, le=10)
 
 
 class CourseCreateResponse(BaseModel):

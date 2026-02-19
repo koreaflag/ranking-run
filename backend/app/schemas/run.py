@@ -57,6 +57,7 @@ class CumulativeSummary(BaseModel):
 
 class SplitInfo(BaseModel):
     split_number: int
+    distance_meters: float = 0.0
     duration_seconds: int
     pace_seconds_per_km: int
     elevation_change_meters: float = 0.0
@@ -187,6 +188,8 @@ class UserStatsUpdate(BaseModel):
 class RunCompleteResponse(BaseModel):
     run_record_id: str
     ranking: RankingInfo | None = None
+    is_flagged: bool = False
+    flag_reason: str | None = None
     user_stats_update: UserStatsUpdate
     missing_chunk_sequences: list[int] = []
 

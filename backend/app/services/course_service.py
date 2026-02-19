@@ -1,5 +1,6 @@
 """Course service: CRUD operations, spatial queries (PostGIS), and course management."""
 
+import logging
 from urllib.parse import quote
 from uuid import UUID
 
@@ -17,6 +18,9 @@ from app.models.review import Review
 from app.models.run_record import RunRecord
 from app.models.run_session import RunSession
 from app.models.user import User
+from app.services.map_matching_service import MapMatchingService
+
+logger = logging.getLogger(__name__)
 
 
 def get_thumbnail_url_for_course(course: "Course") -> str | None:
@@ -89,6 +93,8 @@ class CourseService:
         elevation_profile: list[float] | None = None,
         is_public: bool = True,
         tags: list[str] | None = None,
+        course_type: str | None = None,
+        lap_count: int | None = None,
     ) -> Course:
         """Create a new course from a run record."""
         result = await db.execute(
@@ -104,12 +110,29 @@ class CourseService:
             )
 
         route_wkb = None
+        raw_route_wkb = None
         start_wkb = None
         coordinates = route_geometry_geojson.get("coordinates", [])
 
         if len(coordinates) >= 2:
-            line = LineString([(c[0], c[1]) for c in coordinates])
-            route_wkb = from_shape(line, srid=4326)
+            # Store raw GPS route
+            raw_line = LineString([(c[0], c[1]) for c in coordinates])
+            raw_route_wkb = from_shape(raw_line, srid=4326)
+
+            # Apply map matching to snap route to road/path network
+            matched_coordinates = coordinates
+            try:
+                matcher = MapMatchingService()
+                matched_coordinates = await matcher.match_route(coordinates)
+                await matcher.close()
+                logger.info(
+                    f"[CourseService] Map matching: {len(coordinates)} pts → {len(matched_coordinates)} pts"
+                )
+            except Exception as e:
+                logger.warning(f"[CourseService] Map matching failed, using raw route: {e}")
+
+            matched_line = LineString([(c[0], c[1]) for c in matched_coordinates])
+            route_wkb = from_shape(matched_line, srid=4326)
 
             first_coord = coordinates[0]
             start_point = Point(first_coord[0], first_coord[1])
@@ -126,6 +149,7 @@ class CourseService:
             title=title,
             description=description,
             route_geometry=route_wkb,
+            raw_route_geometry=raw_route_wkb,
             start_point=start_wkb,
             distance_meters=distance_meters,
             estimated_duration_seconds=estimated_duration_seconds,
@@ -134,6 +158,8 @@ class CourseService:
             is_public=is_public,
             tags=tags or [],
             difficulty=difficulty,
+            course_type=course_type,
+            lap_count=lap_count,
         )
         db.add(course)
         await db.flush()
@@ -142,10 +168,14 @@ class CourseService:
         db.add(stats)
         await db.flush()
 
-        # Generate thumbnail URL from route geometry using Mapbox Static API
+        # Generate thumbnail URL from matched route (or raw if matching failed)
         settings = get_settings()
+        thumbnail_geojson = {
+            "type": "LineString",
+            "coordinates": matched_coordinates if len(coordinates) >= 2 else [],
+        } if len(coordinates) >= 2 else route_geometry_geojson
         thumbnail_url = generate_thumbnail_url(
-            route_geometry=route_geometry_geojson,
+            route_geometry=thumbnail_geojson,
             access_token=settings.MAPBOX_ACCESS_TOKEN,
         )
         if thumbnail_url:

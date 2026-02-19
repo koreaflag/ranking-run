@@ -196,8 +196,8 @@ export const useCourseStore = create<CourseState>((set, get) => ({
     try {
       const [detail, stats, rankings, myBest, reviewsResponse, myReview, likeStatus] = await Promise.all([
         courseService.getCourseDetail(courseId),
-        courseService.getCourseStats(courseId),
-        rankingService.getCourseRankings(courseId, 10),
+        courseService.getCourseStats(courseId).catch(() => null),
+        rankingService.getCourseRankings(courseId, 10).catch(() => []),
         courseService.getMyBest(courseId).catch(() => null),
         reviewService.getCourseReviews(courseId).catch(() => ({ data: [], total_count: 0, avg_rating: null })),
         reviewService.getMyReview(courseId).catch(() => null),
@@ -269,11 +269,7 @@ export const useCourseStore = create<CourseState>((set, get) => ({
         ),
       }));
     } catch {
-      // Revert on failure
-      set({
-        selectedCourseIsLiked: wasLiked,
-        selectedCourseLikeCount: prevCount,
-      });
+      // Keep optimistic state — server will sync later
     }
   },
 
@@ -374,8 +370,7 @@ export const useCourseStore = create<CourseState>((set, get) => ({
       // Refresh full list
       get().fetchFavoriteCourses();
     } catch {
-      // Revert on failure
-      set({ favoriteIds: prev });
+      // Keep optimistic state — server will sync later
     }
   },
 

@@ -36,6 +36,7 @@ struct WatchMessageKeys {
     static let splitPace = "splitPace"
     static let totalTime = "totalTime"
     static let distanceFromStart = "distanceFromStart"
+    static let cadence = "cadence"
 
     // Course navigation
     static let isCourseRun = "isCourseRun"

@@ -41,12 +41,12 @@
 - Running apps (Strava) specifically have "navigate to start point" as a distinct feature
 - ETA display uses both time and distance remaining
 
-### 1.3 Differentiation Opportunities for RunCrew
+### 1.3 Differentiation Opportunities for RUNVS
 
-| Gap | Opportunity | RunCrew Approach |
+| Gap | Opportunity | RUNVS Approach |
 |-----|-------------|-----------------|
 | No running app combines course discovery with walk-to-start navigation | Seamless flow: find course -> navigate to start -> begin race | "코스로 안내" button on course card |
-| Map search in running apps is basic (text only) | Rich search with course-aware results | Search shows both places AND nearby RunCrew courses |
+| Map search in running apps is basic (text only) | Rich search with course-aware results | Search shows both places AND nearby RUNVS courses |
 | Navigation UIs are generic (not sport-themed) | Sport/racing-themed navigation | Countdown-style ETA, "approaching start line" metaphor |
 | No "search for courses by area" | Area-based course discovery via map search | Search "한강" shows Hangang-area courses |
 
@@ -1222,14 +1222,14 @@ The `topBar` style and JSX need updating to accommodate the new search button be
 
 | Decision | Rationale |
 |----------|-----------|
-| Search icon instead of always-visible search bar | Preserves the immersive "open world" map experience. Korean map apps show search bars always, but RunCrew is a running app first -- map discovery is the primary action, search is secondary. |
+| Search icon instead of always-visible search bar | Preserves the immersive "open world" map experience. Korean map apps show search bars always, but RUNVS is a running app first -- map discovery is the primary action, search is secondary. |
 | Full-screen search overlay with dim | Follows Kakao Map / Naver Map Korean UX conventions that users expect. Provides focus and eliminates map interaction distractions during search. |
-| Dark navigation header | Consistent with RunCrew's running HUD dark mode aesthetic (COLORS.runBg). Creates visual continuity between "navigating to course" and "running the course". |
+| Dark navigation header | Consistent with RUNVS's running HUD dark mode aesthetic (COLORS.runBg). Creates visual continuity between "navigating to course" and "running the course". |
 | Dashed walking route line | Differentiates walking navigation route from the solid course route lines. Users can visually distinguish "how to get there" vs "the actual course". |
-| Lime green ETA text | Uses RunCrew's primary color for the most important navigation data point. Creates energy and urgency consistent with the competitive racing theme. |
+| Lime green ETA text | Uses RUNVS's primary color for the most important navigation data point. Creates energy and urgency consistent with the competitive racing theme. |
 | "START" label with pulse animation | Racing metaphor -- the pulsing start point feels like a checkpoint waiting for the runner. Inspired by racing game waypoints (Forza Horizon). |
 | Three-phase transitions | Prevents visual chaos by sequencing UI changes. Clear phases (out -> route draw -> UI in) give users time to understand each change. |
-| Course results in search autocomplete | Unique RunCrew differentiator. No map app shows running courses in their search results. This connects map search directly to the core product value. |
+| Course results in search autocomplete | Unique RUNVS differentiator. No map app shows running courses in their search results. This connects map search directly to the core product value. |
 
 ---
 

@@ -1,4 +1,4 @@
-# RunCrew 개발 현황 문서
+# RUNVS 개발 현황 문서
 
 **작성일:** 2026-02-17
 **목적:** 백엔드 개발자 핸드오프용 전체 현황 정리
@@ -256,7 +256,7 @@ RootNavigator
 ### 5.1 iOS (Swift) - 16파일 ✅ 재구현 완료
 
 ```
-ios/RunCrew/GPS/
+ios/RUNVS/GPS/
 ├── Model/
 │   ├── GPSPoint.swift          # 원시 GPS 포인트
 │   ├── FilteredLocation.swift  # 필터링된 위치
@@ -441,7 +441,7 @@ npx react-native run-android
 │   │   └── main.py             # 앱 엔트리포인트
 │   └── alembic/versions/ (4)   # DB 마이그레이션
 │
-├── ios/RunCrew/GPS/ (16)       # iOS 네이티브 GPS
+├── ios/RUNVS/GPS/ (16)       # iOS 네이티브 GPS
 ├── android/.../gps/ (17)       # Android 네이티브 GPS
 ├── agents/ (6)                 # 에이전트 스펙 문서
 └── docs/                       # 프로젝트 문서

@@ -6,7 +6,7 @@ from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, Query
 
 from app.core.container import Container
-from app.core.deps import CurrentUser, DbSession
+from app.core.deps import CurrentUser, DbSession, OptionalCurrentUser
 from app.core.exceptions import NotFoundError
 from app.schemas.ranking import (
     MyBestResponse,
@@ -26,15 +26,15 @@ router = APIRouter(prefix="/courses", tags=["rankings"])
 @inject
 async def get_course_rankings(
     course_id: UUID,
-    current_user: CurrentUser,
     db: DbSession,
+    current_user: OptionalCurrentUser = None,
     page: int = Query(0, ge=0),
     per_page: int = Query(20, ge=1, le=100),
     limit: int | None = Query(None, ge=1, le=100),
     course_service: CourseService = Depends(Provide[Container.course_service]),
     ranking_service: RankingService = Depends(Provide[Container.ranking_service]),
 ) -> RankingListResponse:
-    """Get the leaderboard for a specific course."""
+    """Get the leaderboard for a specific course. Auth optional (used for my_ranking)."""
     course = await course_service.get_course_by_id(db, course_id)
     if course is None:
         raise NotFoundError(code="NOT_FOUND", message="Course not found")
@@ -45,7 +45,7 @@ async def get_course_rankings(
         course_id=course_id,
         page=page,
         per_page=actual_per_page,
-        requesting_user_id=current_user.id,
+        requesting_user_id=current_user.id if current_user else None,
     )
 
     data = [

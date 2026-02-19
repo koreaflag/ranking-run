@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,9 @@ import {
   TouchableOpacity,
   Image,
   Linking,
+  Animated,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -19,7 +21,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { userService } from '../../services/userService';
 import type { ThemeColors } from '../../utils/constants';
 import type { CourseStackParamList } from '../../types/navigation';
-import type { PublicProfile, PublicProfileCourse, PublicProfileRanking } from '../../types/api';
+import type { PublicProfile, PublicProfileCourse, PublicProfileRanking, GearItem } from '../../types/api';
 import { formatDistance, formatDuration, formatNumber } from '../../utils/format';
 import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 
@@ -42,6 +44,7 @@ export default function UserProfileScreen() {
   const [followersCount, setFollowersCount] = useState(0);
 
   const isOwnProfile = currentUser?.id === userId;
+  const followScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     loadProfile();
@@ -79,9 +82,7 @@ export default function UserProfileScreen() {
         await userService.followUser(userId);
       }
     } catch {
-      // Revert on failure
-      setIsFollowing(wasFollowing);
-      setFollowersCount(prevCount);
+      // Keep optimistic state — server will sync later
     }
   }, [profile, isFollowing, followersCount, userId]);
 
@@ -159,6 +160,14 @@ export default function UserProfileScreen() {
             <Text style={styles.bio}>{profile.bio}</Text>
           )}
 
+          {/* Activity Region */}
+          {profile.activity_region && (
+            <View style={styles.regionRow}>
+              <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+              <Text style={styles.regionText}>{profile.activity_region}</Text>
+            </View>
+          )}
+
           {/* Follower / Following counts */}
           <View style={styles.followStats}>
             <View style={styles.followStatItem}>
@@ -176,23 +185,32 @@ export default function UserProfileScreen() {
           <View style={styles.actionRow}>
             {/* Follow/Unfollow button (hidden for own profile) */}
             {!isOwnProfile && (
-              <TouchableOpacity
-                style={[
-                  styles.followButton,
-                  isFollowing && styles.followButtonActive,
-                ]}
-                onPress={handleToggleFollow}
-                activeOpacity={0.7}
-              >
-                <Text
+              <Animated.View style={{ transform: [{ scale: followScale }] }}>
+                <TouchableOpacity
                   style={[
-                    styles.followButtonText,
-                    isFollowing && styles.followButtonTextActive,
+                    styles.followButton,
+                    isFollowing && styles.followButtonActive,
                   ]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    Animated.sequence([
+                      Animated.spring(followScale, { toValue: 0.9, useNativeDriver: true, speed: 50 }),
+                      Animated.spring(followScale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 8 }),
+                    ]).start();
+                    handleToggleFollow();
+                  }}
+                  activeOpacity={0.7}
                 >
-                  {isFollowing ? '팔로잉' : '팔로우'}
-                </Text>
-              </TouchableOpacity>
+                  <Text
+                    style={[
+                      styles.followButtonText,
+                      isFollowing && styles.followButtonTextActive,
+                    ]}
+                  >
+                    {isFollowing ? '팔로잉' : '팔로우'}
+                  </Text>
+                </TouchableOpacity>
+              </Animated.View>
             )}
 
             {/* Instagram button */}
@@ -226,6 +244,25 @@ export default function UserProfileScreen() {
             </View>
           </View>
         </View>
+
+        {/* Gear Section */}
+        {(profile.primary_gear || (profile.gear_items && profile.gear_items.length > 0)) && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>기어</Text>
+            <View style={styles.gearList}>
+              {/* Primary gear (featured) */}
+              {profile.primary_gear && (
+                <GearCard key={profile.primary_gear.id} gear={profile.primary_gear} colors={colors} featured />
+              )}
+              {/* Other gear */}
+              {(profile.gear_items ?? [])
+                .filter((g) => !g.is_primary)
+                .map((gear) => (
+                  <GearCard key={gear.id} gear={gear} colors={colors} />
+                ))}
+            </View>
+          </View>
+        )}
 
         {/* Courses Section */}
         {profile.courses.length > 0 && (
@@ -346,6 +383,53 @@ const RankingCard = React.memo(function RankingCard({
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
     </TouchableOpacity>
+  );
+});
+
+const GearCard = React.memo(function GearCard({
+  gear,
+  colors,
+  featured = false,
+}: {
+  gear: GearItem;
+  colors: ThemeColors;
+  featured?: boolean;
+}) {
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  if (featured) {
+    return (
+      <View style={styles.gearCardFeatured}>
+        <View style={styles.gearIconCircle}>
+          <Ionicons name="footsteps-outline" size={22} color={colors.primary} />
+        </View>
+        <View style={styles.gearInfoFeatured}>
+          <View style={styles.gearNameRow}>
+            <Text style={styles.gearBrandFeatured}>{gear.brand}</Text>
+            <View style={styles.primaryBadge}>
+              <Text style={styles.primaryBadgeText}>대표</Text>
+            </View>
+          </View>
+          <Text style={styles.gearModelFeatured}>{gear.model_name}</Text>
+          <Text style={styles.gearDistanceFeatured}>
+            {formatDistance(gear.total_distance_meters)}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.gearCardCompact}>
+      <Ionicons name="footsteps-outline" size={16} color={colors.textTertiary} />
+      <Text style={styles.gearBrandCompact}>{gear.brand}</Text>
+      <Text style={styles.gearModelCompact} numberOfLines={1}>
+        {gear.model_name}
+      </Text>
+      <Text style={styles.gearDistanceCompact}>
+        {formatDistance(gear.total_distance_meters)}
+      </Text>
+    </View>
   );
 });
 
@@ -632,6 +716,106 @@ const createStyles = (c: ThemeColors) =>
       fontSize: FONT_SIZES.sm,
       fontWeight: '600',
       color: c.primary,
+      fontVariant: ['tabular-nums'],
+    },
+
+    // -- Activity Region --
+    regionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+    },
+    regionText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '500',
+      color: c.textSecondary,
+    },
+
+    // -- Gear --
+    gearList: {
+      gap: SPACING.sm,
+    },
+    gearCardFeatured: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.md,
+      padding: SPACING.lg,
+      gap: SPACING.md,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    gearIconCircle: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: c.surfaceLight,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    gearInfoFeatured: {
+      flex: 1,
+      gap: 2,
+    },
+    gearNameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.sm,
+    },
+    gearBrandFeatured: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.textSecondary,
+      letterSpacing: 0.3,
+      textTransform: 'uppercase',
+    },
+    primaryBadge: {
+      backgroundColor: c.primary,
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: 2,
+      borderRadius: BORDER_RADIUS.xs,
+    },
+    primaryBadgeText: {
+      fontSize: 10,
+      fontWeight: '800',
+      color: c.white,
+      letterSpacing: 0.5,
+    },
+    gearModelFeatured: {
+      fontSize: FONT_SIZES.lg,
+      fontWeight: '700',
+      color: c.text,
+    },
+    gearDistanceFeatured: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '600',
+      color: c.textTertiary,
+      fontVariant: ['tabular-nums'],
+    },
+    gearCardCompact: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.surface,
+      borderRadius: BORDER_RADIUS.sm,
+      paddingVertical: SPACING.md,
+      paddingHorizontal: SPACING.lg,
+      gap: SPACING.sm,
+    },
+    gearBrandCompact: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.textSecondary,
+    },
+    gearModelCompact: {
+      flex: 1,
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '600',
+      color: c.text,
+    },
+    gearDistanceCompact: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '600',
+      color: c.textTertiary,
       fontVariant: ['tabular-nums'],
     },
   });

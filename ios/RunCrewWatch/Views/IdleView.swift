@@ -1,5 +1,7 @@
 import SwiftUI
 
+private let appOrange = Color(red: 1.0, green: 0.478, blue: 0.2)
+
 struct IdleView: View {
     @EnvironmentObject var viewModel: RunSessionViewModel
 
@@ -7,10 +9,10 @@ struct IdleView: View {
         VStack(spacing: 10) {
             Image(systemName: "figure.run")
                 .font(.system(size: 40))
-                .foregroundColor(.green)
+                .foregroundColor(appOrange)
                 .accessibilityHidden(true)
 
-            Text("RunCrew")
+            Text("RUNVS")
                 .font(.system(size: 18, weight: .bold))
 
             Text("폰에서 런닝을\n시작하세요")

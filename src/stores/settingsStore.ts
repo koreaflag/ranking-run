@@ -17,6 +17,9 @@ interface SettingsState {
   // Appearance
   backgroundImageUri: string | null;
 
+  // Map
+  map3DStyle: boolean; // true = custom 3D style, false = basic 2D flat style
+
   // Running preferences
   autoPause: boolean;
   countdownSeconds: number;
@@ -35,6 +38,7 @@ interface SettingsState {
   setSplitAlertEnabled: (enabled: boolean) => void;
   setVoiceGuidance: (enabled: boolean) => void;
   setBackgroundImageUri: (uri: string | null) => void;
+  setMap3DStyle: (enabled: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -47,6 +51,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   autoLockDisabled: true,
 
   backgroundImageUri: null,
+
+  map3DStyle: true,
 
   autoPause: true,
   countdownSeconds: 3,
@@ -64,4 +70,5 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setSplitAlertEnabled: (enabled) => set({ splitAlertEnabled: enabled }),
   setVoiceGuidance: (enabled) => set({ voiceGuidance: enabled }),
   setBackgroundImageUri: (uri) => set({ backgroundImageUri: uri }),
+  setMap3DStyle: (enabled) => set({ map3DStyle: enabled }),
 }));

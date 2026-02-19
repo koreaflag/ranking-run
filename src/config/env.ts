@@ -23,7 +23,7 @@ export const MAPBOX_ACCESS_TOKEN: string =
   extra.MAPBOX_ACCESS_TOKEN ?? '';
 
 export const MAPBOX_DARK_STYLE: string =
-  extra.MAPBOX_DARK_STYLE ?? '';
+  extra.MAPBOX_DARK_STYLE || 'mapbox://styles/mapbox/dark-v11';
 
 export const MAPBOX_LIGHT_STYLE: string =
-  extra.MAPBOX_LIGHT_STYLE ?? '';
+  extra.MAPBOX_LIGHT_STYLE || 'mapbox://styles/mapbox/light-v11';

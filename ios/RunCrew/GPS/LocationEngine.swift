@@ -23,6 +23,9 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
     var onRunningStateChange: (([String: Any]) -> Void)?
     var onWatchLocationUpdate: (([String: Any]) -> Void)?
     var onMilestoneReached: ((Int, Int, Int) -> Void)?  // (km, splitPaceSecPerKm, totalTimeSeconds)
+    var onHeadingUpdate: (([String: Any]) -> Void)?
+
+    private var headingOnly = false  // standalone heading mode (no GPS tracking)
 
     private var currentGPSStatus: String = "searching"
     private var batteryOptimizer: BatteryOptimizer?
@@ -47,7 +50,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         locationManager.pausesLocationUpdatesAutomatically = false
         locationManager.showsBackgroundLocationIndicator = true
         // Heading updates for better bearing between GPS fixes
-        locationManager.headingFilter = 5 // degrees
+        locationManager.headingFilter = 1 // degrees — responsive heading for compass UI
         batteryOptimizer = BatteryOptimizer(locationManager: locationManager)
     }
 
@@ -112,7 +115,10 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
         DispatchQueue.main.async { [weak self] in
             self?.locationManager.stopUpdatingLocation()
-            self?.locationManager.stopUpdatingHeading()
+            // Keep heading alive if standalone heading mode is active
+            if self?.headingOnly != true {
+                self?.locationManager.stopUpdatingHeading()
+            }
         }
     }
 
@@ -123,6 +129,26 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
     func resumeTracking() {
         session.resume()
         batteryOptimizer?.reset()
+    }
+
+    /// Start heading-only updates (no GPS tracking). Used for compass on WorldScreen.
+    func startHeadingOnly() {
+        headingOnly = true
+        DispatchQueue.main.async { [weak self] in
+            self?.locationManager.startUpdatingHeading()
+        }
+    }
+
+    /// Stop heading-only updates.
+    func stopHeadingOnly() {
+        guard headingOnly else { return }
+        headingOnly = false
+        // Only stop heading if GPS tracking is NOT active
+        if session.state != .running && session.state != .starting {
+            DispatchQueue.main.async { [weak self] in
+                self?.locationManager.stopUpdatingHeading()
+            }
+        }
     }
 
     func getRawGPSPoints() -> [[String: Any]] {
@@ -180,6 +206,11 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             lastHeading = newHeading.trueHeading
         } else if newHeading.magneticHeading >= 0 {
             lastHeading = newHeading.magneticHeading
+        }
+
+        // Emit heading event (for standalone compass use on WorldScreen etc.)
+        if lastHeading >= 0 {
+            onHeadingUpdate?(["heading": lastHeading])
         }
     }
 
@@ -317,6 +348,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         lastFilteredLocation = filteredLocation
 
         // Emit location update event
+        let cadenceSPM = Int(sensorFusion.pedometerTracker.currentCadence * 60)
         let event: [String: Any] = [
             "latitude": filteredLocation.latitude,
             "longitude": filteredLocation.longitude,
@@ -326,7 +358,8 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             "accuracy": validLocation.horizontalAccuracy,
             "timestamp": filteredLocation.timestamp,
             "distanceFromStart": filteredLocation.cumulativeDistance,
-            "isMoving": stationaryDetector.isMoving
+            "isMoving": stationaryDetector.isMoving,
+            "cadence": cadenceSPM
         ]
         onLocationUpdate?(event)
 

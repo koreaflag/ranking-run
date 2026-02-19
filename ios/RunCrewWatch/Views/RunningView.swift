@@ -1,93 +1,123 @@
 import SwiftUI
 
+// App key color — Signature Orange (#FF7A33)
+private let appOrange = Color(red: 1.0, green: 0.478, blue: 0.2)
+
 struct RunningView: View {
     @EnvironmentObject var viewModel: RunSessionViewModel
 
     var body: some View {
         VStack(spacing: 0) {
-            // Duration (hero)
+            // Duration — top
             Text(viewModel.formattedDuration())
-                .font(.system(size: 36, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
-                .padding(.top, 4)
+                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                .foregroundColor(.gray)
+                .padding(.top, 2)
                 .accessibilityLabel("시간 \(viewModel.formattedDuration())")
 
-            // Distance
+            divider
+
+            // Distance — center hero (largest element)
             HStack(alignment: .lastTextBaseline, spacing: 2) {
                 Text(viewModel.formattedDistance())
-                    .font(.system(size: 28, weight: .heavy, design: .monospaced))
-                    .foregroundColor(.green)
+                    .font(.system(size: 40, weight: .heavy, design: .monospaced))
+                    .foregroundColor(appOrange)
                 Text("km")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.gray)
             }
-            .padding(.top, 2)
+            .padding(.vertical, 2)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("거리 \(viewModel.formattedDistance()) 킬로미터")
 
-            // Pace + Heart Rate row
-            HStack(spacing: 16) {
-                // Pace
-                VStack(spacing: 2) {
-                    Text(viewModel.formattedPace())
-                        .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                        .foregroundColor(.white)
-                    Text("페이스")
-                        .font(.system(size: 10))
-                        .foregroundColor(.gray)
-                }
+            divider
 
-                // Divider
-                Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 1, height: 24)
+            // Row 1: Avg Pace | Calories
+            HStack(spacing: 0) {
+                MetricCell(
+                    label: "평균페이스",
+                    value: viewModel.formattedAvgPace(),
+                    icon: nil
+                )
 
-                // Heart Rate
-                VStack(spacing: 2) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "heart.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.red)
-                        Text(viewModel.formattedHeartRate())
-                            .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                            .foregroundColor(.white)
-                    }
-                    Text("BPM")
-                        .font(.system(size: 10))
-                        .foregroundColor(.gray)
-                }
+                verticalDivider
+
+                MetricCell(
+                    label: "칼로리",
+                    value: viewModel.formattedCalories(),
+                    icon: nil
+                )
             }
-            .padding(.top, 6)
+            .frame(height: 36)
 
-            Spacer()
+            divider
 
-            // Control buttons
-            HStack(spacing: 20) {
-                // Pause button
-                Button(action: { viewModel.sendPauseCommand() }) {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.white)
-                        .frame(width: 52, height: 52)
-                        .background(Color.gray.opacity(0.3))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("일시정지")
+            // Row 2: Heart Rate | Cadence
+            HStack(spacing: 0) {
+                MetricCell(
+                    label: "심박수",
+                    value: viewModel.formattedHeartRate(),
+                    icon: "heart.fill",
+                    iconColor: .red
+                )
 
-                // Stop button
-                Button(action: { viewModel.sendStopCommand() }) {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 18))
-                        .foregroundColor(.white)
-                        .frame(width: 52, height: 52)
-                        .background(Color.red.opacity(0.8))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("런닝 종료")
+                verticalDivider
+
+                MetricCell(
+                    label: "케이던스",
+                    value: viewModel.formattedCadence(),
+                    icon: "arrow.triangle.2.circlepath",
+                    iconColor: .cyan
+                )
             }
-            .padding(.bottom, 8)
+            .frame(height: 36)
         }
+    }
+
+    // MARK: - Dividers
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(height: 1)
+            .padding(.horizontal, 8)
+    }
+
+    private var verticalDivider: some View {
+        Rectangle()
+            .fill(Color.gray.opacity(0.2))
+            .frame(width: 1)
+    }
+}
+
+// MARK: - Metric Cell
+
+private struct MetricCell: View {
+    let label: String
+    let value: String
+    var icon: String?
+    var iconColor: Color = .white
+
+    var body: some View {
+        VStack(spacing: 1) {
+            HStack(spacing: 3) {
+                if let icon = icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 9))
+                        .foregroundColor(iconColor)
+                }
+                Text(value)
+                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundColor(.gray)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label) \(value)")
     }
 }

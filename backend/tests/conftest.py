@@ -1,4 +1,4 @@
-"""Shared test fixtures for the RunCrew backend test suite.
+"""Shared test fixtures for the RUNVS backend test suite.
 
 Environment variables are set BEFORE any app module import so that
 get_settings() (lru-cached) always returns test-safe values.

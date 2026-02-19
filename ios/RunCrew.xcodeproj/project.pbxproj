@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01F3A4B5C6D7E8F90A1B2C3D /* ControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01F3A4B5C6D7E8F90A1B2C3E /* ControlView.swift */; };
 		02F298461B432E194816937C /* PausedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A849E6BDBD56885F613276 /* PausedView.swift */; };
 		0738A9A3CFB96EDA6A4AF2AB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1FA1B7C7CEB8D9C1433392A2 /* PrivacyInfo.xcprivacy */; };
 		0BA0D444EA396EC7F9750795 /* OutlierDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E39802E5031682A0308681 /* OutlierDetector.swift */; };
@@ -50,10 +51,22 @@
 		FBE70347F8E60CEDD539C4E0 /* GPSTrackerModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909473F9413E3A85CD4D8D1D /* GPSTrackerModule.swift */; };
 		FE4FCAD09D937B791916CE8A /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC30CCA13FB0CBAD7F791D16 /* WatchSessionManager.swift */; };
 		FFAAFA5B30D6367426D343A6 /* GPSTrackerModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 0BE70551443B1C23DDD6950C /* GPSTrackerModule.m */; };
+		WATCH_EMBED_001 /* RunCrew Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 7D877B030C22BC36F5C9BEB4 /* RunCrew Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		WATCH_PROXY_001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7910D078E6D3D3B4111A7372;
+			remoteInfo = "RunCrew Watch App";
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		01A849E6BDBD56885F613276 /* PausedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PausedView.swift; sourceTree = "<group>"; };
+		01F3A4B5C6D7E8F90A1B2C3E /* ControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlView.swift; sourceTree = "<group>"; };
 		04EA1770F7404268825423FB /* noop-file.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "noop-file.swift"; path = "RunCrew/noop-file.swift"; sourceTree = "<group>"; };
 		0BE70551443B1C23DDD6950C /* GPSTrackerModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = GPSTrackerModule.m; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* RunCrew.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RunCrew.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -207,6 +220,7 @@
 			isa = PBXGroup;
 			children = (
 				F2C54373AEC7799F16DD9F0D /* CompletedView.swift */,
+				01F3A4B5C6D7E8F90A1B2C3E /* ControlView.swift */,
 				A1B2C3D4E5F60718293A4B5D /* CourseNavigationView.swift */,
 				8D5A328F7D095939AC5C83AA /* CountdownView.swift */,
 				42F6E86EC0F37719B3DCB30B /* IdleView.swift */,
@@ -361,10 +375,12 @@
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
 				5899896285D1349FBA0D247E /* [CP] Embed Pods Frameworks */,
+				WATCH_COPY_001 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				WATCH_DEP_001 /* PBXTargetDependency */,
 			);
 			name = RunCrew;
 			productName = RunCrew;
@@ -389,6 +405,28 @@
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		WATCH_COPY_001 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				WATCH_EMBED_001 /* RunCrew Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		WATCH_DEP_001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7910D078E6D3D3B4111A7372 /* RunCrew Watch App */;
+			targetProxy = WATCH_PROXY_001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		83CBB9F71A601CBA00E9B192 /* Project object */ = {
@@ -624,6 +662,7 @@
 				02F298461B432E194816937C /* PausedView.swift in Sources */,
 				B9D95FD262AEF5BC36FCCB3B /* RunningView.swift in Sources */,
 				D1A2B3C4E5F60718293A4B5C /* CourseNavigationView.swift in Sources */,
+				01F3A4B5C6D7E8F90A1B2C3D /* ControlView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

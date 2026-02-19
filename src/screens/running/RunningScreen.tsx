@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   Platform,
   StatusBar,
+  Animated,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -24,6 +25,7 @@ import { turnDirectionIcon, formatTurnInstruction } from '../../utils/navigation
 import { courseService } from '../../services/courseService';
 import { runService } from '../../services/runService';
 import RouteMapView from '../../components/map/RouteMapView';
+import { useCompassHeading } from '../../hooks/useCompassHeading';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import type { RunningStackParamList } from '../../types/navigation';
@@ -40,9 +42,6 @@ export default function RunningScreen() {
   const courseId = dismissedCourse ? null : (route.params?.courseId ?? null);
   const [courseRoute, setCourseRoute] = useState<Array<{ latitude: number; longitude: number }> | null>(null);
 
-  const colors = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
-
   const {
     phase,
     sessionId,
@@ -54,6 +53,8 @@ export default function RunningScreen() {
     routePoints,
     calories,
     heartRate,
+    cadence,
+    elevationGainMeters,
     watchConnected,
     currentLocation,
     isApproachingStart,
@@ -68,6 +69,15 @@ export default function RunningScreen() {
     reset,
     setPhase,
   } = useRunningStore();
+
+  // Only use GPS course heading when actually moving. When stationary, magnetometer
+  // heading shows PHONE direction (not user direction), so hide the cone entirely.
+  const isMoving = (currentLocation?.speed ?? 0) > 0.5; // > 0.5 m/s
+  const headingValue = useCompassHeading(100, isMoving ? (currentLocation?.bearing ?? null) : null);
+  const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const { hapticFeedback, countdownSeconds, voiceGuidance, setVoiceGuidance } = useSettingsStore();
   const { startTracking, stopTracking, pauseTracking, resumeTracking } =
@@ -94,6 +104,13 @@ export default function RunningScreen() {
       reset();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track user location from store for custom map marker
+  useEffect(() => {
+    if (currentLocation) {
+      setMyLocation({ latitude: currentLocation.latitude, longitude: currentLocation.longitude });
+    }
+  }, [currentLocation]);
 
   // Fetch course route for navigation overlay
   useEffect(() => {
@@ -332,10 +349,13 @@ export default function RunningScreen() {
         {/* Mini Map */}
         <RouteMapView
           routePoints={routePoints}
+          hideRouteMarkers
           previewPolyline={courseRoute ?? undefined}
           showUserLocation
           followsUserLocation
           interactive
+          customUserLocation={myLocation ?? undefined}
+          customUserHeading={headingValue}
           style={styles.miniMap}
         />
 
@@ -417,51 +437,51 @@ export default function RunningScreen() {
           </View>
         )}
 
-        {/* Dashboard row */}
-        <View style={styles.dashboardRow}>
-          <View style={styles.dashboardCell}>
-            <Text style={styles.dashboardLabel}>시간</Text>
-            <Text style={styles.dashboardValue}>
-              {formatDuration(durationSeconds)}
-            </Text>
+        {/* Dashboard — 6 metrics in 2 rows */}
+        <View style={styles.dashboardGrid}>
+          <View style={styles.dashboardRow}>
+            <View style={styles.dashboardCell}>
+              <Text style={styles.dashboardLabel}>시간</Text>
+              <Text style={styles.dashboardValue}>
+                {formatDuration(durationSeconds)}
+              </Text>
+            </View>
+            <View style={styles.dashboardDivider} />
+            <View style={styles.dashboardCell}>
+              <Text style={styles.dashboardLabel}>평균 페이스</Text>
+              <Text style={styles.dashboardValue}>
+                {formatPace(avgPaceSecondsPerKm)}
+              </Text>
+            </View>
+            <View style={styles.dashboardDivider} />
+            <View style={styles.dashboardCell}>
+              <Text style={styles.dashboardLabel}>칼로리</Text>
+              <Text style={styles.dashboardValue}>{calories}</Text>
+            </View>
           </View>
-
-          <View style={styles.dashboardDivider} />
-
-          <View style={styles.dashboardCell}>
-            <Text style={styles.dashboardLabel}>페이스</Text>
-            <Text style={styles.dashboardValue}>
-              {formatPace(currentPaceSecondsPerKm)}
-            </Text>
+          <View style={styles.dashboardRowDivider} />
+          <View style={styles.dashboardRow}>
+            <View style={styles.dashboardCell}>
+              <Text style={styles.dashboardLabel}>심박수</Text>
+              <Text style={[styles.dashboardValue, heartRate > 0 && { color: colors.error }]}>
+                {heartRate > 0 ? Math.round(heartRate) : '--'}
+              </Text>
+            </View>
+            <View style={styles.dashboardDivider} />
+            <View style={styles.dashboardCell}>
+              <Text style={styles.dashboardLabel}>케이던스</Text>
+              <Text style={styles.dashboardValue}>
+                {cadence > 0 ? cadence : '--'}
+              </Text>
+            </View>
+            <View style={styles.dashboardDivider} />
+            <View style={styles.dashboardCell}>
+              <Text style={styles.dashboardLabel}>고도(m)</Text>
+              <Text style={styles.dashboardValue}>
+                {elevationGainMeters > 0 ? `+${Math.round(elevationGainMeters)}` : '--'}
+              </Text>
+            </View>
           </View>
-
-          <View style={styles.dashboardDivider} />
-
-          <View style={styles.dashboardCell}>
-            <Text style={styles.dashboardLabel}>평균</Text>
-            <Text style={styles.dashboardValue}>
-              {formatPace(avgPaceSecondsPerKm)}
-            </Text>
-          </View>
-
-          {heartRate > 0 && (
-            <>
-              <View style={styles.dashboardDivider} />
-              <View style={styles.dashboardCell}>
-                <Text style={styles.dashboardLabel}>심박수</Text>
-                <Text style={[styles.dashboardValue, { color: colors.error }]}>
-                  {Math.round(heartRate)}
-                </Text>
-              </View>
-            </>
-          )}
-        </View>
-
-        {/* Calories strip */}
-        <View style={styles.caloriesStrip}>
-          <Text style={styles.caloriesLabel}>칼로리</Text>
-          <Text style={styles.caloriesValue}>{calories}</Text>
-          <Text style={styles.caloriesUnit}>kcal</Text>
         </View>
 
         {/* Controls */}
@@ -841,14 +861,22 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.textSecondary,
   },
 
-  // Dashboard row
+  // Dashboard grid (2 rows x 3 cols)
+  dashboardGrid: {
+    backgroundColor: c.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.sm,
+  },
   dashboardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: c.surface,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+  },
+  dashboardRowDivider: {
+    height: 1,
+    backgroundColor: c.divider,
+    marginHorizontal: SPACING.lg,
   },
   dashboardCell: {
     flex: 1,
@@ -861,7 +889,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.textSecondary,
   },
   dashboardValue: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
     color: c.text,
     fontVariant: ['tabular-nums'],
@@ -873,11 +901,11 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   dashboardDivider: {
     width: 1,
-    height: 36,
+    height: 32,
     backgroundColor: c.divider,
   },
 
-  // Calories strip
+  // Calories strip (unused, kept for compat)
   caloriesStrip: {
     flexDirection: 'row',
     alignItems: 'center',

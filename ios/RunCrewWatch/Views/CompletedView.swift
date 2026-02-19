@@ -1,5 +1,7 @@
 import SwiftUI
 
+private let appOrange = Color(red: 1.0, green: 0.478, blue: 0.2)
+
 struct CompletedView: View {
     @EnvironmentObject var viewModel: RunSessionViewModel
 
@@ -8,7 +10,7 @@ struct CompletedView: View {
             VStack(spacing: 12) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 36))
-                    .foregroundColor(.green)
+                    .foregroundColor(appOrange)
                     .accessibilityHidden(true)
 
                 Text("런닝 완료!")

@@ -12,6 +12,7 @@ from app.models.favorite import CourseFavorite
 from app.models.external_import import ExternalImport
 from app.models.like import CourseLike
 from app.models.device_token import DeviceToken
+from app.models.gear import UserGear
 from app.models.strava_connection import StravaConnection
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "CourseFavorite",
     "CourseLike",
     "DeviceToken",
+    "UserGear",
     "StravaConnection",
 ]
