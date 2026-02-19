@@ -73,7 +73,7 @@ export default function RunningScreen() {
   // Only use GPS course heading when actually moving. When stationary, magnetometer
   // heading shows PHONE direction (not user direction), so hide the cone entirely.
   const isMoving = (currentLocation?.speed ?? 0) > 0.5; // > 0.5 m/s
-  const headingValue = useCompassHeading(100, isMoving ? (currentLocation?.bearing ?? null) : null);
+  const { heading: headingValue } = useCompassHeading(100, isMoving ? (currentLocation?.bearing ?? null) : null);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const colors = useTheme();

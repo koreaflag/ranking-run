@@ -78,7 +78,7 @@ export default function RunResultScreen() {
   const [submitted, setSubmitted] = useState(false);
 
   // Compass heading (native CLHeading only — no GPS bearing after run ends)
-  const headingValue = useCompassHeading();
+  const { heading: headingValue } = useCompassHeading();
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const handleUserLocationChange = useCallback(
