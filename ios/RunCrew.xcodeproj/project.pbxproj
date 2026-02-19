@@ -30,7 +30,6 @@
 		7822B446638980B0C52210A7 /* WatchBridgeModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C0D5E99EBB32668804A57B8 /* WatchBridgeModule.swift */; };
 		7A3DAF2430A2E41C8DD4F7DA /* WatchMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CB363B4A1EA35D9BB02DB7 /* WatchMessage.swift */; };
 		8711395128334C34B4188838 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1FA1B7C7CEB8D9C1433392A2 /* PrivacyInfo.xcprivacy */; };
-		87622135D7A8895F1BE1B395 /* RunCrew Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 7D877B030C22BC36F5C9BEB4 /* RunCrew Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8F9DB380AF3B34C960213AC8 /* LocationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6FE64330D8041998CDF36B /* LocationEngine.swift */; };
 		96905EF65AED1B983A6B3ABC /* libPods-RunCrew.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 58EEBF8E8E6FB1BC6CAF49B5 /* libPods-RunCrew.a */; };
 		9EB1D5F3875D84A6CB4DFDED /* GeoMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827B5F7E33D2E3BFEEE93F8 /* GeoMath.swift */; };
@@ -52,30 +51,6 @@
 		FE4FCAD09D937B791916CE8A /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC30CCA13FB0CBAD7F791D16 /* WatchSessionManager.swift */; };
 		FFAAFA5B30D6367426D343A6 /* GPSTrackerModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 0BE70551443B1C23DDD6950C /* GPSTrackerModule.m */; };
 /* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		5C21ED4B0CF8346C4D4E9C95 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 7910D078E6D3D3B4111A7372;
-			remoteInfo = "RunCrew Watch App";
-		};
-/* End PBXContainerItemProxy section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		691264DE91BDA8E906CEACD9 /* Embed Watch Content */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
-			dstSubfolderSpec = 16;
-			files = (
-				87622135D7A8895F1BE1B395 /* RunCrew Watch App.app in Embed Watch Content */,
-			);
-			name = "Embed Watch Content";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		01A849E6BDBD56885F613276 /* PausedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PausedView.swift; sourceTree = "<group>"; };
@@ -386,12 +361,10 @@
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
 				5899896285D1349FBA0D247E /* [CP] Embed Pods Frameworks */,
-				691264DE91BDA8E906CEACD9 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				1E6A3B771A72A02BF78408EE /* PBXTargetDependency */,
 			);
 			name = RunCrew;
 			productName = RunCrew;
@@ -533,10 +506,18 @@
 			);
 			inputPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-RunCrew/Pods-RunCrew-frameworks.sh",
+				"${BUILT_PRODUCTS_DIR}/MapboxMaps/MapboxMaps.framework",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/MapboxCommon/MapboxCommon.framework/MapboxCommon",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/MapboxCoreMaps/MapboxCoreMaps.framework/MapboxCoreMaps",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/Turf/Turf.framework/Turf",
 				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
 			);
 			name = "[CP] Embed Pods Frameworks";
 			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/MapboxMaps.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/MapboxCommon.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/MapboxCoreMaps.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/Turf.framework",
 				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -651,14 +632,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		1E6A3B771A72A02BF78408EE /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 7910D078E6D3D3B4111A7372 /* RunCrew Watch App */;
-			targetProxy = 5C21ED4B0CF8346C4D4E9C95 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {

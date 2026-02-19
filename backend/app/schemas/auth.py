@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class LoginRequest(BaseModel):
     """Social login request."""
-    provider: Literal["kakao", "apple", "google"]
+    provider: Literal["kakao", "apple", "google", "naver"]
     token: str = Field(..., min_length=1, description="Kakao access_token or Apple id_token")
     nonce: str | None = Field(None, description="Apple Sign In nonce (required for Apple)")
 

@@ -1,14 +1,11 @@
 """Upload endpoints: avatar image upload."""
-
 import os
-import uuid
-from pathlib import Path
 
-import aiofiles
 from fastapi import APIRouter, HTTPException, UploadFile, status
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser
+from app.core.storage import get_storage
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
@@ -23,14 +20,7 @@ async def upload_avatar(
     file: UploadFile,
     current_user: CurrentUser,
 ) -> dict:
-    """Upload a profile avatar image.
-
-    Accepts JPEG, PNG, and WebP images up to 5MB.
-    Returns the public URL of the uploaded image.
-
-    In production, this would upload to S3/GCS. For MVP,
-    files are saved to local storage.
-    """
+    """Upload a profile avatar image. Accepts JPEG, PNG, WebP up to 5MB."""
     # Validate content type
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
@@ -42,6 +32,7 @@ async def upload_avatar(
         )
 
     # Validate file extension
+    ext = ".jpg"
     if file.filename:
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
@@ -52,8 +43,6 @@ async def upload_avatar(
                     "message": f"Invalid file extension: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
                 },
             )
-    else:
-        ext = ".jpg"
 
     # Read and validate size
     contents = await file.read()
@@ -67,21 +56,8 @@ async def upload_avatar(
             },
         )
 
-    # Generate unique filename
-    file_id = uuid.uuid4().hex
-    filename = f"{file_id}{ext}"
-
-    # Ensure upload directory exists
-    upload_dir = Path(settings.UPLOAD_DIR) / "avatars"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    file_path = upload_dir / filename
-
-    # Write file
-    async with aiofiles.open(file_path, "wb") as f:
-        await f.write(contents)
-
-    # In production, this would be an S3 URL
-    url = f"/uploads/avatars/{filename}"
+    # Upload via storage abstraction (local or S3)
+    storage = get_storage()
+    url = await storage.upload(data=contents, folder="avatars", extension=ext)
 
     return {"url": url}

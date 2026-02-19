@@ -13,6 +13,7 @@ import {
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { courseService } from '../../services/courseService';
 import { useCourseStore } from '../../stores/courseStore';
+import { Ionicons } from '@expo/vector-icons';
 import Button from '../../components/common/Button';
 import RouteMapView from '../../components/map/RouteMapView';
 import { formatDistance } from '../../utils/format';
@@ -23,6 +24,8 @@ import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils
 
 type CreateRoute = RouteProp<CourseStackParamList, 'CourseCreate'>;
 
+const MIN_COURSE_DISTANCE_M = 500;
+
 export default function CourseCreateScreen() {
   const navigation = useNavigation();
   const route = useRoute<CreateRoute>();
@@ -32,6 +35,7 @@ export default function CourseCreateScreen() {
     distanceMeters,
     durationSeconds,
     elevationGainMeters,
+    isLoop,
   } = route.params;
 
   const colors = useTheme();
@@ -41,8 +45,14 @@ export default function CourseCreateScreen() {
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [courseType, setCourseType] = useState<'normal' | 'loop'>(isLoop ? 'loop' : 'normal');
+  const [lapCount, setLapCount] = useState(1);
 
   const handleCreate = async () => {
+    if (distanceMeters < MIN_COURSE_DISTANCE_M) {
+      Alert.alert('알림', '500m 이상의 기록만 코스로 등록할 수 있습니다.');
+      return;
+    }
     if (!title.trim()) {
       Alert.alert('알림', '코스 이름을 입력해주세요.');
       return;
@@ -66,6 +76,7 @@ export default function CourseCreateScreen() {
         elevation_profile: [],
         is_public: isPublic,
         tags: [],
+        ...(courseType === 'loop' ? { course_type: 'loop', lap_count: lapCount } : {}),
       });
 
       // Refresh course list then go back to it
@@ -130,6 +141,61 @@ export default function CourseCreateScreen() {
             <Text style={styles.infoLabel}>고도 상승</Text>
           </View>
         </View>
+
+        {/* Course Type (shown when loop detected) */}
+        {isLoop && (
+          <View style={styles.courseTypeSection}>
+            <Text style={styles.inputLabel}>코스 유형</Text>
+            <View style={styles.courseTypeRow}>
+              <TouchableOpacity
+                style={[
+                  styles.courseTypeBtn,
+                  courseType === 'normal' && styles.courseTypeBtnActive,
+                ]}
+                onPress={() => setCourseType('normal')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-forward" size={16} color={courseType === 'normal' ? COLORS.white : colors.textSecondary} />
+                <Text style={[styles.courseTypeBtnText, courseType === 'normal' && styles.courseTypeBtnTextActive]}>편도</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.courseTypeBtn,
+                  courseType === 'loop' && styles.courseTypeBtnActive,
+                ]}
+                onPress={() => setCourseType('loop')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="repeat" size={16} color={courseType === 'loop' ? COLORS.white : colors.textSecondary} />
+                <Text style={[styles.courseTypeBtnText, courseType === 'loop' && styles.courseTypeBtnTextActive]}>왕복</Text>
+              </TouchableOpacity>
+            </View>
+
+            {courseType === 'loop' && (
+              <View style={styles.lapCountRow}>
+                <Text style={styles.lapCountLabel}>랩 수</Text>
+                <View style={styles.lapCountControls}>
+                  <TouchableOpacity
+                    style={[styles.lapCountBtn, lapCount <= 1 && styles.lapCountBtnDisabled]}
+                    onPress={() => setLapCount(Math.max(1, lapCount - 1))}
+                    disabled={lapCount <= 1}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="remove" size={18} color={lapCount <= 1 ? colors.textTertiary : colors.text} />
+                  </TouchableOpacity>
+                  <Text style={styles.lapCountValue}>{lapCount}</Text>
+                  <TouchableOpacity
+                    style={styles.lapCountBtn}
+                    onPress={() => setLapCount(Math.min(10, lapCount + 1))}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="add" size={18} color={colors.text} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Title Input -- bottom border style */}
         <View style={styles.inputGroup}>
@@ -280,6 +346,76 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: FONT_SIZES.xs,
     fontWeight: '500',
     color: c.textTertiary,
+  },
+
+  // -- Course Type Selector --
+  courseTypeSection: {
+    gap: SPACING.md,
+  },
+  courseTypeRow: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+  },
+  courseTypeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  courseTypeBtnActive: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  courseTypeBtnText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: c.textSecondary,
+  },
+  courseTypeBtnTextActive: {
+    color: COLORS.white,
+  },
+  lapCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.sm,
+  },
+  lapCountLabel: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: c.text,
+  },
+  lapCountControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  lapCountBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: c.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  lapCountBtnDisabled: {
+    opacity: 0.4,
+  },
+  lapCountValue: {
+    fontSize: FONT_SIZES.xl,
+    fontWeight: '800',
+    color: c.text,
+    fontVariant: ['tabular-nums'] as any,
+    minWidth: 28,
+    textAlign: 'center',
   },
 
   // -- Input fields: card bg, bottom border style --

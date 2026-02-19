@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View, Text, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import type { MainTabParamList } from '../types/navigation';
 import WorldStack from './WorldStack';
 import HomeStack from './HomeStack';
@@ -10,6 +11,7 @@ import RunningStack from './RunningStack';
 import MyPageStack from './MyPageStack';
 import { COLORS, FONT_SIZES } from '../utils/constants';
 import { useTheme } from '../hooks/useTheme';
+import { useSettingsStore } from '../stores/settingsStore';
 import type { ThemeColors } from '../utils/constants';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -45,8 +47,6 @@ function TabIcon({ label, iconName, iconNameFocused, focused, colors }: TabIconP
 }
 
 function WorldTabIcon({ focused, colors }: { focused: boolean; colors: ThemeColors }) {
-  const active = colors.text;
-  const inactive = colors.textTertiary;
   return (
     <View style={styles.worldTabWrapper}>
       <View
@@ -54,19 +54,19 @@ function WorldTabIcon({ focused, colors }: { focused: boolean; colors: ThemeColo
           styles.worldTabCircle,
           focused
             ? [styles.worldTabCircleActive, { backgroundColor: colors.primary }]
-            : { backgroundColor: colors.surfaceLight },
+            : { backgroundColor: colors.surface },
         ]}
       >
         <Ionicons
           name={focused ? 'globe' : 'globe-outline'}
           size={26}
-          color={focused ? colors.text : colors.textTertiary}
+          color={focused ? COLORS.white : colors.textTertiary}
         />
       </View>
       <Text
         style={[
           styles.worldTabLabel,
-          { color: focused ? active : inactive },
+          { color: focused ? colors.text : colors.textTertiary },
         ]}
       >
         월드
@@ -83,6 +83,7 @@ export default function TabNavigator() {
       initialRouteName="WorldTab"
       screenOptions={{
         headerShown: false,
+        lazy: true,
         tabBarStyle: [
           styles.tabBar,
           {
@@ -93,6 +94,13 @@ export default function TabNavigator() {
         tabBarShowLabel: false,
         tabBarActiveTintColor: colors.text,
         tabBarInactiveTintColor: colors.textTertiary,
+      }}
+      screenListeners={{
+        tabPress: () => {
+          if (useSettingsStore.getState().hapticFeedback) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
+        },
       }}
     >
       <Tab.Screen

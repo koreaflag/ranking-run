@@ -1,19 +1,14 @@
-import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { StyleSheet, View, Text, Platform } from 'react-native';
-import MapView, {
-  Marker,
-  Polyline,
-  PROVIDER_GOOGLE,
-  PROVIDER_DEFAULT,
-} from 'react-native-maps';
-import type { Region } from 'react-native-maps';
+import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
+import { StyleSheet, View, Text, Platform, Animated } from 'react-native';
+import Mapbox, { UserTrackingMode } from '@rnmapbox/maps';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, DIFFICULTY_COLORS, DIFFICULTY_LABELS, type DifficultyLevel } from '../../utils/constants';
 import { formatDistance } from '../../utils/format';
 import { useTheme } from '../../hooks/useTheme';
+import { MAPBOX_DARK_STYLE, MAPBOX_LIGHT_STYLE } from '../../config/env';
 
 // ============================================================
-// RouteMapView
+// RouteMapView — Mapbox GL implementation
 //
 // Two modes:
 //   A) Route display  – shows a polyline of a running route
@@ -21,26 +16,18 @@ import { useTheme } from '../../hooks/useTheme';
 //      event markers, and friend markers
 // ============================================================
 
-const SEOUL_REGION: Region = {
-  latitude: 37.5665,
-  longitude: 126.978,
-  latitudeDelta: 0.05,
-  longitudeDelta: 0.05,
-};
+// Backward-compatible Region type (replaces react-native-maps Region)
+export interface Region {
+  latitude: number;
+  longitude: number;
+  latitudeDelta: number;
+  longitudeDelta: number;
+}
+
+const SEOUL_CENTER: [number, number] = [126.978, 37.5665]; // [lng, lat]
+const DEFAULT_ZOOM = 13;
 
 const EDGE_PADDING = { top: 50, right: 50, bottom: 50, left: 50 };
-
-const DARK_MAP_STYLE = [
-  { elementType: 'geometry', stylers: [{ color: '#1a1a1a' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#999999' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a1a1a' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2a2a2a' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#333333' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
-  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#222222' }] },
-  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#1a2e1a' }] },
-  { featureType: 'transit', elementType: 'geometry', stylers: [{ color: '#222222' }] },
-];
 
 // ---- Data interfaces ----
 
@@ -83,37 +70,25 @@ export interface FriendMarkerData {
 // ---- Component props ----
 
 interface RouteMapViewProps {
-  /** Route points for polyline display mode */
   routePoints?: Array<{ latitude: number; longitude: number }>;
-  /** Course markers for open-world map mode */
   markers?: CourseMarkerData[];
-  /** Event markers for open-world map mode */
   eventMarkers?: EventMarkerData[];
-  /** Friend location markers for open-world map mode */
   friendMarkers?: FriendMarkerData[];
-  /** Preview polyline for course preview (3D mode) */
   previewPolyline?: Array<{ latitude: number; longitude: number }>;
-  /** Called when a course marker is tapped */
   onMarkerPress?: (courseId: string) => void;
-  /** Called when an event marker is tapped */
   onEventMarkerPress?: (eventId: string) => void;
-  /** Called when the visible region changes (for fetching markers in viewport) */
   onRegionChange?: (region: Region) => void;
-  /** Called when the map background is tapped (no marker) */
   onMapPress?: () => void;
-  /** Show the blue user-location dot */
   showUserLocation?: boolean;
-  /** Auto-follow user location (centers map on user) */
   followsUserLocation?: boolean;
-  /** Called when user location changes (from MapView) */
-  onUserLocationChange?: (coordinate: { latitude: number; longitude: number }) => void;
+  onUserLocationChange?: (coordinate: { latitude: number; longitude: number; heading?: number }) => void;
   style?: object;
-  /** Allow pan/zoom; defaults to true when markers are provided, false for route mode */
   interactive?: boolean;
-  /** Enable pitch (3D tilt) on the map */
   pitchEnabled?: boolean;
-  /** Show a static blue marker at this coordinate (for result screen when live location unavailable) */
   lastKnownLocation?: { latitude: number; longitude: number };
+  endPointOverride?: { latitude: number; longitude: number };
+  customUserLocation?: { latitude: number; longitude: number };
+  customUserHeading?: number | Animated.Value;
 }
 
 export interface Camera {
@@ -142,12 +117,45 @@ const getDifficultyColor = (difficulty?: string | null): string => {
   return COLORS.primary;
 };
 
-const getDifficultyLabel = (difficulty?: string | null): string => {
-  if (difficulty && difficulty in DIFFICULTY_LABELS) {
-    return DIFFICULTY_LABELS[difficulty as DifficultyLevel];
+/** Convert lat/lng points to GeoJSON LineString */
+function toLineGeoJSON(points: Array<{ latitude: number; longitude: number }>): GeoJSON.Feature<GeoJSON.LineString> {
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'LineString',
+      coordinates: points.map(p => [p.longitude, p.latitude]),
+    },
+    properties: {},
+  };
+}
+
+/** Compute bounds from points → [ne, sw] as [[lng,lat],[lng,lat]] */
+function computeBounds(points: Array<{ latitude: number; longitude: number }>): {
+  ne: [number, number];
+  sw: [number, number];
+} {
+  let minLat = points[0].latitude;
+  let maxLat = points[0].latitude;
+  let minLng = points[0].longitude;
+  let maxLng = points[0].longitude;
+
+  for (const p of points) {
+    if (p.latitude < minLat) minLat = p.latitude;
+    if (p.latitude > maxLat) maxLat = p.latitude;
+    if (p.longitude < minLng) minLng = p.longitude;
+    if (p.longitude > maxLng) maxLng = p.longitude;
   }
-  return '';
-};
+
+  return {
+    ne: [maxLng, maxLat],
+    sw: [minLng, minLat],
+  };
+}
+
+/** Compute zoom level from lat/lng delta */
+function deltaToZoom(latDelta: number): number {
+  return Math.max(1, Math.min(20, Math.log2(360 / Math.max(latDelta, 0.0001))));
+}
 
 // ---- Component ----
 
@@ -168,141 +176,210 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   interactive,
   pitchEnabled: pitchEnabledProp,
   lastKnownLocation,
+  endPointOverride,
+  customUserLocation,
+  customUserHeading,
 }, ref) {
-  const mapRef = useRef<MapView>(null);
+  const cameraRef = useRef<Mapbox.Camera>(null);
   const colors = useTheme();
   const isDark = colors.statusBar === 'light-content';
 
+  // Determine mode
+  const isRouteMode = routePoints.length > 0;
+  const isMarkersMode = !isRouteMode && markers != null;
+  const isInteractive = interactive ?? (isMarkersMode ? true : false);
+
+  // Imperative handle
   useImperativeHandle(ref, () => ({
     animateToRegion: (region: Region, duration = 500) => {
-      mapRef.current?.animateToRegion(region, duration);
+      cameraRef.current?.setCamera({
+        centerCoordinate: [region.longitude, region.latitude],
+        zoomLevel: deltaToZoom(region.latitudeDelta),
+        animationDuration: duration,
+        animationMode: 'easeTo',
+      });
     },
     animateCamera: (camera: Camera, duration = 1500) => {
-      mapRef.current?.animateCamera(camera, { duration });
+      const config: any = { animationDuration: duration, animationMode: 'flyTo' };
+      if (camera.center) {
+        config.centerCoordinate = [camera.center.longitude, camera.center.latitude];
+      }
+      if (camera.pitch != null) config.pitch = camera.pitch;
+      if (camera.heading != null) config.heading = camera.heading;
+      if (camera.zoom != null) config.zoomLevel = camera.zoom;
+      cameraRef.current?.setCamera(config);
     },
     fitToCoordinates: (
       coords: Array<{ latitude: number; longitude: number }>,
       edgePadding = EDGE_PADDING,
       animated = true,
     ) => {
-      mapRef.current?.fitToCoordinates(coords, { edgePadding, animated });
+      if (coords.length === 0) return;
+      const { ne, sw } = computeBounds(coords);
+      cameraRef.current?.fitBounds(
+        ne,
+        sw,
+        [edgePadding.top, edgePadding.right, edgePadding.bottom, edgePadding.left],
+        animated ? 500 : 0,
+      );
     },
   }));
 
-  // Determine mode
-  const isRouteMode = routePoints.length > 0;
-  const isMarkersMode = !isRouteMode && markers != null;
-
-  // Resolve interactivity: explicit prop > markers-mode default true > route-mode default false
-  const isInteractive = interactive ?? (isMarkersMode ? true : false);
-
-  // For non-interactive route mode, use controlled `region` prop instead of
-  // initialRegion+fitToCoordinates — the latter is unreliable inside ScrollView on iOS.
-  // Skip when followsUserLocation is on — controlled region fights with follow mode.
-  const routeRegion = isRouteMode && routePoints.length > 0 && !isInteractive && !followsUserLocation
-    ? computeRegionFromPoints(routePoints)
-    : undefined;
-
-  // Fit map to route points once the map is ready (interactive route mode only)
-  const handleMapReady = useCallback(() => {
-    if (isRouteMode && routePoints.length >= 2 && isInteractive) {
-      setTimeout(() => {
-        mapRef.current?.fitToCoordinates(routePoints, {
-          edgePadding: EDGE_PADDING,
-          animated: false,
-        });
-      }, 300);
+  // Initial camera config
+  const initialCenter: [number, number] = useMemo(() => {
+    if (isRouteMode && routePoints.length > 0) {
+      const { ne, sw } = computeBounds(routePoints);
+      return [(ne[0] + sw[0]) / 2, (ne[1] + sw[1]) / 2];
     }
-  }, [isRouteMode, routePoints, isInteractive]);
+    return SEOUL_CENTER;
+  }, []);
 
-  // Re-fit when routePoints change — only for interactive route mode
-  // (non-interactive uses controlled `region` prop; fitToCoordinates conflicts with followsUserLocation)
+  const initialZoom = useMemo(() => {
+    if (isRouteMode && routePoints.length > 0) {
+      const { ne, sw } = computeBounds(routePoints);
+      const latDelta = Math.max((ne[1] - sw[1]) * 1.5, 0.005);
+      return deltaToZoom(latDelta);
+    }
+    if (followsUserLocation) return 16;
+    return DEFAULT_ZOOM;
+  }, []);
+
+  // Fit map to route points on mount (for interactive route mode)
+  const handleDidFinishLoadingMap = useCallback(() => {
+    if (isRouteMode && routePoints.length >= 2) {
+      setTimeout(() => {
+        const { ne, sw } = computeBounds(routePoints);
+        cameraRef.current?.fitBounds(ne, sw, [50, 50, 50, 50], 0);
+      }, 200);
+    }
+  }, [isRouteMode, routePoints]);
+
+  // Re-fit when routePoints change (interactive route mode)
   useEffect(() => {
     if (isRouteMode && routePoints.length >= 2 && isInteractive && !followsUserLocation) {
       const timer = setTimeout(() => {
-        mapRef.current?.fitToCoordinates(routePoints, {
-          edgePadding: EDGE_PADDING,
-          animated: true,
-        });
+        const { ne, sw } = computeBounds(routePoints);
+        cameraRef.current?.fitBounds(ne, sw, [50, 50, 50, 50], 500);
       }, 300);
       return () => clearTimeout(timer);
     }
   }, [isRouteMode, routePoints, isInteractive, followsUserLocation]);
 
-  const handleRegionChangeComplete = useCallback(
-    (region: Region) => {
-      onRegionChange?.(region);
+  // Region change callback
+  const handleRegionDidChange = useCallback(
+    (feature: any) => {
+      if (!onRegionChange) return;
+      const bounds = feature?.properties?.visibleBounds;
+      if (!bounds || bounds.length < 2) return;
+      const ne = bounds[0]; // [lng, lat]
+      const sw = bounds[1];
+      const region: Region = {
+        latitude: (ne[1] + sw[1]) / 2,
+        longitude: (ne[0] + sw[0]) / 2,
+        latitudeDelta: Math.abs(ne[1] - sw[1]),
+        longitudeDelta: Math.abs(ne[0] - sw[0]),
+      };
+      onRegionChange(region);
     },
     [onRegionChange],
+  );
+
+  // User location update
+  const handleUserLocationUpdate = useCallback(
+    (location: any) => {
+      if (!onUserLocationChange) return;
+      const coords = location?.coords;
+      if (!coords) return;
+      onUserLocationChange({
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        heading: coords.heading,
+      });
+    },
+    [onUserLocationChange],
   );
 
   // Start / end points for route mode
   const startPoint = isRouteMode ? routePoints[0] : undefined;
   const endPoint =
     isRouteMode && routePoints.length >= 2
-      ? routePoints[routePoints.length - 1]
+      ? (endPointOverride ?? routePoints[routePoints.length - 1])
       : undefined;
 
-  // Compute initial region (used only when routeRegion is not set)
-  // For follow mode (live running), use tight zoom (~200m view)
-  const initialRegion = followsUserLocation
-    ? { ...SEOUL_REGION, latitudeDelta: 0.003, longitudeDelta: 0.003 }
-    : isRouteMode && routePoints.length > 0
-      ? computeRegionFromPoints(routePoints)
-      : SEOUL_REGION;
+  // Route GeoJSON
+  const routeGeoJSON = useMemo(() => {
+    if (!isRouteMode || routePoints.length < 2) return null;
+    return toLineGeoJSON(routePoints);
+  }, [isRouteMode, routePoints]);
+
+  // Preview polyline GeoJSON
+  const previewGeoJSON = useMemo(() => {
+    if (!previewPolyline || previewPolyline.length < 2) return null;
+    return toLineGeoJSON(previewPolyline);
+  }, [previewPolyline]);
+
+  // Use globe projection for the world map mode
+  const projection = isMarkersMode ? 'globe' : 'mercator';
 
   return (
     <View style={[styles.container, style]}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : PROVIDER_DEFAULT}
-        customMapStyle={isDark ? DARK_MAP_STYLE : undefined}
-        userInterfaceStyle={isDark ? 'dark' : 'light'}
-        region={routeRegion}
-        initialRegion={routeRegion ? undefined : initialRegion}
-        showsUserLocation={showUserLocation}
-        followsUserLocation={followsUserLocation}
-        showsMyLocationButton={false}
-        showsCompass={isMarkersMode}
-        showsScale={false}
+      <Mapbox.MapView
+        styleURL={isDark ? MAPBOX_DARK_STYLE : MAPBOX_LIGHT_STYLE}
+        projection={projection}
+        logoEnabled={false}
+        attributionEnabled={false}
+        compassEnabled={false}
+        scaleBarEnabled={false}
         scrollEnabled={isInteractive}
         zoomEnabled={isInteractive}
         rotateEnabled={!!pitchEnabledProp}
         pitchEnabled={!!pitchEnabledProp}
-        onMapReady={handleMapReady}
-        onPress={onMapPress}
-        onUserLocationChange={
-          onUserLocationChange
-            ? (e) => onUserLocationChange(e.nativeEvent.coordinate)
-            : undefined
-        }
-        onRegionChangeComplete={
-          isMarkersMode ? handleRegionChangeComplete : undefined
-        }
-        mapPadding={
-          Platform.OS === 'android'
-            ? { top: 0, right: 0, bottom: 0, left: 0 }
-            : undefined
-        }
+        onPress={onMapPress ? () => onMapPress() : undefined}
+        onDidFinishLoadingMap={handleDidFinishLoadingMap}
+        onRegionDidChange={isMarkersMode ? handleRegionDidChange : undefined}
+        style={styles.map}
       >
-        {/* ---- Route display mode ---- */}
-        {isRouteMode && (
-          <Polyline
-            coordinates={routePoints}
-            strokeColor={COLORS.primary}
-            strokeWidth={4}
-            lineCap="round"
-            lineJoin="round"
+        {/* Camera */}
+        <Mapbox.Camera
+          ref={cameraRef}
+          defaultSettings={{
+            centerCoordinate: initialCenter,
+            zoomLevel: initialZoom,
+          }}
+          followUserLocation={followsUserLocation}
+          followUserMode={followsUserLocation ? UserTrackingMode.Follow : undefined}
+          animationMode="flyTo"
+          animationDuration={0}
+        />
+
+        {/* User location (default blue dot) */}
+        {(showUserLocation || onUserLocationChange) && (
+          <Mapbox.UserLocation
+            visible={showUserLocation && !customUserLocation}
+            animated
+            onUpdate={handleUserLocationUpdate}
           />
         )}
 
+        {/* ---- Route display mode ---- */}
+        {routeGeoJSON && (
+          <Mapbox.ShapeSource id="route-source" shape={routeGeoJSON}>
+            <Mapbox.LineLayer
+              id="route-line"
+              style={{
+                lineColor: COLORS.primary,
+                lineWidth: 4,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </Mapbox.ShapeSource>
+        )}
+
         {startPoint && (
-          <Marker
-            coordinate={startPoint}
+          <Mapbox.MarkerView
+            coordinate={[startPoint.longitude, startPoint.latitude]}
             anchor={{ x: 0.5, y: 1 }}
-            tracksViewChanges={false}
-            zIndex={1}
           >
             <View style={styles.labelMarkerWrapper}>
               <View style={[styles.labelMarkerPin, { backgroundColor: COLORS.primary }]}>
@@ -310,15 +387,13 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
               </View>
               <View style={[styles.labelMarkerTail, { borderTopColor: COLORS.primary }]} />
             </View>
-          </Marker>
+          </Mapbox.MarkerView>
         )}
 
         {endPoint && (
-          <Marker
-            coordinate={endPoint}
+          <Mapbox.MarkerView
+            coordinate={[endPoint.longitude, endPoint.latitude]}
             anchor={{ x: 0.5, y: 1 }}
-            tracksViewChanges={false}
-            zIndex={2}
           >
             <View style={[styles.labelMarkerWrapper, { marginLeft: 24 }]}>
               <View style={[styles.labelMarkerPin, { backgroundColor: COLORS.accent }]}>
@@ -326,7 +401,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
               </View>
               <View style={[styles.labelMarkerTail, { borderTopColor: COLORS.accent }]} />
             </View>
-          </Marker>
+          </Mapbox.MarkerView>
         )}
 
         {/* ---- Open-world course markers mode ---- */}
@@ -334,17 +409,18 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
           markers
             .filter((m) => m.start_lat != null && m.start_lng != null)
             .map((marker) => (
-            <Marker
+            <Mapbox.MarkerView
               key={marker.id}
-              coordinate={{
-                latitude: marker.start_lat,
-                longitude: marker.start_lng,
-              }}
+              coordinate={[marker.start_lng, marker.start_lat]}
               anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={false}
-              onPress={() => onMarkerPress?.(marker.id)}
             >
-              <View style={styles.markerWrapper}>
+              <View
+                style={styles.markerWrapper}
+                onStartShouldSetResponder={() => {
+                  onMarkerPress?.(marker.id);
+                  return true;
+                }}
+              >
                 {/* Top badge */}
                 {marker.user_rank === 1 ? (
                   <View style={styles.crownBadge}>
@@ -367,45 +443,42 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
                 {/* Pin tail */}
                 <View style={[styles.markerTail, { borderTopColor: getDifficultyColor(marker.difficulty) }]} />
               </View>
-            </Marker>
+            </Mapbox.MarkerView>
           ))}
 
         {/* ---- Event markers ---- */}
         {eventMarkers
           ?.filter((e) => e.center_lat != null && e.center_lng != null)
           .map((event) => (
-          <Marker
+          <Mapbox.MarkerView
             key={`event-${event.id}`}
-            coordinate={{
-              latitude: event.center_lat,
-              longitude: event.center_lng,
-            }}
+            coordinate={[event.center_lng, event.center_lat]}
             anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={false}
-            onPress={() => onEventMarkerPress?.(event.id)}
           >
-            <View style={styles.eventMarkerWrapper}>
+            <View
+              style={styles.eventMarkerWrapper}
+              onStartShouldSetResponder={() => {
+                onEventMarkerPress?.(event.id);
+                return true;
+              }}
+            >
               <View style={[styles.eventMarkerOuter, { borderColor: event.badge_color || COLORS.accent }]}>
                 <View style={[styles.eventMarkerInner, { backgroundColor: event.badge_color || COLORS.accent }]}>
                   <Ionicons name={(event.badge_icon || 'flash') as any} size={16} color={COLORS.white} />
                 </View>
               </View>
             </View>
-          </Marker>
+          </Mapbox.MarkerView>
         ))}
 
         {/* ---- Friend markers ---- */}
         {friendMarkers
           ?.filter((f) => f.latitude != null && f.longitude != null)
           .map((friend) => (
-          <Marker
+          <Mapbox.MarkerView
             key={`friend-${friend.user_id}`}
-            coordinate={{
-              latitude: friend.latitude,
-              longitude: friend.longitude,
-            }}
+            coordinate={[friend.longitude, friend.latitude]}
             anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={false}
           >
             <View style={styles.friendMarkerWrapper}>
               <View style={styles.friendMarker}>
@@ -413,86 +486,91 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
               </View>
               <View style={styles.friendPulse} />
             </View>
-          </Marker>
+          </Mapbox.MarkerView>
         ))}
 
-        {/* ---- Last known location marker (fallback when showsUserLocation unavailable) ---- */}
+        {/* ---- Last known location marker ---- */}
         {lastKnownLocation && (
-          <Marker
-            coordinate={lastKnownLocation}
+          <Mapbox.MarkerView
+            coordinate={[lastKnownLocation.longitude, lastKnownLocation.latitude]}
             anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={false}
           >
             <View style={styles.userLocationDot}>
               <View style={styles.userLocationInner} />
             </View>
-          </Marker>
+          </Mapbox.MarkerView>
+        )}
+
+        {/* ---- Custom user location marker with heading ---- */}
+        {customUserLocation && (
+          <Mapbox.MarkerView
+            coordinate={[customUserLocation.longitude, customUserLocation.latitude]}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <View style={styles.customUserContainer}>
+              <Animated.View
+                style={[
+                  styles.headingConeWrapper,
+                  {
+                    transform: [{
+                      rotate: customUserHeading instanceof Animated.Value
+                        ? customUserHeading.interpolate({
+                            inputRange: [-360, 360],
+                            outputRange: ['-360deg', '360deg'],
+                          })
+                        : `${customUserHeading ?? 0}deg`,
+                    }],
+                  },
+                ]}
+              >
+                <View style={styles.headingCone} />
+              </Animated.View>
+              <View style={styles.customUserDot} />
+            </View>
+          </Mapbox.MarkerView>
         )}
 
         {/* ---- Preview polyline (3D course preview) ---- */}
-        {previewPolyline && previewPolyline.length >= 2 && (
-          <>
-            <Polyline
-              coordinates={previewPolyline}
-              strokeColor={COLORS.primary}
-              strokeWidth={5}
-              lineCap="round"
-              lineJoin="round"
+        {previewGeoJSON && (
+          <Mapbox.ShapeSource id="preview-source" shape={previewGeoJSON}>
+            <Mapbox.LineLayer
+              id="preview-line"
+              style={{
+                lineColor: COLORS.primary,
+                lineWidth: 5,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
             />
-            <Marker
-              coordinate={previewPolyline[0]}
-              anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={false}
-            >
-              <View style={styles.previewStartDot} />
-            </Marker>
-            {previewPolyline.length > 1 && (
-              <Marker
-                coordinate={previewPolyline[previewPolyline.length - 1]}
-                anchor={{ x: 0.5, y: 0.5 }}
-                tracksViewChanges={false}
-              >
-                <View style={styles.previewEndDot} />
-              </Marker>
-            )}
-          </>
+          </Mapbox.ShapeSource>
         )}
-      </MapView>
+
+        {previewPolyline && previewPolyline.length >= 1 && (
+          <Mapbox.MarkerView
+            coordinate={[previewPolyline[0].longitude, previewPolyline[0].latitude]}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <View style={styles.previewStartDot} />
+          </Mapbox.MarkerView>
+        )}
+
+        {previewPolyline && previewPolyline.length > 1 && (
+          <Mapbox.MarkerView
+            coordinate={[
+              previewPolyline[previewPolyline.length - 1].longitude,
+              previewPolyline[previewPolyline.length - 1].latitude,
+            ]}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <View style={styles.previewEndDot} />
+          </Mapbox.MarkerView>
+        )}
+      </Mapbox.MapView>
     </View>
   );
 });
 
 export default RouteMapView;
-
-// ============================================================
-// Helpers
-// ============================================================
-
-function computeRegionFromPoints(
-  points: Array<{ latitude: number; longitude: number }>,
-): Region {
-  let minLat = points[0].latitude;
-  let maxLat = points[0].latitude;
-  let minLng = points[0].longitude;
-  let maxLng = points[0].longitude;
-
-  for (const p of points) {
-    if (p.latitude < minLat) minLat = p.latitude;
-    if (p.latitude > maxLat) maxLat = p.latitude;
-    if (p.longitude < minLng) minLng = p.longitude;
-    if (p.longitude > maxLng) maxLng = p.longitude;
-  }
-
-  const latDelta = Math.max((maxLat - minLat) * 1.5, 0.005);
-  const lngDelta = Math.max((maxLng - minLng) * 1.5, 0.005);
-
-  return {
-    latitude: (minLat + maxLat) / 2,
-    longitude: (minLng + maxLng) / 2,
-    latitudeDelta: latDelta,
-    longitudeDelta: lngDelta,
-  };
-}
 
 // ============================================================
 // Styles
@@ -577,7 +655,6 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
 
-  // Circular pin with shadow
   markerPin: {
     width: 32,
     height: 32,
@@ -593,7 +670,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
 
-  // Slim elegant tail
   markerTail: {
     width: 0,
     height: 0,
@@ -605,7 +681,6 @@ const styles = StyleSheet.create({
     marginTop: -2,
   },
 
-  // Active runners count badge - smaller, cleaner
   runnerCountBadge: {
     position: 'absolute',
     top: -3,
@@ -627,7 +702,7 @@ const styles = StyleSheet.create({
     color: COLORS.black,
   },
 
-  // ---- Event markers (PaceOff: double ring pulse) ----
+  // ---- Event markers ----
   eventMarkerWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -650,7 +725,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // ---- Friend markers (PaceOff: live runner dot with pulse ring) ----
+  // ---- Friend markers ----
   friendMarkerWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -709,7 +784,45 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
   },
 
-  // ---- User location fallback marker (blue dot like iOS) ----
+  // ---- Custom user location marker with heading ----
+  customUserContainer: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headingConeWrapper: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+  },
+  headingCone: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderBottomWidth: 16,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: COLORS.primary + '40',
+    marginTop: 0,
+  },
+  customUserDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: COLORS.primary,
+    borderWidth: 2,
+    borderColor: COLORS.white,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+
+  // ---- User location fallback marker ----
   userLocationDot: {
     width: 22,
     height: 22,

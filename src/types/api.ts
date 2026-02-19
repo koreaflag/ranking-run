@@ -63,6 +63,7 @@ export interface UserProfile {
   weight_kg: number | null;
   bio: string | null;
   instagram_username: string | null;
+  country: string | null;
   total_distance_meters: number;
   total_runs: number;
   created_at: string;
@@ -81,6 +82,7 @@ export interface ProfileUpdateRequest {
   weight_kg?: number | null;
   bio?: string | null;
   instagram_username?: string | null;
+  country?: string | null;
 }
 
 export interface ProfileSetupResponse {

@@ -1,29 +1,21 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies for PostGIS client libs
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        gcc \
-        python3-dev \
-        libpq-dev \
-        libgeos-dev \
-        libproj-dev \
-        gdal-bin \
+# Install system dependencies for PostGIS, Pillow, etc.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev gcc libgeos-dev libproj-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency file
-COPY requirements.txt ./
-
-# Install dependencies
+# Install Python dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Create uploads directory
-RUN mkdir -p /app/uploads
+# Create upload directories
+RUN mkdir -p uploads/avatars
 
 EXPOSE 8000
 

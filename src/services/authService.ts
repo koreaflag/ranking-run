@@ -72,6 +72,7 @@ export const authService = {
     weight_kg: number | null;
     bio: string | null;
     instagram_username: string | null;
+    country: string | null;
   }> {
     return api.patch('/users/me/profile', request);
   },

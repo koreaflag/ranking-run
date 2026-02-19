@@ -10,6 +10,7 @@ from app.api.v1.follows import router as follows_router
 from app.api.v1.heatmap import router as heatmap_router
 from app.api.v1.imports import router as imports_router
 from app.api.v1.likes import router as likes_router
+from app.api.v1.notifications import router as notifications_router
 from app.api.v1.rankings import router as rankings_router
 from app.api.v1.reviews import router as reviews_router
 from app.api.v1.runs import router as runs_router
@@ -34,4 +35,5 @@ api_router.include_router(imports_router)
 api_router.include_router(uploads_router)
 api_router.include_router(weather_router)
 api_router.include_router(heatmap_router)
+api_router.include_router(notifications_router)
 api_router.include_router(strava_router)

@@ -13,6 +13,8 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Keyboard,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +26,67 @@ import { authService } from '../../services/authService';
 import { useTheme } from '../../hooks/useTheme';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
+
+// Country data — popular running nations + common countries
+const COUNTRIES = [
+  { code: 'KR', name: '대한민국' },
+  { code: 'US', name: '미국' },
+  { code: 'JP', name: '일본' },
+  { code: 'CN', name: '중국' },
+  { code: 'GB', name: '영국' },
+  { code: 'FR', name: '프랑스' },
+  { code: 'DE', name: '독일' },
+  { code: 'ES', name: '스페인' },
+  { code: 'IT', name: '이탈리아' },
+  { code: 'CA', name: '캐나다' },
+  { code: 'AU', name: '호주' },
+  { code: 'NZ', name: '뉴질랜드' },
+  { code: 'BR', name: '브라질' },
+  { code: 'MX', name: '멕시코' },
+  { code: 'AR', name: '아르헨티나' },
+  { code: 'IN', name: '인도' },
+  { code: 'TH', name: '태국' },
+  { code: 'VN', name: '베트남' },
+  { code: 'PH', name: '필리핀' },
+  { code: 'SG', name: '싱가포르' },
+  { code: 'TW', name: '대만' },
+  { code: 'HK', name: '홍콩' },
+  { code: 'NL', name: '네덜란드' },
+  { code: 'CH', name: '스위스' },
+  { code: 'SE', name: '스웨덴' },
+  { code: 'NO', name: '노르웨이' },
+  { code: 'FI', name: '핀란드' },
+  { code: 'DK', name: '덴마크' },
+  { code: 'AT', name: '오스트리아' },
+  { code: 'BE', name: '벨기에' },
+  { code: 'PT', name: '포르투갈' },
+  { code: 'PL', name: '폴란드' },
+  { code: 'RU', name: '러시아' },
+  { code: 'TR', name: '터키' },
+  { code: 'AE', name: '아랍에미리트' },
+  { code: 'SA', name: '사우디아라비아' },
+  { code: 'IL', name: '이스라엘' },
+  { code: 'ZA', name: '남아프리카공화국' },
+  { code: 'KE', name: '케냐' },
+  { code: 'ET', name: '에티오피아' },
+  { code: 'CL', name: '칠레' },
+  { code: 'CO', name: '콜롬비아' },
+  { code: 'ID', name: '인도네시아' },
+  { code: 'MY', name: '말레이시아' },
+];
+
+function getCountryFlag(code: string): string {
+  return code
+    .toUpperCase()
+    .split('')
+    .map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65))
+    .join('');
+}
+
+function getCountryName(code: string | null): string | null {
+  if (!code) return null;
+  return COUNTRIES.find((c) => c.code === code)?.name ?? code;
+}
 
 export default function ProfileEditScreen() {
   const navigation = useNavigation();
@@ -45,6 +108,9 @@ export default function ProfileEditScreen() {
   );
   const [bio, setBio] = useState(user?.bio ?? '');
   const [instagram, setInstagram] = useState(user?.instagram_username ?? '');
+  const [country, setCountry] = useState<string | null>(user?.country ?? null);
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -139,6 +205,7 @@ export default function ProfileEditScreen() {
         weight_kg: parsedWeight,
         bio: bio.trim() || null,
         instagram_username: instagram.trim() || null,
+        country,
       });
 
       setUser({
@@ -150,6 +217,7 @@ export default function ProfileEditScreen() {
         weight_kg: updated.weight_kg,
         bio: updated.bio,
         instagram_username: updated.instagram_username,
+        country: updated.country,
       });
 
       navigation.goBack();
@@ -282,6 +350,28 @@ export default function ProfileEditScreen() {
             </View>
           </View>
 
+          {/* Country */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>국가</Text>
+            <TouchableOpacity
+              style={styles.selectInput}
+              onPress={() => { Keyboard.dismiss(); setShowCountryPicker(true); }}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.selectInputText,
+                  !country && { color: colors.textTertiary },
+                ]}
+              >
+                {country
+                  ? `${getCountryFlag(country)} ${getCountryName(country)}`
+                  : '국가를 선택해 주세요'}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
+
           {/* Birthday */}
           <View
             style={styles.fieldGroup}
@@ -377,6 +467,95 @@ export default function ProfileEditScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Country picker modal */}
+      <Modal
+        visible={showCountryPicker}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowCountryPicker(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>국가 선택</Text>
+            <TouchableOpacity
+              onPress={() => { setShowCountryPicker(false); setCountrySearch(''); }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={26} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={18} color={colors.textTertiary} />
+            <TextInput
+              style={styles.searchInput}
+              value={countrySearch}
+              onChangeText={setCountrySearch}
+              placeholder="국가 검색..."
+              placeholderTextColor={colors.textTertiary}
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            {countrySearch.length > 0 && (
+              <TouchableOpacity onPress={() => setCountrySearch('')}>
+                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <FlatList
+            data={COUNTRIES.filter(
+              (c) =>
+                !countrySearch ||
+                c.name.includes(countrySearch) ||
+                c.code.toLowerCase().includes(countrySearch.toLowerCase()),
+            )}
+            keyExtractor={(item) => item.code}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => {
+              const isSelected = country === item.code;
+              return (
+                <TouchableOpacity
+                  style={[styles.countryRow, isSelected && styles.countryRowSelected]}
+                  onPress={() => {
+                    setCountry(item.code);
+                    setShowCountryPicker(false);
+                    setCountrySearch('');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.countryFlag}>{getCountryFlag(item.code)}</Text>
+                  <Text style={[styles.countryName, isSelected && styles.countryNameSelected]}>
+                    {item.name}
+                  </Text>
+                  {isSelected && (
+                    <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+            ItemSeparatorComponent={() => <View style={styles.countryDivider} />}
+            contentContainerStyle={styles.countryList}
+          />
+
+          {country && (
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.clearCountryBtn}
+                onPress={() => {
+                  setCountry(null);
+                  setShowCountryPicker(false);
+                  setCountrySearch('');
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.clearCountryText}>선택 해제</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -545,6 +724,91 @@ const createStyles = (c: ThemeColors) =>
       fontSize: FONT_SIZES.md,
       fontWeight: '700',
       color: '#FFFFFF',
+    },
+
+    // Country picker modal
+    modalContainer: {
+      flex: 1,
+      backgroundColor: c.background,
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: SPACING.xl,
+      paddingVertical: SPACING.md,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    modalTitle: {
+      fontSize: FONT_SIZES.lg,
+      fontWeight: '800',
+      color: c.text,
+    },
+    searchBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginHorizontal: SPACING.xl,
+      marginVertical: SPACING.md,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: Platform.OS === 'ios' ? SPACING.sm : 0,
+      backgroundColor: c.surfaceLight,
+      borderRadius: BORDER_RADIUS.md,
+      gap: SPACING.sm,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: FONT_SIZES.md,
+      color: c.text,
+      paddingVertical: SPACING.sm,
+    },
+    countryList: {
+      paddingHorizontal: SPACING.xl,
+      paddingBottom: SPACING.xxxl,
+    },
+    countryRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: SPACING.lg,
+      gap: SPACING.md,
+    },
+    countryRowSelected: {
+      backgroundColor: c.surfaceLight,
+      marginHorizontal: -SPACING.md,
+      paddingHorizontal: SPACING.md,
+      borderRadius: BORDER_RADIUS.md,
+    },
+    countryFlag: {
+      fontSize: 24,
+    },
+    countryName: {
+      flex: 1,
+      fontSize: FONT_SIZES.md,
+      fontWeight: '600',
+      color: c.text,
+    },
+    countryNameSelected: {
+      fontWeight: '700',
+      color: c.primary,
+    },
+    countryDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: c.border,
+    },
+    modalFooter: {
+      paddingHorizontal: SPACING.xl,
+      paddingVertical: SPACING.md,
+      borderTopWidth: 1,
+      borderTopColor: c.border,
+    },
+    clearCountryBtn: {
+      alignItems: 'center',
+      paddingVertical: SPACING.md,
+    },
+    clearCountryText: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '600',
+      color: c.textTertiary,
     },
 
     // Info box

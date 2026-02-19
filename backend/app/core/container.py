@@ -13,6 +13,7 @@ from app.services.ranking_service import RankingService
 from app.services.review_service import ReviewService
 from app.services.run_service import RunService
 from app.services.stats_service import StatsService
+from app.services.notification_service import NotificationService
 from app.services.strava_service import StravaService
 
 
@@ -35,6 +36,7 @@ class Container(containers.DeclarativeContainer):
             "app.api.v1.likes",
             "app.api.v1.reviews",
             "app.api.v1.imports",
+            "app.api.v1.notifications",
             "app.api.v1.strava",
             "app.api.v1.users",
         ],
@@ -54,4 +56,5 @@ class Container(containers.DeclarativeContainer):
     ranking_service = providers.Factory(RankingService)
     review_service = providers.Factory(ReviewService)
     stats_service = providers.Factory(StatsService)
+    notification_service = providers.Factory(NotificationService, settings=settings)
     strava_service = providers.Factory(StravaService, settings=settings)

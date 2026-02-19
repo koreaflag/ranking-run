@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
 
+    # Naver OAuth
+    NAVER_CLIENT_ID: str = ""
+    NAVER_CLIENT_SECRET: str = ""
+
     # Strava OAuth
     STRAVA_CLIENT_ID: str = ""
     STRAVA_CLIENT_SECRET: str = ""
@@ -53,6 +57,22 @@ class Settings(BaseSettings):
     # File Upload
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_SIZE_MB: int = 5
+
+    # S3 Storage (optional - falls back to local if not configured)
+    S3_BUCKET_NAME: str = ""
+    S3_REGION: str = "ap-northeast-2"
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    CDN_BASE_URL: str = ""  # e.g. https://cdn.runcrew.app
+
+    # Firebase Cloud Messaging
+    FCM_SERVICE_ACCOUNT_PATH: str = ""  # Path to Firebase service account JSON
+
+    # Sentry
+    SENTRY_DSN: str = ""
+
+    # Logging
+    JSON_LOGS: bool = False  # True in production for structured logging
 
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8081"]

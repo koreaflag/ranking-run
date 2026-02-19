@@ -57,6 +57,9 @@ interface RunningState {
   loopDetected: boolean;         // confirmed round-trip
   loopDetectedAt: number | null; // timestamp of detection (for cooldown)
 
+  // Stop location (captured when user taps stop)
+  stopLocation: { latitude: number; longitude: number } | null;
+
   // Timer
   startTime: number | null;
   elapsedBeforePause: number;
@@ -116,6 +119,8 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   loopDetected: false,
   loopDetectedAt: null,
 
+  stopLocation: null,
+
   startTime: null,
   elapsedBeforePause: 0,
 
@@ -151,6 +156,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       isNearStart: false,
       loopDetected: false,
       loopDetectedAt: null,
+      stopLocation: null,
     });
   },
 
@@ -266,7 +272,13 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   },
 
   complete: () => {
-    set({ phase: 'completed', isPaused: false });
+    const state = get();
+    const stopLoc = state.currentLocation
+      ? { latitude: state.currentLocation.latitude, longitude: state.currentLocation.longitude }
+      : state.routePoints.length > 0
+        ? state.routePoints[state.routePoints.length - 1]
+        : null;
+    set({ phase: 'completed', isPaused: false, stopLocation: stopLoc });
   },
 
   reset: () => {
@@ -300,6 +312,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       isNearStart: false,
       loopDetected: false,
       loopDetectedAt: null,
+      stopLocation: null,
       startTime: null,
       elapsedBeforePause: 0,
     });

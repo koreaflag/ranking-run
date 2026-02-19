@@ -43,6 +43,7 @@ export type CourseStackParamList = {
     distanceMeters: number;
     durationSeconds: number;
     elevationGainMeters: number;
+    isLoop?: boolean;
   };
   UserProfile: { userId: string };
 };

@@ -15,6 +15,7 @@ from app.models.external_import import ExternalImport
 from app.models.strava_connection import StravaConnection
 from app.services.import_service import ImportService
 from app.services.strava_service import StravaService
+from app.tasks.strava_sync import sync_recent_strava_activities
 
 router = APIRouter(prefix="/strava", tags=["strava"])
 
@@ -134,13 +135,21 @@ async def strava_callback(
     body: StravaCallbackRequest,
     current_user: CurrentUser,
     db: DbSession,
+    background_tasks: BackgroundTasks,
 ) -> StravaConnectionStatus:
-    """Exchange OAuth code for tokens and persist StravaConnection."""
+    """Exchange OAuth code for tokens and persist StravaConnection.
+
+    After a successful connection, a background task is queued to sync
+    the user's recent Strava running activities automatically.
+    """
     svc = _make_strava_service()
     try:
         conn = await svc.exchange_code(db, current_user.id, body.code)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    # Auto-sync recent activities after initial connection
+    background_tasks.add_task(sync_recent_strava_activities, current_user.id)
 
     return StravaConnectionStatus(
         connected=True,
@@ -292,6 +301,40 @@ async def sync_strava_activity(
         import_id=str(ext_import.id),
         status="pending",
         message="Strava activity queued for import.",
+    )
+
+
+@router.post("/sync-all", response_model=StravaSyncResponse, status_code=202)
+async def sync_all_strava_activities(
+    current_user: CurrentUser,
+    db: DbSession,
+    background_tasks: BackgroundTasks,
+    max_activities: int = Query(default=30, ge=1, le=100),
+) -> StravaSyncResponse:
+    """Trigger a bulk sync of recent Strava running activities.
+
+    Queues a background task that fetches up to *max_activities* recent
+    activities from Strava and imports any that haven't been imported yet.
+    Returns immediately with a 202 Accepted status.
+    """
+    # Verify the user has an active Strava connection
+    result = await db.execute(
+        select(StravaConnection).where(
+            StravaConnection.user_id == current_user.id
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if conn is None:
+        raise HTTPException(status_code=400, detail="Strava not connected")
+
+    background_tasks.add_task(
+        sync_recent_strava_activities, current_user.id, max_activities
+    )
+
+    return StravaSyncResponse(
+        import_id="",
+        status="accepted",
+        message=f"Bulk sync of up to {max_activities} recent activities queued.",
     )
 
 

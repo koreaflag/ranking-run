@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -13,8 +14,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCourseStore } from '../../stores/courseStore';
 import { courseService } from '../../services/courseService';
 import RouteMapView from '../../components/map/RouteMapView';
-import type { RouteMapViewHandle, CourseMarkerData } from '../../components/map/RouteMapView';
-import type { Region } from 'react-native-maps';
+import type { RouteMapViewHandle, CourseMarkerData, Region } from '../../components/map/RouteMapView';
 import type { WorldStackParamList } from '../../types/navigation';
 import type { GeoJSONLineString } from '../../types/api';
 
@@ -22,6 +22,7 @@ import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import { formatDistance } from '../../utils/format';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
+import { Magnetometer, Accelerometer } from 'expo-sensors';
 import api from '../../services/api';
 
 type WorldNav = NativeStackNavigationProp<WorldStackParamList, 'World'>;
@@ -138,9 +139,14 @@ export default function WorldScreen() {
   const mapRef = useRef<RouteMapViewHandle>(null);
   const [userRegion, setUserRegion] = useState<Region | null>(null);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [followUser, setFollowUser] = useState(true);
+  const hasInitializedRef = useRef(false);
 
   // Weather state
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  // Heading — use Animated.Value for smooth rotation (avoids re-renders)
+  const headingAnim = useRef(new Animated.Value(0)).current;
+  const headingRef = useRef(0);
 
   // Selected marker state
   const [selectedMarker, setSelectedMarker] = useState<CourseMarkerData | null>(null);
@@ -151,18 +157,25 @@ export default function WorldScreen() {
   const animTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const markerPressedRef = useRef(false);
 
-  // Fetch initial data + cleanup
+  // Defer initial data fetch until user location is available (fallback to Seoul after 3s)
   useEffect(() => {
-    const { latitude, longitude, latitudeDelta, longitudeDelta } = SEOUL_REGION;
-    fetchMapMarkers(
-      latitude - latitudeDelta / 2,
-      longitude - longitudeDelta / 2,
-      latitude + latitudeDelta / 2,
-      longitude + longitudeDelta / 2,
-    );
-    fetchNearbyCourses(latitude, longitude);
+    const fallbackTimeout = setTimeout(() => {
+      if (!hasInitializedRef.current) {
+        hasInitializedRef.current = true;
+        setFollowUser(false);
+        const { latitude, longitude, latitudeDelta, longitudeDelta } = SEOUL_REGION;
+        fetchMapMarkers(
+          latitude - latitudeDelta / 2,
+          longitude - longitudeDelta / 2,
+          latitude + latitudeDelta / 2,
+          longitude + longitudeDelta / 2,
+        );
+        fetchNearbyCourses(latitude, longitude);
+      }
+    }, 3000);
 
     return () => {
+      clearTimeout(fallbackTimeout);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (animTimerRef.current) clearInterval(animTimerRef.current);
     };
@@ -177,23 +190,75 @@ export default function WorldScreen() {
         );
         setWeather(data);
       } catch {
-        // In DEV mode, show mock weather data
-        if (__DEV__) {
-          setWeather({
-            temp: 4,
-            feels_like: 1,
-            humidity: 45,
-            wind_speed: 3.2,
-            description: '맑음',
-            icon: '01d',
-            aqi: 2,
-            aqi_label: '보통',
-          });
-        }
+        // Show fallback weather data when backend is not connected
+        setWeather({
+          temp: 4,
+          feels_like: 1,
+          humidity: 45,
+          wind_speed: 3.2,
+          description: '맑음',
+          icon: '01d',
+          aqi: 2,
+          aqi_label: '보통',
+        });
       }
     };
     fetchWeather();
   }, []);
+
+  // Tilt-compensated compass: works both flat on table and held upright
+  const gravRef = useRef({ x: 0, y: 0, z: -1 });
+
+  useEffect(() => {
+    Accelerometer.setUpdateInterval(300);
+    const sub = Accelerometer.addListener((data) => {
+      gravRef.current = data;
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    Magnetometer.setUpdateInterval(300);
+    const subscription = Magnetometer.addListener((mag) => {
+      const { x: ax, y: ay, z: az } = gravRef.current;
+      const { x: mx, y: my, z: mz } = mag;
+
+      // Normalize gravity
+      const gNorm = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
+      const gx = ax / gNorm;
+      const gy = ay / gNorm;
+      const gz = az / gNorm;
+
+      // Pitch & roll from gravity
+      const pitch = Math.asin(Math.max(-1, Math.min(1, -gx)));
+      const roll = Math.atan2(gy, gz);
+
+      // Tilt-compensated magnetic heading
+      const cp = Math.cos(pitch);
+      const sp = Math.sin(pitch);
+      const cr = Math.cos(roll);
+      const sr = Math.sin(roll);
+      const xH = mx * cp + mz * sp;
+      const yH = mx * sr * sp + my * cr - mz * sr * cp;
+      let heading = (Math.atan2(-yH, xH) * (180 / Math.PI) + 360) % 360;
+
+      // Shortest rotation path
+      const prev = headingRef.current;
+      let diff = heading - prev;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      const target = prev + diff;
+      headingRef.current = heading;
+
+      Animated.timing(headingAnim, {
+        toValue: target,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    });
+
+    return () => subscription.remove();
+  }, [headingAnim]);
 
   const handleRegionChange = useCallback(
     (region: Region) => {
@@ -438,8 +503,29 @@ export default function WorldScreen() {
         onMarkerPress={handleMarkerPress}
         onMapPress={handleMapPress}
         onRegionChange={handleRegionChange}
-        onUserLocationChange={setMyLocation}
-        showUserLocation
+        onUserLocationChange={(coord) => {
+          setMyLocation({ latitude: coord.latitude, longitude: coord.longitude });
+          if (!hasInitializedRef.current) {
+            hasInitializedRef.current = true;
+            setFollowUser(false);
+            const delta = 0.04;
+            fetchMapMarkers(
+              coord.latitude - delta, coord.longitude - delta,
+              coord.latitude + delta, coord.longitude + delta,
+            );
+            fetchNearbyCourses(coord.latitude, coord.longitude);
+            mapRef.current?.animateToRegion({
+              latitude: coord.latitude,
+              longitude: coord.longitude,
+              latitudeDelta: 0.02,
+              longitudeDelta: 0.02,
+            }, 800);
+          }
+        }}
+        followsUserLocation={followUser}
+        showUserLocation={followUser || !myLocation}
+        customUserLocation={!followUser ? (myLocation ?? undefined) : undefined}
+        customUserHeading={!followUser ? headingAnim : undefined}
         interactive
         pitchEnabled={is3DMode}
         style={styles.map}

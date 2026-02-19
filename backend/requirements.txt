@@ -139,3 +139,7 @@ watchfiles==1.1.1
     # via uvicorn
 websockets==16.0
     # via uvicorn
+sentry-sdk[fastapi]==2.19.2
+slowapi==0.1.9
+boto3==1.37.0
+firebase-admin==6.6.0

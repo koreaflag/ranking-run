@@ -3,15 +3,15 @@ services:
     image: postgis/postgis:16-3.4
     container_name: runcrew-db
     environment:
-      POSTGRES_DB: runcrew
-      POSTGRES_USER: runcrew
-      POSTGRES_PASSWORD: runcrew_password
+      POSTGRES_DB: ${POSTGRES_DB:-runcrew}
+      POSTGRES_USER: ${POSTGRES_USER:-runcrew}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runcrew_password}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U runcrew"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-runcrew}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,10 +23,10 @@ services:
     container_name: runcrew-backend
     ports:
       - "8000:8000"
+    env_file:
+      - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://runcrew:runcrew_password@db:5432/runcrew
-      JWT_SECRET_KEY: dev-secret-key-change-in-production
-      CORS_ORIGINS: '["http://localhost:8081","http://localhost:19006"]'
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-runcrew}:${POSTGRES_PASSWORD:-runcrew_password}@db:5432/${POSTGRES_DB:-runcrew}
       UPLOAD_DIR: /app/uploads
     volumes:
       - ./backend:/app

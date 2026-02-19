@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>RunCrew</string>
+	<string>RUNVS</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -21,9 +21,9 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>RunCrew uses your heart rate data during runs to display real-time BPM and send it to your iPhone.</string>
+	<string>RUNVS uses your heart rate data during runs to display real-time BPM and send it to your iPhone.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>RunCrew saves your workout sessions including heart rate, calories, and distance to Apple Health.</string>
+	<string>RUNVS saves your workout sessions including heart rate, calories, and distance to Apple Health.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

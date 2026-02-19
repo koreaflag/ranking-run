@@ -3,8 +3,10 @@
 from datetime import datetime, timedelta, timezone
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import select
+
+from app.core.rate_limit import limiter
 
 from app.core.config import get_settings
 from app.core.container import Container
@@ -72,13 +74,15 @@ async def dev_login(body: DevLoginRequest, db: DbSession) -> AuthResponse:
 
 
 @router.post("/login", response_model=AuthResponse)
+@limiter.limit("10/minute")
 @inject
 async def login(
+    request: Request,
     body: LoginRequest,
     db: DbSession,
     auth_service: AuthService = Depends(Provide[Container.auth_service]),
 ) -> AuthResponse:
-    """Social login with Kakao or Apple."""
+    """Social login with Kakao, Apple, Google, or Naver."""
     result = await auth_service.social_login(
         db=db,
         provider=body.provider,
@@ -95,8 +99,10 @@ async def login(
 
 
 @router.post("/refresh", response_model=RefreshResponse)
+@limiter.limit("10/minute")
 @inject
 async def refresh_token(
+    request: Request,
     body: RefreshRequest,
     db: DbSession,
     auth_service: AuthService = Depends(Provide[Container.auth_service]),

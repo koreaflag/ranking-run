@@ -480,7 +480,7 @@ export default function MyPageScreen() {
               </View>
               <View>
                 <Text style={styles.importButtonTitle}>Strava 연동</Text>
-                <Text style={styles.importButtonDesc}>Strava 활동을 RunCrew로 가져오기</Text>
+                <Text style={styles.importButtonDesc}>Strava 활동을 RUNVS로 가져오기</Text>
               </View>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />

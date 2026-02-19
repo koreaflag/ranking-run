@@ -124,7 +124,7 @@ export default function OnboardingScreen() {
         <View style={styles.header}>
           <Text style={[styles.title, { color: colors.text }]}>프로필 설정</Text>
           <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
-            RunCrew에서 사용할 프로필을 만들어 주세요
+            RUNVS에서 사용할 프로필을 만들어 주세요
           </Text>
         </View>
 

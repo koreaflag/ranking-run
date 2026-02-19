@@ -246,7 +246,7 @@ export default function StravaConnectScreen() {
           </View>
           <Text style={styles.connectTitle}>Strava 계정을 연결하세요</Text>
           <Text style={styles.connectDesc}>
-            Strava에서 기록한 달리기를{'\n'}RunCrew로 가져올 수 있습니다.
+            Strava에서 기록한 달리기를{'\n'}RUNVS로 가져올 수 있습니다.
           </Text>
           <TouchableOpacity
             style={[

@@ -167,6 +167,40 @@ class AuthService:
         }
 
     # -----------------------------------------------------------------------
+    # Naver login
+    # -----------------------------------------------------------------------
+
+    async def verify_naver_token(self, access_token: str) -> dict:
+        """Verify Naver access token by calling Naver Profile API."""
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://openapi.naver.com/v1/nid/me",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10.0,
+            )
+
+        if response.status_code != 200:
+            raise AuthenticationError(
+                code="NAVER_AUTH_FAILED",
+                message=f"Naver API returned {response.status_code}",
+            )
+
+        data = response.json()
+        if data.get("resultcode") != "00":
+            raise AuthenticationError(
+                code="NAVER_AUTH_FAILED",
+                message=data.get("message", "Naver token verification failed"),
+            )
+
+        profile = data.get("response", {})
+        return {
+            "provider_id": profile["id"],
+            "email": profile.get("email"),
+            "nickname": profile.get("nickname"),
+            "profile_image_url": profile.get("profile_image"),
+        }
+
+    # -----------------------------------------------------------------------
     # Find or create user
     # -----------------------------------------------------------------------
 
@@ -302,6 +336,8 @@ class AuthService:
             social_info = await self.verify_apple_token(token, nonce)
         elif provider == "google":
             social_info = await self.verify_google_token(token)
+        elif provider == "naver":
+            social_info = await self.verify_naver_token(token)
         else:
             raise AuthenticationError(code="INVALID_PROVIDER", message=f"Unknown provider: {provider}")
 

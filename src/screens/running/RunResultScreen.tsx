@@ -64,6 +64,8 @@ export default function RunResultScreen() {
     elevationGainMeters,
     elevationLossMeters,
     courseId,
+    loopDetected,
+    stopLocation,
     reset,
   } = useRunningStore();
 
@@ -155,7 +157,13 @@ export default function RunResultScreen() {
     resetRunningStack();
   };
 
+  const MIN_COURSE_DISTANCE_M = 500;
+
   const handleRegisterCourse = () => {
+    if (distanceMeters < MIN_COURSE_DISTANCE_M) {
+      Alert.alert('알림', '코스 등록은 500m 이상 달려야 가능합니다.');
+      return;
+    }
     const runRecordId = result?.run_record_id ?? sessionId;
     const params = {
       runRecordId,
@@ -163,6 +171,7 @@ export default function RunResultScreen() {
       distanceMeters,
       durationSeconds,
       elevationGainMeters,
+      isLoop: loopDetected,
     };
     resetRunningStack();
     setTimeout(() => {
@@ -238,6 +247,7 @@ export default function RunResultScreen() {
           <RouteMapView
             routePoints={routePoints.length >= 2 ? routePoints : undefined}
             showUserLocation
+            endPointOverride={stopLocation ?? undefined}
             lastKnownLocation={
               currentLocation
                 ? { latitude: currentLocation.latitude, longitude: currentLocation.longitude }
@@ -384,11 +394,14 @@ export default function RunResultScreen() {
           )}
           {!courseId && (
             <Button
-              title="코스로 등록"
+              title={distanceMeters < MIN_COURSE_DISTANCE_M
+                ? `코스 등록 (${MIN_COURSE_DISTANCE_M}m 이상 필요)`
+                : '코스로 등록'}
               variant="outline"
               onPress={handleRegisterCourse}
               fullWidth
               size="lg"
+              disabled={distanceMeters < MIN_COURSE_DISTANCE_M}
             />
           )}
           <Button
