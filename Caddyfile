@@ -1,9 +1,9 @@
 # RUNVS API — Caddy reverse proxy with automatic HTTPS
 #
-# DNS A record: api.runvs.run → server IP
+# DNS A record: runvs.run → server IP
 # Caddy auto-provisions Let's Encrypt SSL certificate
 
-api.runvs.run {
+runvs.run {
 	# Reverse proxy to FastAPI backend
 	reverse_proxy backend:8000
 
