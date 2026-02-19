@@ -1,14 +1,11 @@
-# RUNVS API — Caddy reverse proxy with automatic HTTPS
+# RUNVS API — Caddy reverse proxy
 #
 # Usage:
-#   1. Set DOMAIN env var or replace api.runvs.app below
-#   2. DNS A record must point to this server's IP
-#   3. Caddy auto-provisions Let's Encrypt SSL certificate
-#
-# Development: use localhost for local testing (self-signed cert)
-# Production:  use your actual domain (auto Let's Encrypt)
+#   - Set DOMAIN env var to your domain for auto HTTPS (e.g. api.runvs.app)
+#   - Leave DOMAIN unset or empty to use HTTP-only mode (IP access)
+#   - DNS A record must point to this server's IP for HTTPS
 
-{$DOMAIN:api.runvs.app} {
+:80 {
 	# Reverse proxy to FastAPI backend
 	reverse_proxy backend:8000
 
@@ -30,9 +27,4 @@
 		output stdout
 		format json
 	}
-}
-
-# Health check on port 80 (for load balancer)
-:80 {
-	respond /health "OK" 200
 }
