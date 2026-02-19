@@ -46,8 +46,8 @@ def upgrade() -> None:
     op.create_index("ix_refresh_tokens_expires_at", "refresh_tokens", ["expires_at"])
 
     # Events
-    op.create_index("ix_events_start_date", "events", ["start_date"])
-    op.create_index("ix_events_end_date", "events", ["end_date"])
+    op.create_index("ix_events_starts_at", "events", ["starts_at"])
+    op.create_index("ix_events_ends_at", "events", ["ends_at"])
 
     # Course likes & favorites
     op.create_index("ix_course_likes_course_id", "course_likes", ["course_id"])
@@ -57,8 +57,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_course_favorites_user_id")
     op.drop_index("ix_course_likes_course_id")
-    op.drop_index("ix_events_end_date")
-    op.drop_index("ix_events_start_date")
+    op.drop_index("ix_events_ends_at")
+    op.drop_index("ix_events_starts_at")
     op.drop_index("ix_refresh_tokens_expires_at")
     op.drop_index("ix_refresh_tokens_user_id")
     op.drop_index("ix_social_accounts_provider_id")
