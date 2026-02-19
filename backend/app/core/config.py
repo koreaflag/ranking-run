@@ -29,19 +29,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
-    # Kakao OAuth
-    KAKAO_CLIENT_ID: str = ""
-
     # Apple Sign In
     APPLE_BUNDLE_ID: str = "app.runcrew"
     APPLE_TEAM_ID: str = ""
 
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
-
-    # Naver OAuth
-    NAVER_CLIENT_ID: str = ""
-    NAVER_CLIENT_SECRET: str = ""
 
     # Strava OAuth
     STRAVA_CLIENT_ID: str = ""

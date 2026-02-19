@@ -13,7 +13,7 @@ import type {
 
 export const authService = {
   /**
-   * Authenticate with a social login token (Kakao or Apple).
+   * Authenticate with a social login token (Apple or Google).
    * The server validates the social token, creates/finds the user,
    * and returns JWT tokens.
    */

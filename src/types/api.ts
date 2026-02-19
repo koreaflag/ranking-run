@@ -19,7 +19,7 @@ export interface PaginatedResponse<T> {
 
 // ---- Auth ----
 
-export type AuthProvider = 'kakao' | 'apple' | 'google';
+export type AuthProvider = 'apple' | 'google';
 
 export interface LoginRequest {
   provider: AuthProvider;

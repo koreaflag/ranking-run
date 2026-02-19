@@ -21,8 +21,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: runcrew-backend
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     env_file:
       - ./backend/.env
     environment:
@@ -37,6 +37,23 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     restart: unless-stopped
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: runcrew-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    restart: unless-stopped
+
 volumes:
   pgdata:
   uploads:
+  caddy_data:
+  caddy_config:

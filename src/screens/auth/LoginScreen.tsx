@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
-import { login as kakaoLogin } from '@react-native-seoul/kakao-login';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
@@ -83,26 +82,6 @@ export default function LoginScreen() {
       // statusCodes.SIGN_IN_CANCELLED = '12501'
       if (e.code === '12501' || e.code === 'SIGN_IN_CANCELLED') return;
       Alert.alert('앗...!', 'Google 로그인에 실패했습니다. 다시 시도해 주세요.');
-    } finally {
-      setLoadingProvider(null);
-    }
-  };
-
-  // ── Kakao Login ────────────────────────────────────────────
-  const handleKakaoLogin = async () => {
-    try {
-      setLoadingProvider('kakao');
-
-      const result = await kakaoLogin();
-      if (!result.accessToken) {
-        throw new Error('No access token from Kakao');
-      }
-
-      await login('kakao', result.accessToken);
-    } catch (e: any) {
-      // User cancelled
-      if (e.message?.includes('cancelled') || e.message?.includes('cancel')) return;
-      Alert.alert('앗...!', '카카오 로그인에 실패했습니다. 다시 시도해 주세요.');
     } finally {
       setLoadingProvider(null);
     }
@@ -179,25 +158,6 @@ export default function LoginScreen() {
                   <Ionicons name="logo-google" size={20} color="#333" />
                   <Text style={[styles.socialButtonText, styles.googleText]}>
                     Google로 시작하기
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-
-            {/* Kakao Login */}
-            <TouchableOpacity
-              style={[styles.socialButton, styles.kakaoButton, disabled && styles.buttonDisabled]}
-              onPress={handleKakaoLogin}
-              disabled={disabled}
-              activeOpacity={0.8}
-            >
-              {loadingProvider === 'kakao' ? (
-                <ActivityIndicator color="#191919" size="small" />
-              ) : (
-                <>
-                  <Text style={styles.kakaoIcon}>💬</Text>
-                  <Text style={[styles.socialButtonText, styles.kakaoText]}>
-                    카카오로 시작하기
                   </Text>
                 </>
               )}
@@ -310,17 +270,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   googleText: {
     color: '#333',
-  },
-
-  // Kakao
-  kakaoButton: {
-    backgroundColor: '#FEE500',
-  },
-  kakaoIcon: {
-    fontSize: 18,
-  },
-  kakaoText: {
-    color: '#191919',
   },
 
   // Dev

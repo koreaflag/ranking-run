@@ -82,7 +82,7 @@ async def login(
     db: DbSession,
     auth_service: AuthService = Depends(Provide[Container.auth_service]),
 ) -> AuthResponse:
-    """Social login with Kakao, Apple, Google, or Naver."""
+    """Social login with Apple or Google."""
     result = await auth_service.social_login(
         db=db,
         provider=body.provider,
