@@ -270,9 +270,12 @@ export interface CourseCreateResponse {
 export interface MyCourse {
   id: string;
   title: string;
+  description: string | null;
   distance_meters: number;
   thumbnail_url: string | null;
   is_public: boolean;
+  course_type: 'normal' | 'loop' | null;
+  lap_count: number | null;
   created_at: string;
   stats: CourseStats;
 }
@@ -475,6 +478,7 @@ export interface RunHistoryItem {
     id: string;
     title: string;
   } | null;
+  device_model?: string | null;
 }
 
 export type RunHistoryResponse = PaginatedResponse<RunHistoryItem>;

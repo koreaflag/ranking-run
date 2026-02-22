@@ -6,8 +6,15 @@ import React
 class WatchBridgeModule: RCTEventEmitter {
     private var hasListeners = false
 
+    /// Buffer standalone runs received while JS has no listeners (app backgrounded).
+    /// Flushed when JS starts observing again.
+    private var pendingStandaloneRuns: [[String: Any]] = []
+    private let pendingLock = NSLock()
+
     override init() {
         super.init()
+        // WCSession is already activated in AppDelegate.
+        // Just set up callbacks to receive data.
         setupCallbacks()
     }
 
@@ -21,6 +28,19 @@ class WatchBridgeModule: RCTEventEmitter {
         WatchSessionManager.shared.onWatchReachabilityChange = { [weak self] reachable in
             self?.sendEventIfListening("Watch_onReachabilityChange", body: ["isReachable": reachable])
         }
+        WatchSessionManager.shared.onStandaloneRunReceived = { [weak self] data in
+            guard let self = self else { return }
+            NSLog("[WatchBridgeModule] Standalone run received, hasListeners=%d", self.hasListeners ? 1 : 0)
+
+            if self.hasListeners {
+                self.sendEvent(withName: "Watch_onStandaloneRun", body: data)
+            } else {
+                self.pendingLock.lock()
+                self.pendingStandaloneRuns.append(data)
+                self.pendingLock.unlock()
+                NSLog("[WatchBridgeModule] Buffered standalone run (JS not listening), pending=%d", self.pendingStandaloneRuns.count)
+            }
+        }
     }
 
     // MARK: - RCTEventEmitter
@@ -29,12 +49,15 @@ class WatchBridgeModule: RCTEventEmitter {
         return [
             "Watch_onCommand",
             "Watch_onHeartRate",
-            "Watch_onReachabilityChange"
+            "Watch_onReachabilityChange",
+            "Watch_onStandaloneRun"
         ]
     }
 
     override func startObserving() {
         hasListeners = true
+        // Flush any standalone runs that arrived while JS wasn't listening
+        flushPendingRuns()
     }
 
     override func stopObserving() {
@@ -48,6 +71,20 @@ class WatchBridgeModule: RCTEventEmitter {
     private func sendEventIfListening(_ name: String, body: Any?) {
         guard hasListeners else { return }
         sendEvent(withName: name, body: body)
+    }
+
+    private func flushPendingRuns() {
+        pendingLock.lock()
+        let runs = pendingStandaloneRuns
+        pendingStandaloneRuns.removeAll()
+        pendingLock.unlock()
+
+        guard !runs.isEmpty else { return }
+        NSLog("[WatchBridgeModule] Flushing %d buffered standalone run(s)", runs.count)
+
+        for run in runs {
+            sendEvent(withName: "Watch_onStandaloneRun", body: run)
+        }
     }
 
     // MARK: - Exported Methods

@@ -33,6 +33,21 @@ struct CompletedView: View {
                     .foregroundColor(.gray)
                     .multilineTextAlignment(.center)
                     .padding(.top, 8)
+
+                Button(action: {
+                    viewModel.resetToIdle()
+                }) {
+                    Text("확인")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(appOrange)
+                        .cornerRadius(24)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
             }
             .padding(.horizontal, 8)
         }

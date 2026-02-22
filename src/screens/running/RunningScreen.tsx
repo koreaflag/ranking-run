@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import { turnDirectionIcon, formatTurnInstruction } from '../../utils/navigation
 import { courseService } from '../../services/courseService';
 import { runService } from '../../services/runService';
 import RouteMapView from '../../components/map/RouteMapView';
+import type { RouteMapViewHandle } from '../../components/map/RouteMapView';
 import { useCompassHeading } from '../../hooks/useCompassHeading';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
@@ -78,6 +79,8 @@ export default function RunningScreen() {
 
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const mapRef = useRef<RouteMapViewHandle>(null);
+  const [followUser, setFollowUser] = useState(true);
 
   const { hapticFeedback, countdownSeconds, voiceGuidance, setVoiceGuidance } = useSettingsStore();
   const { startTracking, stopTracking, pauseTracking, resumeTracking } =
@@ -102,6 +105,26 @@ export default function RunningScreen() {
   useEffect(() => {
     if (phase === 'completed') {
       reset();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Register server session for watch-initiated runs (GPS already started natively)
+  useEffect(() => {
+    if (phase === 'running' && sessionId?.startsWith('watch-')) {
+      runService.createSession({
+        course_id: null,
+        started_at: new Date().toISOString(),
+        device_info: {
+          platform: Platform.OS as 'android' | 'ios',
+          os_version: Platform.Version.toString(),
+          device_model: 'Unknown',
+          app_version: '1.0.0',
+        },
+      }).then((response) => {
+        if (response?.session_id) {
+          updateSessionId(response.session_id);
+        }
+      }).catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -347,17 +370,31 @@ export default function RunningScreen() {
         </View>
 
         {/* Mini Map */}
-        <RouteMapView
-          routePoints={routePoints}
-          hideRouteMarkers
-          previewPolyline={courseRoute ?? undefined}
-          showUserLocation
-          followsUserLocation
-          interactive
-          customUserLocation={myLocation ?? undefined}
-          customUserHeading={headingValue}
-          style={styles.miniMap}
-        />
+        <View style={styles.miniMapContainer}>
+          <RouteMapView
+            ref={mapRef}
+            routePoints={routePoints}
+            hideRouteMarkers
+            previewPolyline={courseRoute ?? undefined}
+            showUserLocation
+            followsUserLocation={followUser}
+            interactive
+            customUserLocation={myLocation ?? undefined}
+            customUserHeading={headingValue}
+            style={styles.miniMap}
+          />
+          <TouchableOpacity
+            style={styles.miniMapLocateBtn}
+            onPress={() => {
+              // Re-engage follow mode by toggling off→on
+              setFollowUser(false);
+              requestAnimationFrame(() => setFollowUser(true));
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="locate" size={18} color={colors.text} />
+          </TouchableOpacity>
+        </View>
 
         {/* Turn instruction bar */}
         {courseNavigation && courseNavigation.distanceToNextTurn >= 0 && (
@@ -788,11 +825,29 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
 
   // Mini map
+  miniMapContainer: {
+    marginTop: SPACING.sm,
+  },
   miniMap: {
-    height: 260,
+    height: 220,
     borderRadius: BORDER_RADIUS.lg,
-    marginTop: SPACING.md,
     overflow: 'hidden',
+  },
+  miniMapLocateBtn: {
+    position: 'absolute',
+    bottom: SPACING.sm,
+    right: SPACING.sm,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: c.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
   },
 
   // Turn instruction bar
@@ -833,8 +888,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   // Hero distance
   heroSection: {
     alignItems: 'center',
-    paddingTop: SPACING.xxl,
-    paddingBottom: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.sm,
   },
   heroLabel: {
     fontSize: FONT_SIZES.sm,
@@ -938,9 +993,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: SPACING.xxl,
-    paddingVertical: SPACING.xl,
+    paddingVertical: SPACING.md,
     marginTop: 'auto',
-    marginBottom: SPACING.xl,
   },
 
   // Pause button

@@ -5,6 +5,7 @@ from urllib.parse import quote
 from uuid import UUID
 
 import sqlalchemy as sa
+from geoalchemy2 import Geography
 from geoalchemy2.elements import WKBElement
 from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import LineString, Point
@@ -134,7 +135,7 @@ class CourseService:
             matched_line = LineString([(c[0], c[1]) for c in matched_coordinates])
             route_wkb = from_shape(matched_line, srid=4326)
 
-            first_coord = coordinates[0]
+            first_coord = matched_coordinates[0]
             start_point = Point(first_coord[0], first_coord[1])
             start_wkb = from_shape(start_point, srid=4326)
 
@@ -377,8 +378,8 @@ class CourseService:
         limit: int = 5,
     ) -> list[dict]:
         """Get nearby courses using PostGIS ST_DWithin."""
-        user_point = func.ST_MakePoint(lng, lat)
-        user_geog = func.cast(user_point, text("geography"))
+        user_point = func.ST_SetSRID(func.ST_MakePoint(lng, lat), 4326)
+        user_geog = user_point.cast(Geography())
 
         distance_col = func.ST_Distance(Course.start_point, user_geog).label("distance_m")
 
@@ -517,6 +518,10 @@ class CourseService:
             course.is_public = update_data["is_public"]
         if "tags" in update_data and update_data["tags"] is not None:
             course.tags = update_data["tags"]
+        if "course_type" in update_data and update_data["course_type"] is not None:
+            course.course_type = update_data["course_type"]
+        if "lap_count" in update_data and update_data["lap_count"] is not None:
+            course.lap_count = update_data["lap_count"]
 
         await db.flush()
         return course

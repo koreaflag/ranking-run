@@ -9,6 +9,8 @@ import {
   TouchableOpacity,
   Alert,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -188,11 +190,17 @@ export default function CourseDetailScreen() {
     <SafeAreaView style={styles.container}>
       <ScreenHeader title="" onBack={() => navigation.goBack()} />
 
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
       <ScrollView
         ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         {/* Large map at top */}
         <View style={styles.mapWrapper}>
@@ -229,31 +237,37 @@ export default function CourseDetailScreen() {
                 activeOpacity={0.7}
                 style={styles.likeButton}
               >
-                <Animated.View style={{ transform: [{ scale: likeScale }] }}>
-                  <Ionicons
-                    name={selectedCourseIsLiked ? 'thumbs-up' : 'thumbs-up-outline'}
-                    size={22}
-                    color={selectedCourseIsLiked ? colors.white : colors.textTertiary}
-                  />
-                </Animated.View>
-                {selectedCourseLikeCount > 0 && (
-                  <Text style={[styles.likeCount, selectedCourseIsLiked && { color: colors.white }]}>
-                    {selectedCourseLikeCount}
-                  </Text>
-                )}
+                <View style={styles.animIconBox}>
+                  <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+                    <Ionicons
+                      name={selectedCourseIsLiked ? 'thumbs-up' : 'thumbs-up-outline'}
+                      size={22}
+                      color={selectedCourseIsLiked ? colors.white : colors.textTertiary}
+                    />
+                  </Animated.View>
+                </View>
+                <Text style={[
+                  styles.likeCount,
+                  selectedCourseIsLiked && { color: colors.white },
+                  selectedCourseLikeCount === 0 && { opacity: 0 },
+                ]}>
+                  {selectedCourseLikeCount || 0}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => animateButton(favScale, () => toggleFavorite(courseId))}
                 activeOpacity={0.7}
                 style={styles.favoriteButton}
               >
-                <Animated.View style={{ transform: [{ scale: favScale }] }}>
-                  <Ionicons
-                    name={isFavorited ? 'heart' : 'heart-outline'}
-                    size={22}
-                    color={isFavorited ? colors.error : colors.textTertiary}
-                  />
-                </Animated.View>
+                <View style={styles.animIconBox}>
+                  <Animated.View style={{ transform: [{ scale: favScale }] }}>
+                    <Ionicons
+                      name={isFavorited ? 'heart' : 'heart-outline'}
+                      size={22}
+                      color={isFavorited ? colors.error : colors.textTertiary}
+                    />
+                  </Animated.View>
+                </View>
               </TouchableOpacity>
             </View>
           </View>
@@ -402,8 +416,14 @@ export default function CourseDetailScreen() {
           courseId={courseId}
           creatorId={course.creator.id}
           currentUserId={currentUser?.id}
+          onInputFocus={() => {
+            setTimeout(() => {
+              scrollViewRef.current?.scrollToEnd({ animated: true });
+            }, 300);
+          }}
         />
       </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Bottom CTA: Competition challenge */}
       <View style={styles.bottomCta}>
@@ -615,6 +635,13 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     gap: SPACING.xs,
     padding: SPACING.sm,
+  },
+  animIconBox: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
   },
   likeCount: {
     fontSize: FONT_SIZES.sm,

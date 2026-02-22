@@ -257,6 +257,7 @@ class RunHistoryItem(BaseModel):
     started_at: datetime
     finished_at: datetime
     course: RunCourseInfo | None = None
+    device_model: str | None = None
 
 
 class RunHistoryResponse(BaseModel):

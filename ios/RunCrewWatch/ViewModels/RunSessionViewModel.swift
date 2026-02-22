@@ -6,11 +6,8 @@ import WatchConnectivity
 class RunSessionViewModel: ObservableObject {
     @Published var state = WatchRunState()
     @Published var isPhoneReachable = false
-    #if DEBUG
-    @Published var debugPollCount = 0
-    @Published var debugLastResult = "init"
-    @Published var debugActivation = "?"
-    #endif
+    @Published var isStandaloneMode = false
+    @Published var pendingSyncCount = 0
 
     let heartRateManager = HeartRateManager()
     private var cancellables = Set<AnyCancellable>()
@@ -31,10 +28,17 @@ class RunSessionViewModel: ObservableObject {
     private var lastHapticTurnIndex: Int = -1
     private var lastHapticThreshold: Double = 0
 
+    /// Standalone mode start time for local duration tracking
+    private var standaloneStartTime: Date?
+    private var standalonePausedDuration: TimeInterval = 0
+    private var standalonePauseStart: Date?
+
     init() {
         setupWatchSession()
         setupHeartRateForwarding()
-        startStateSyncTimer(interval: 2.0)
+        // Note: standalone location callbacks are set up lazily in startStandaloneRun()
+        // to avoid initializing WatchLocationManager at app launch
+        // No polling timer in idle — IdleView.onAppear triggers a single poll.
     }
 
     private func setupWatchSession() {
@@ -55,6 +59,10 @@ class RunSessionViewModel: ObservableObject {
 
         service.onReachabilityChange = { [weak self] reachable in
             self?.isPhoneReachable = reachable
+            // When phone becomes reachable, try syncing pending runs
+            if reachable {
+                self?.syncPendingRuns()
+            }
         }
 
         // After WCSession activates, check for state
@@ -66,13 +74,156 @@ class RunSessionViewModel: ObservableObject {
     private func setupHeartRateForwarding() {
         heartRateManager.onHeartRateUpdate = { [weak self] bpm in
             self?.state.heartRate = bpm
-            WatchSessionService.shared.sendHeartRate(bpm)
+            if !(self?.isStandaloneMode ?? false) {
+                WatchSessionService.shared.sendHeartRate(bpm)
+            }
+        }
+    }
+
+    private func setupStandaloneLocationCallbacks() {
+        let locationMgr = WatchLocationManager.shared
+
+        locationMgr.onLocationUpdate = { [weak self] distance, speed, pace in
+            guard let self = self, self.isStandaloneMode else { return }
+            self.state.distance = distance
+            self.state.speed = speed
+            self.state.currentPace = pace
+
+            // Calculate avg pace
+            if distance > 0, let start = self.standaloneStartTime {
+                let elapsed = Date().timeIntervalSince(start) - self.standalonePausedDuration
+                self.state.avgPace = Int(elapsed / (distance / 1000.0))
+            }
+        }
+
+        locationMgr.onGPSStatusChange = { [weak self] status in
+            guard let self = self, self.isStandaloneMode else { return }
+            self.state.gpsStatus = status
+        }
+    }
+
+    // MARK: - Standalone Mode
+
+    /// Start a standalone run using the watch's own GPS.
+    func startStandaloneRun() {
+        print("[RunSessionVM] START standalone — phase=\(state.phase)")
+
+        setupStandaloneLocationCallbacks()
+        isStandaloneMode = true
+        standaloneStartTime = Date()
+        standalonePausedDuration = 0
+        standalonePauseStart = nil
+
+        let oldPhase = state.phase
+        state.phase = "running"
+        state.distance = 0
+        state.duration = 0
+        state.currentPace = 0
+        state.avgPace = 0
+        state.gpsStatus = "searching"
+
+        WatchLocationManager.shared.requestPermission()
+        WatchLocationManager.shared.startTracking()
+        handlePhaseTransition(from: oldPhase, to: "running")
+        restartStandaloneDurationTimer()
+    }
+
+    /// Pause standalone run.
+    func pauseStandaloneRun() {
+        let oldPhase = state.phase
+        state.phase = "paused"
+        standalonePauseStart = Date()
+        WatchLocationManager.shared.pauseTracking()
+        handlePhaseTransition(from: oldPhase, to: "paused")
+    }
+
+    /// Resume standalone run.
+    func resumeStandaloneRun() {
+        let oldPhase = state.phase
+        state.phase = "running"
+        if let pauseStart = standalonePauseStart {
+            standalonePausedDuration += Date().timeIntervalSince(pauseStart)
+        }
+        standalonePauseStart = nil
+        WatchLocationManager.shared.resumeTracking()
+        handlePhaseTransition(from: oldPhase, to: "running")
+        restartStandaloneDurationTimer()
+    }
+
+    /// Stop standalone run, save data, attempt sync.
+    func stopStandaloneRun() {
+        let oldPhase = state.phase
+        state.phase = "completed"
+
+        WatchLocationManager.shared.stopTracking()
+        handlePhaseTransition(from: oldPhase, to: "completed")
+
+        // Build and save run data
+        var summary = WatchLocationManager.shared.buildRunSummary()
+        summary["durationSeconds"] = state.duration
+
+        // Save locally
+        WatchRunStorage.shared.saveRun(summary)
+
+        // Attempt to sync to phone immediately
+        syncPendingRuns()
+
+        // Reset standalone state after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            self?.isStandaloneMode = false
+            self?.standaloneStartTime = nil
+            self?.standalonePausedDuration = 0
+        }
+    }
+
+    private func restartStandaloneDurationTimer() {
+        durationTimer?.invalidate()
+        durationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self, self.isStandaloneMode, self.state.phase == "running",
+                  let start = self.standaloneStartTime else { return }
+            let elapsed = Date().timeIntervalSince(start) - self.standalonePausedDuration
+            self.state.duration = max(0, Int(elapsed))
+        }
+    }
+
+    /// Sync all pending standalone runs to the phone.
+    /// Uses transferUserInfo (queued, guaranteed delivery, handles large payloads)
+    /// instead of sendMessage (which times out with large GPS data).
+    func syncPendingRuns() {
+        pendingSyncCount = WatchRunStorage.shared.pendingCount
+        let pending = WatchRunStorage.shared.getPendingRuns()
+        guard !pending.isEmpty else { return }
+
+        print("[RunSessionVM] Syncing \(pending.count) pending run(s) to phone via transferUserInfo")
+
+        for run in pending {
+            guard let filename = run["_filename"] as? String else { continue }
+            var payload = run
+            payload.removeValue(forKey: "_filename")
+            payload["_syncFilename"] = filename  // phone will echo this back for cleanup
+
+            WCSession.default.transferUserInfo(payload)
+            print("[RunSessionVM] Queued transferUserInfo for: \(filename)")
+        }
+
+        // Remove locally after queueing — transferUserInfo guarantees delivery
+        for run in pending {
+            if let filename = run["_filename"] as? String {
+                WatchRunStorage.shared.removeRun(filename: filename)
+            }
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.pendingSyncCount = WatchRunStorage.shared.pendingCount
         }
     }
 
     // MARK: - Message Handlers
 
     private func handleLocationUpdate(_ message: [String: Any]) {
+        // Skip phone location updates when in standalone mode
+        guard !isStandaloneMode else { return }
+
         if let distance = message[WatchMessageKeys.distanceFromStart] as? Double {
             state.distance = distance
         } else if let distance = message[WatchMessageKeys.distance] as? Double {
@@ -127,12 +278,18 @@ class RunSessionViewModel: ObservableObject {
     }
 
     private func handleStateUpdate(_ message: [String: Any]) {
+        // Skip phone state updates when in standalone mode
+        guard !isStandaloneMode else { return }
+
         let previousPhase = state.phase
+        let incomingPhase = message[WatchMessageKeys.phase] as? String ?? "nil"
+        print("[RunSessionVM] handleStateUpdate: incoming=\(incomingPhase) current=\(previousPhase) locked=\(Date() < phaseLockedUntil)")
 
         // Phase: respect phase lock from optimistic command updates
         if let phase = message[WatchMessageKeys.phase] as? String {
             if Date() >= phaseLockedUntil {
                 state.phase = phase
+                print("[RunSessionVM] phase SET → \(phase)")
             } else if phase == state.phase {
                 // Server confirmed our optimistic update — unlock early
                 phaseLockedUntil = .distantPast
@@ -221,8 +378,6 @@ class RunSessionViewModel: ObservableObject {
 
         // Turn approach haptics
         if state.navDistanceToNextTurn >= 0 && state.isCourseRun {
-            let turnIdx = state.navNextTurnDirection.isEmpty ? -1 : (state.navProgress > 0 ? Int(state.navProgress) : 0)
-            // Use a simple approach: track based on distance thresholds
             if state.navDistanceToNextTurn <= 20 && lastHapticThreshold < 20 {
                 triggerTurnHaptic(direction: state.navNextTurnDirection)
                 lastHapticThreshold = 20
@@ -234,7 +389,6 @@ class RunSessionViewModel: ObservableObject {
                 lastHapticThreshold = 200
             }
 
-            // Reset threshold when distance increases (passed the turn, approaching next)
             if state.navDistanceToNextTurn > 200 {
                 lastHapticThreshold = 0
             }
@@ -257,20 +411,22 @@ class RunSessionViewModel: ObservableObject {
 
         switch newPhase {
         case "running":
-            startStateSyncTimer(interval: 5.0)  // backup polling (phone pushes updates)
+            if !isStandaloneMode {
+                startReachabilityTimer()
+            }
             if oldPhase == "paused" {
                 HapticManager.shared.resumed()
             } else {
-                // New run — reset anchor so timer starts fresh
                 anchorDuration = 0
                 anchorTime = .distantPast
                 HapticManager.shared.runStarted()
             }
-            restartDurationTimer()
+            if !isStandaloneMode {
+                restartDurationTimer()
+            }
             startHeartRateMonitoring()
 
         case "paused":
-            startStateSyncTimer(interval: 5.0)  // backup polling
             HapticManager.shared.paused()
             stopDurationTimer()
 
@@ -280,28 +436,25 @@ class RunSessionViewModel: ObservableObject {
             stopHeartRateMonitoring()
             anchorDuration = 0
             anchorTime = .distantPast
-            startStateSyncTimer(interval: 2.0)
 
         case "idle":
             stopDurationTimer()
             stopHeartRateMonitoring()
             state = WatchRunState()
+            isStandaloneMode = false
             anchorDuration = 0
             anchorTime = .distantPast
-            startStateSyncTimer(interval: 2.0)
+            stopReachabilityTimer()
 
         default:
             break
         }
     }
 
-    // MARK: - Duration Timer (Server-Anchored)
-    // Timer doesn't increment — it recomputes duration from server anchor.
-    // display = anchorDuration + secondsSince(anchorTime)
-    // Server updates reset the anchor, so drift is impossible.
+    // MARK: - Duration Timer (Server-Anchored, companion mode only)
 
     private func updateAnchorDuration(_ serverDuration: Int) {
-        // Only accept if >= current anchor (reject stale poll responses)
+        guard !isStandaloneMode else { return }
         guard serverDuration >= anchorDuration else { return }
         anchorDuration = serverDuration
         anchorTime = Date()
@@ -310,11 +463,11 @@ class RunSessionViewModel: ObservableObject {
 
     private func restartDurationTimer() {
         durationTimer?.invalidate()
-        // Set initial anchor if not yet set
-        if anchorTime == .distantPast {
-            anchorTime = Date()
-            anchorDuration = state.duration
-        }
+        // Always re-anchor to current duration on restart.
+        // This prevents pause time from being counted — without this,
+        // resuming after a 4s pause would jump duration by 4s.
+        anchorTime = Date()
+        anchorDuration = state.duration
         durationTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self, self.state.phase == "running" else { return }
             let elapsed = Int(Date().timeIntervalSince(self.anchorTime))
@@ -327,45 +480,25 @@ class RunSessionViewModel: ObservableObject {
         durationTimer = nil
     }
 
-    // MARK: - State Sync (polls Phone for current state)
-    // Always runs to recover from missed state transitions.
-    // Needed because updateApplicationContext/transferUserInfo don't work
-    // when isWatchAppInstalled=false (dev builds via xcrun devicectl)
+    // MARK: - Reachability Sync
+    // No polling timer — phone pushes all state via applicationContext/transferUserInfo/sendMessage.
+    // The watch only updates isPhoneReachable periodically to show connection status.
 
-    private func startStateSyncTimer(interval: TimeInterval = 3.0) {
-        stopStateSyncTimer()
-        stateSyncTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+    private func startReachabilityTimer() {
+        stopReachabilityTimer()
+        stateSyncTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.isPhoneReachable = WCSession.default.isReachable
-
-            #if DEBUG
-            self.debugPollCount += 1
-            self.debugActivation = "\(WCSession.default.activationState.rawValue)"
-            #endif
-
-            WatchSessionService.shared.requestCurrentState { [weak self] reply in
-                #if DEBUG
-                if let err = reply["error"] as? String {
-                    self?.debugLastResult = "err:\(err.prefix(20))"
-                } else {
-                    let phase = reply["phase"] as? String ?? "nil"
-                    self?.debugLastResult = "ok:\(phase)"
-                }
-                #endif
-                _ = reply // suppress unused warning in release
-            }
         }
     }
 
-    /// Called from IdleView as manual poll trigger
-    func pollState() {
-        isPhoneReachable = WCSession.default.isReachable
-        WatchSessionService.shared.requestCurrentState { _ in }
-    }
-
-    private func stopStateSyncTimer() {
+    private func stopReachabilityTimer() {
         stateSyncTimer?.invalidate()
         stateSyncTimer = nil
+    }
+
+    func updateReachabilityStatus() {
+        isPhoneReachable = WCSession.default.isReachable
     }
 
     // MARK: - Heart Rate
@@ -381,9 +514,21 @@ class RunSessionViewModel: ObservableObject {
         heartRateManager.stopWorkoutSession()
     }
 
-    // MARK: - Commands to Phone (with optimistic local update)
+    // MARK: - Commands to Phone (companion mode, with optimistic local update)
+
+    func sendStartCommand() {
+        let oldPhase = state.phase
+        state.phase = "running"
+        phaseLockedUntil = Date().addingTimeInterval(5.0)
+        handlePhaseTransition(from: oldPhase, to: "running")
+        WatchSessionService.shared.sendCommand(.start)
+    }
 
     func sendPauseCommand() {
+        if isStandaloneMode {
+            pauseStandaloneRun()
+            return
+        }
         let oldPhase = state.phase
         state.phase = "paused"
         phaseLockedUntil = Date().addingTimeInterval(3.0)
@@ -392,6 +537,10 @@ class RunSessionViewModel: ObservableObject {
     }
 
     func sendResumeCommand() {
+        if isStandaloneMode {
+            resumeStandaloneRun()
+            return
+        }
         let oldPhase = state.phase
         state.phase = "running"
         phaseLockedUntil = Date().addingTimeInterval(3.0)
@@ -400,6 +549,10 @@ class RunSessionViewModel: ObservableObject {
     }
 
     func sendStopCommand() {
+        if isStandaloneMode {
+            stopStandaloneRun()
+            return
+        }
         let oldPhase = state.phase
         state.phase = "completed"
         phaseLockedUntil = Date().addingTimeInterval(3.0)
@@ -453,8 +606,12 @@ class RunSessionViewModel: ObservableObject {
         return "\(state.calories)"
     }
 
-    func updateReachability() {
-        isPhoneReachable = WatchSessionService.shared.isPhoneReachable
+    // updateReachability removed — use updateReachabilityStatus() instead
+
+    /// Reset to idle state (used by CompletedView "확인" button)
+    func resetToIdle() {
+        let oldPhase = state.phase
+        handlePhaseTransition(from: oldPhase, to: "idle")
     }
 
     // MARK: - Course Navigation Formatters

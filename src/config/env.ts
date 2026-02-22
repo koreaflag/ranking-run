@@ -17,10 +17,10 @@ export const API_BASE_URL: string =
 // ---- Mapbox ----
 // Token MUST be provided via EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN env var
 export const MAPBOX_ACCESS_TOKEN: string =
-  extra.MAPBOX_ACCESS_TOKEN ?? '';
+  extra.MAPBOX_ACCESS_TOKEN ?? process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '';
 
 export const MAPBOX_DARK_STYLE: string =
-  extra.MAPBOX_DARK_STYLE || 'mapbox://styles/mapbox/dark-v11';
+  extra.MAPBOX_DARK_STYLE || 'mapbox://styles/runsvs/cmlt12hqy001d01r49zt66z85';
 
 export const MAPBOX_LIGHT_STYLE: string =
-  extra.MAPBOX_LIGHT_STYLE || 'mapbox://styles/mapbox/light-v11';
+  extra.MAPBOX_LIGHT_STYLE || 'mapbox://styles/runsvs/cmlt0wpwv001e01sq8mg39xas';

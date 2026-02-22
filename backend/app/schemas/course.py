@@ -111,6 +111,8 @@ class CourseUpdateRequest(BaseModel):
     description: str | None = Field(None, max_length=500)
     is_public: bool | None = None
     tags: list[str] | None = None
+    course_type: str | None = None  # "normal" or "loop"
+    lap_count: int | None = Field(None, ge=1, le=10)
 
 
 class CourseMarker(BaseModel):
@@ -146,8 +148,11 @@ class MyCourseItem(BaseModel):
     """Course owned by the current user."""
     id: str
     title: str
+    description: str | None = None
     distance_meters: int
     thumbnail_url: str | None
     is_public: bool
+    course_type: str | None = None
+    lap_count: int | None = None
     created_at: datetime
     stats: CourseStatsInfo

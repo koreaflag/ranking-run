@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import distinct, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.course import Course, CourseStats
@@ -112,9 +112,10 @@ class StatsService:
         now = datetime.now(timezone.utc)
         this_week_start = now - timedelta(days=now.weekday())
         this_week_start = this_week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        this_week_end = this_week_start + timedelta(days=7)
         last_week_start = this_week_start - timedelta(days=7)
 
-        this_week = await self._get_period_stats(db, user_id, this_week_start, now)
+        this_week = await self._get_period_stats(db, user_id, this_week_start, this_week_end)
 
         last_week_end = this_week_start
         last_week = await self._get_period_stats(db, user_id, last_week_start, last_week_end)
@@ -315,9 +316,10 @@ class StatsService:
         now = datetime.now(timezone.utc)
         start_date = now - timedelta(days=months * 30)
 
+        month_expr = func.to_char(RunRecord.finished_at, literal_column("'YYYY-MM'"))
         result = await db.execute(
             select(
-                func.to_char(RunRecord.finished_at, "YYYY-MM").label("month"),
+                month_expr.label("month"),
                 func.sum(RunRecord.distance_meters).label("distance"),
                 func.count(RunRecord.id).label("run_count"),
             )
@@ -325,8 +327,8 @@ class StatsService:
                 RunRecord.user_id == user_id,
                 RunRecord.finished_at >= start_date,
             )
-            .group_by(func.to_char(RunRecord.finished_at, "YYYY-MM"))
-            .order_by(func.to_char(RunRecord.finished_at, "YYYY-MM"))
+            .group_by(month_expr)
+            .order_by(month_expr)
         )
 
         return [

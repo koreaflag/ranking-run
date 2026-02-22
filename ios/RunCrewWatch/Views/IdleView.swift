@@ -6,40 +6,61 @@ struct IdleView: View {
     @EnvironmentObject var viewModel: RunSessionViewModel
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
+            Spacer()
+
             Image(systemName: "figure.run")
-                .font(.system(size: 40))
+                .font(.system(size: 36))
                 .foregroundColor(appOrange)
                 .accessibilityHidden(true)
 
             Text("RUNVS")
-                .font(.system(size: 18, weight: .bold))
+                .font(.system(size: 16, weight: .bold))
 
-            Text("폰에서 런닝을\n시작하세요")
-                .font(.system(size: 14))
-                .foregroundColor(.gray)
-                .multilineTextAlignment(.center)
+            // Start button — always standalone (watch GPS)
+            Button(action: {
+                viewModel.startStandaloneRun()
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 12))
+                    Text("시작")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(appOrange)
+                .cornerRadius(24)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 20)
 
-            // Phone connection indicator
+            // Phone connection indicator (shows sync availability)
             HStack(spacing: 4) {
                 Circle()
-                    .fill(viewModel.isPhoneReachable ? Color.green : Color.red)
-                    .frame(width: 8, height: 8)
+                    .fill(viewModel.isPhoneReachable ? Color.green : Color.gray)
+                    .frame(width: 6, height: 6)
                     .accessibilityHidden(true)
                 Text(viewModel.isPhoneReachable ? "폰 연결됨" : "폰 미연결")
-                    .font(.system(size: 11))
+                    .font(.system(size: 10))
                     .foregroundColor(.gray)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(viewModel.isPhoneReachable ? "아이폰 연결됨" : "아이폰 연결 안 됨")
+            .accessibilityLabel(viewModel.isPhoneReachable ? "아이폰 연결됨" : "아이폰 미연결")
 
+            // Pending sync indicator
+            if viewModel.pendingSyncCount > 0 {
+                Text("동기화 대기: \(viewModel.pendingSyncCount)건")
+                    .font(.system(size: 9))
+                    .foregroundColor(.yellow.opacity(0.8))
+            }
+
+            Spacer()
         }
         .onAppear {
-            viewModel.updateReachability()
-            viewModel.pollState()
-        }
-        .onTapGesture {
-            viewModel.pollState()
+            viewModel.updateReachabilityStatus()
+            viewModel.syncPendingRuns()
         }
     }
 }

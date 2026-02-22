@@ -1,6 +1,8 @@
 #import <React/RCTBridgeModule.h>
 #import <React/RCTEventEmitter.h>
 
+NS_ASSUME_NONNULL_BEGIN
+
 @interface RCT_EXTERN_MODULE(GPSTrackerModule, RCTEventEmitter)
 
 RCT_EXTERN_METHOD(startTracking:(RCTPromiseResolveBlock)resolve
@@ -33,3 +35,5 @@ RCT_EXTERN_METHOD(stopHeadingUpdates:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 @end
+
+NS_ASSUME_NONNULL_END

@@ -88,8 +88,8 @@ function getAqiColor(aqi?: number): string {
 const SEOUL_REGION: Region = {
   latitude: 37.5665,
   longitude: 126.978,
-  latitudeDelta: 0.08,
-  longitudeDelta: 0.08,
+  latitudeDelta: 0.12,
+  longitudeDelta: 0.12,
 };
 
 // ============================================================
@@ -454,7 +454,7 @@ export default function WorldScreen() {
           if (!hasInitializedRef.current) {
             hasInitializedRef.current = true;
             setFollowUser(false);
-            const delta = 0.04;
+            const delta = 0.08;
             fetchMapMarkers(
               coord.latitude - delta, coord.longitude - delta,
               coord.latitude + delta, coord.longitude + delta,
@@ -517,15 +517,6 @@ export default function WorldScreen() {
 
       {/* Right side: controls */}
       <View style={styles.rightControls} pointerEvents="box-none">
-        <TouchableOpacity
-          style={styles.myLocationButton}
-          onPress={() => setMap3DStyle(!map3DStyle)}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.mapToggleText, { color: colors.text }]}>
-            {map3DStyle ? '3D' : '2D'}
-          </Text>
-        </TouchableOpacity>
         <TouchableOpacity
           style={styles.myLocationButton}
           onPress={handleMyLocation}
@@ -866,11 +857,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...SHADOWS.md,
-  },
-  mapToggleText: {
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: -0.5,
   },
   // -- Bottom overlay --
   bottomOverlay: {

@@ -56,7 +56,8 @@ export default function RootNavigator() {
     );
   }
 
-  const showAuth = !isAuthenticated || isNewUser;
+  // TODO: 소셜 로그인 완성 후 원복 → !isAuthenticated || isNewUser
+  const showAuth = false;
 
   return (
     <NavigationContainer theme={navTheme}>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  TouchableOpacity,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { useRunningStore } from '../../stores/runningStore';
@@ -18,6 +19,7 @@ import { useCompassHeading } from '../../hooks/useCompassHeading';
 import { Ionicons } from '@expo/vector-icons';
 import Button from '../../components/common/Button';
 import RouteMapView from '../../components/map/RouteMapView';
+import type { RouteMapViewHandle } from '../../components/map/RouteMapView';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import GlassCard from '../../components/common/GlassCard';
 import type { RunningStackParamList } from '../../types/navigation';
@@ -52,10 +54,11 @@ function getRankBgColor(rank: number, c: ThemeColors): string {
 export default function RunResultScreen() {
   const navigation = useNavigation();
   const route = useRoute<ResultRoute>();
-  const { sessionId } = route.params;
+  const { sessionId, alreadyCompleted } = route.params;
 
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const mapRef = useRef<RouteMapViewHandle>(null);
 
   const {
     distanceMeters,
@@ -91,24 +94,29 @@ export default function RunResultScreen() {
   );
 
   // Submit run: save locally first, then try server in background
+  // Skip when the run was already completed (e.g., watch standalone runs)
   useEffect(() => {
     const submitRun = async () => {
-      if (submitted) return;
+      if (submitted || alreadyCompleted) {
+        if (alreadyCompleted) setSubmitted(true);
+        return;
+      }
       setIsSubmitting(true);
 
       const pendingId = `local-run-${Date.now()}`;
       const runPayload = {
-        distance_meters: distanceMeters,
-        duration_seconds: durationSeconds,
-        total_elapsed_seconds: durationSeconds,
-        avg_pace_seconds_per_km: avgPaceSecondsPerKm,
-        best_pace_seconds_per_km:
+        distance_meters: Math.round(distanceMeters),
+        duration_seconds: Math.round(durationSeconds),
+        total_elapsed_seconds: Math.round(durationSeconds),
+        avg_pace_seconds_per_km: Math.round(avgPaceSecondsPerKm),
+        best_pace_seconds_per_km: Math.round(
           splits.length > 0
             ? Math.min(...splits.map((s) => s.pace_seconds_per_km))
             : avgPaceSecondsPerKm,
+        ),
         avg_speed_ms: distanceMeters / (durationSeconds || 1),
         max_speed_ms: 0,
-        calories,
+        calories: Math.round(calories),
         finished_at: new Date().toISOString(),
         route_geometry: {
           type: 'LineString' as const,
@@ -116,8 +124,8 @@ export default function RunResultScreen() {
             ? routePoints.map((p) => [p.longitude, p.latitude, 0])
             : [[127.0, 37.5, 0], [127.0001, 37.5001, 0]]) as [number, number, number][],
         },
-        elevation_gain_meters: elevationGainMeters,
-        elevation_loss_meters: elevationLossMeters,
+        elevation_gain_meters: Math.round(elevationGainMeters),
+        elevation_loss_meters: Math.round(elevationLossMeters),
         elevation_profile: [] as number[],
         splits,
         pause_intervals: [] as { paused_at: string; resumed_at: string }[],
@@ -251,7 +259,7 @@ export default function RunResultScreen() {
         {/* Minimal header */}
         <View style={styles.header}>
           <Text style={styles.headerLabel}>
-            {courseId ? '코스 러닝 완료' : '자유 러닝 완료'}
+            {courseId ? '코스 러닝 완료' : alreadyCompleted ? 'Watch 러닝 완료' : '자유 러닝 완료'}
           </Text>
         </View>
 
@@ -324,6 +332,7 @@ export default function RunResultScreen() {
         {/* Route Map with custom user location + heading */}
         <View style={styles.mapContainer}>
           <RouteMapView
+            ref={mapRef}
             routePoints={routePoints.length >= 2 ? routePoints : undefined}
             showUserLocation
             interactive
@@ -333,6 +342,21 @@ export default function RunResultScreen() {
             onUserLocationChange={handleUserLocationChange}
             style={styles.mapPreview}
           />
+          <TouchableOpacity
+            style={styles.mapLocateBtn}
+            onPress={() => {
+              if (myLocation) {
+                mapRef.current?.animateToRegion({
+                  ...myLocation,
+                  latitudeDelta: 0.005,
+                  longitudeDelta: 0.005,
+                }, 600);
+              }
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="locate" size={18} color={colors.text} />
+          </TouchableOpacity>
         </View>
 
         {/* Ranking Card (if course run) */}
@@ -630,6 +654,22 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   mapPreview: {
     height: SCREEN_HEIGHT * 0.35,
     borderRadius: 0,
+  },
+  mapLocateBtn: {
+    position: 'absolute',
+    bottom: SPACING.sm,
+    right: SPACING.sm,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: c.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
   },
 
   // -- Ranking Card --

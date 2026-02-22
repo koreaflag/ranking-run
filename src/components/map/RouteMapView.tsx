@@ -27,7 +27,7 @@ export interface Region {
 const SEOUL_CENTER: [number, number] = [126.978, 37.5665]; // [lng, lat]
 const DEFAULT_ZOOM = 13;
 
-const EDGE_PADDING = { top: 50, right: 50, bottom: 50, left: 50 };
+const EDGE_PADDING = { top: 40, right: 40, bottom: 40, left: 40 };
 
 // ---- Data interfaces ----
 
@@ -253,9 +253,9 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     if (isRouteMode && routePoints.length >= 2) {
       // Immediate fit + delayed retry to ensure bounds are applied
       const { ne, sw } = computeBounds(routePoints);
-      cameraRef.current?.fitBounds(ne, sw, [80, 80, 80, 80], 0);
+      cameraRef.current?.fitBounds(ne, sw, [40, 40, 40, 40], 0);
       setTimeout(() => {
-        cameraRef.current?.fitBounds(ne, sw, [80, 80, 80, 80], 0);
+        cameraRef.current?.fitBounds(ne, sw, [40, 40, 40, 40], 0);
       }, 500);
     }
   }, [isRouteMode, routePoints]);
@@ -265,7 +265,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     if (isRouteMode && routePoints.length >= 2 && !followsUserLocation) {
       const timer = setTimeout(() => {
         const { ne, sw } = computeBounds(routePoints);
-        cameraRef.current?.fitBounds(ne, sw, [80, 80, 80, 80], 500);
+        cameraRef.current?.fitBounds(ne, sw, [40, 40, 40, 40], 500);
       }, 300);
       return () => clearTimeout(timer);
     }
@@ -527,7 +527,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
                     { transform: [{ rotate: `${((customUserHeading - mapBearingRef.current) % 360 + 360) % 360}deg` }] },
                   ]}
                 >
-                  <View style={styles.headingCone} />
+                  <View style={styles.headingArrow} />
                 </View>
               )}
               <View style={styles.customUserDot} />
@@ -802,16 +802,17 @@ const styles = StyleSheet.create({
     height: 60,
     alignItems: 'center',
   },
-  headingCone: {
+  headingArrow: {
     width: 0,
     height: 0,
-    borderLeftWidth: 10,
-    borderRightWidth: 10,
-    borderBottomWidth: 28,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderBottomWidth: 16,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderBottomColor: COLORS.primary + '55',
-    marginTop: 0,
+    borderBottomColor: COLORS.primary,
+    opacity: 0.65,
+    marginTop: 7,
   },
   customUserDot: {
     width: 14,

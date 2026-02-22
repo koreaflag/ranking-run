@@ -11,9 +11,8 @@ struct RunCrewWatchApp: App {
                 .environmentObject(viewModel)
                 .onChange(of: scenePhase) { newPhase in
                     if newPhase == .active {
-                        // App came to foreground — sync state from Phone
-                        viewModel.updateReachability()
-                        WatchSessionService.shared.requestCurrentState()
+                        // App came to foreground — refresh connection status
+                        viewModel.updateReachabilityStatus()
                     }
                 }
         }

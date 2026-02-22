@@ -233,9 +233,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       );
 
       if (!accessToken || !refreshToken) {
-        // No stored tokens — show login screen
-        set({ isLoading: false });
-        return;
+        // No stored tokens — try devLogin (임시: 소셜 로그인 완성 전까지)
+        try {
+          await get().devLogin('TestRunner', 'dev@runcrew.app');
+          return;
+        } catch {
+          set({ isLoading: false });
+          return;
+        }
       }
 
       set({ accessToken, refreshToken });
@@ -258,9 +263,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             isLoading: false,
           });
         } else {
-          // Refresh failed — clear tokens and show login screen
-          await get().logout();
-          set({ isLoading: false });
+          // Refresh failed — try devLogin (임시: 소셜 로그인 완성 전까지)
+          try {
+            await get().devLogin('TestRunner', 'dev@runcrew.app');
+          } catch {
+            set({ isLoading: false });
+          }
         }
       }
     } catch {

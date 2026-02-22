@@ -6,6 +6,7 @@
 // ============================================================
 
 import { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 import type { CourseNavigation } from './useCourseNavigation';
 import type { RunningPhase } from '../stores/runningStore';
@@ -13,6 +14,40 @@ import { directionToKorean } from '../utils/navigationHelpers';
 
 /** Minimum gap between consecutive announcements to avoid spam. */
 const MIN_ANNOUNCEMENT_GAP_MS = 5000;
+
+/** Cached best Korean voice identifier */
+let cachedKoreanVoice: string | null = null;
+let voiceSearchDone = false;
+
+/** Find the best available Korean voice (premium > enhanced > default) */
+async function getBestKoreanVoice(): Promise<string | undefined> {
+  if (voiceSearchDone) return cachedKoreanVoice ?? undefined;
+  voiceSearchDone = true;
+
+  try {
+    const voices = await Speech.getAvailableVoicesAsync();
+    const koreanVoices = voices.filter(
+      (v) => v.language === 'ko-KR' || v.language.startsWith('ko'),
+    );
+
+    if (koreanVoices.length === 0) return undefined;
+
+    // iOS: prefer premium > enhanced > compact
+    if (Platform.OS === 'ios') {
+      const premium = koreanVoices.find((v) => v.identifier.includes('.premium.'));
+      if (premium) { cachedKoreanVoice = premium.identifier; return premium.identifier; }
+
+      const enhanced = koreanVoices.find((v) => v.identifier.includes('.enhanced.'));
+      if (enhanced) { cachedKoreanVoice = enhanced.identifier; return enhanced.identifier; }
+    }
+
+    // Fallback: first available Korean voice
+    cachedKoreanVoice = koreanVoices[0].identifier;
+    return cachedKoreanVoice;
+  } catch {
+    return undefined;
+  }
+}
 
 interface UseVoiceGuidanceProps {
   navigation: CourseNavigation | null;
@@ -27,12 +62,18 @@ export function useVoiceGuidance({
   phase,
   enabled,
 }: UseVoiceGuidanceProps) {
+  const voiceIdRef = useRef<string | undefined>(undefined);
   const lastAnnouncementTimeRef = useRef(0);
   const lastTurnIndexRef = useRef(-1);
   /** Tracks which distance threshold was announced for the current turn: 0=none, 200, 100, 20 */
   const lastTurnThresholdRef = useRef<number>(0);
   const lastMilestoneKmRef = useRef(0);
   const wasOffCourseRef = useRef(false);
+
+  // Pre-fetch best voice on mount
+  useEffect(() => {
+    getBestKoreanVoice().then((id) => { voiceIdRef.current = id; });
+  }, []);
 
   // Stop speech when disabled or not running
   useEffect(() => {
@@ -100,7 +141,12 @@ export function useVoiceGuidance({
 
     if (announcement) {
       Speech.stop();
-      Speech.speak(announcement, { language: 'ko-KR', rate: 1.0, pitch: 1.0 });
+      Speech.speak(announcement, {
+        language: 'ko-KR',
+        voice: voiceIdRef.current,
+        rate: 1.0,
+        pitch: 1.0,
+      });
       lastAnnouncementTimeRef.current = now;
     }
   }, [enabled, phase, navigation, distanceMeters]);

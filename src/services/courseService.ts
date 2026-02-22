@@ -47,7 +47,7 @@ export const courseService = {
   async getNearbyCourses(
     lat: number,
     lng: number,
-    radius: number = 5000,
+    radius: number = 15000,
     limit: number = PAGINATION.HOME_NEARBY_LIMIT,
   ): Promise<NearbyCourse[]> {
     const query = toQuery({ lat, lng, radius, limit });
@@ -62,7 +62,7 @@ export const courseService = {
     swLng: number,
     neLat: number,
     neLng: number,
-    limit: number = 50,
+    limit: number = 100,
   ): Promise<CourseMarker[]> {
     const query = toQuery({
       sw_lat: swLat,
@@ -112,7 +112,7 @@ export const courseService = {
   },
 
   /**
-   * Update a course (title, description, visibility, tags).
+   * Update a course (title, description, visibility, tags, course_type, lap_count).
    */
   async updateCourse(
     courseId: string,
@@ -121,6 +121,8 @@ export const courseService = {
       description?: string;
       is_public?: boolean;
       tags?: string[];
+      course_type?: string;
+      lap_count?: number;
     },
   ): Promise<void> {
     await api.patch(`/courses/${courseId}`, data);

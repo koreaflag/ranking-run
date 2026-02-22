@@ -41,8 +41,10 @@
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		C0750497B73D460CB0DD2E60 /* noop-file.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04EA1770F7404268825423FB /* noop-file.swift */; };
 		C44709053764FEE1BA111497 /* CompletedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2C54373AEC7799F16DD9F0D /* CompletedView.swift */; };
+		C5D6E7F8091A2B3C4D5E6F70 /* WatchLocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B4C5D6E7F80912A3B4C5D6 /* WatchLocationManager.swift */; };
 		CE3CF588755FA31E4A391FD7 /* CountdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D5A328F7D095939AC5C83AA /* CountdownView.swift */; };
 		D1A2B3C4E5F60718293A4B5C /* CourseNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* CourseNavigationView.swift */; };
+		D6E7F8091A2B3C4D5E6F7081 /* WatchRunStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C5D6E7F8091A2B3C4D5E6F /* WatchRunStorage.swift */; };
 		D79283A1C1DAEA8340642A5B /* main.jsbundle in Resources */ = {isa = PBXBuildFile; fileRef = 13EE5B7D8FFCF78C1DA04FB3 /* main.jsbundle */; };
 		DE3E68B8EBE9DC7C26B0E96C /* RunCrewWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 792EFC1A398B9726AF9C506F /* RunCrewWatchApp.swift */; };
 		DF77140FD489E8326C6A0D4C /* WatchRunState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D3EA53C449D4691B845758 /* WatchRunState.swift */; };
@@ -90,10 +92,12 @@
 		A12ED3E9D449DD54528D5789 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* CourseNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseNavigationView.swift; sourceTree = "<group>"; };
 		A2CB363B4A1EA35D9BB02DB7 /* WatchMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMessage.swift; sourceTree = "<group>"; };
+		A3B4C5D6E7F80912A3B4C5D6 /* WatchLocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchLocationManager.swift; sourceTree = "<group>"; };
 		AA084EF6CBD1D1511D2A1C87 /* Pods-RunCrew.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunCrew.debug.xcconfig"; path = "Target Support Files/Pods-RunCrew/Pods-RunCrew.debug.xcconfig"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = RunCrew/SplashScreen.storyboard; sourceTree = "<group>"; };
 		AAFD75EA8A035BB4B5684611 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AED3B68D7E54F6B9A9CE010C /* BatteryOptimizer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatteryOptimizer.swift; sourceTree = "<group>"; };
+		B4C5D6E7F8091A2B3C4D5E6F /* WatchRunStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRunStorage.swift; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		CC30CCA13FB0CBAD7F791D16 /* WatchSessionManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
 		D0B6102106B4CC9C3977B726 /* AltimeterTracker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AltimeterTracker.swift; sourceTree = "<group>"; };
@@ -327,6 +331,8 @@
 			children = (
 				9F563E5AB1BC162FFA0AB77E /* HapticManager.swift */,
 				E8ABA79F8337CDC75B3CFBBF /* HeartRateManager.swift */,
+				A3B4C5D6E7F80912A3B4C5D6 /* WatchLocationManager.swift */,
+				B4C5D6E7F8091A2B3C4D5E6F /* WatchRunStorage.swift */,
 				6DD646D26F6716EFC3EAE18D /* WatchSessionService.swift */,
 			);
 			path = Services;
@@ -634,6 +640,8 @@
 				B9D95FD262AEF5BC36FCCB3B /* RunningView.swift in Sources */,
 				D1A2B3C4E5F60718293A4B5C /* CourseNavigationView.swift in Sources */,
 				01F3A4B5C6D7E8F90A1B2C3D /* ControlView.swift in Sources */,
+				C5D6E7F8091A2B3C4D5E6F70 /* WatchLocationManager.swift in Sources */,
+				D6E7F8091A2B3C4D5E6F7081 /* WatchRunStorage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -664,7 +672,6 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
-					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = app.runcrew;
@@ -696,7 +703,6 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
-					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = app.runcrew;

@@ -28,6 +28,16 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>RUNVS uses your location to track distance, pace, and route during standalone runs on Apple Watch.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>RUNVS uses your location to track distance, pace, and route during standalone runs on Apple Watch.</string>
+	<key>WKBackgroundModes</key>
+	<array>
+		<string>workout-processing</string>
+		<string>self-care</string>
+		<string>location</string>
+	</array>
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>

@@ -29,6 +29,7 @@ export default function StatItem({ label, value, unit, large = false }: StatItem
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     container: {
+      flex: 1,
       alignItems: 'center',
       gap: SPACING.xs,
     },

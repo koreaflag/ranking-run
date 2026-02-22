@@ -24,9 +24,10 @@ interface ReviewSectionProps {
   courseId: string;
   creatorId?: string;
   currentUserId?: string;
+  onInputFocus?: () => void;
 }
 
-export default function ReviewSection({ courseId, creatorId, currentUserId }: ReviewSectionProps) {
+export default function ReviewSection({ courseId, creatorId, currentUserId, onInputFocus }: ReviewSectionProps) {
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -65,9 +66,10 @@ export default function ReviewSection({ courseId, creatorId, currentUserId }: Re
           courseId={courseId}
           onUpdate={submitReview}
           onDelete={deleteReview}
+          onInputFocus={onInputFocus}
         />
       ) : (
-        <ReviewForm courseId={courseId} onSubmit={submitReview} />
+        <ReviewForm courseId={courseId} onSubmit={submitReview} onInputFocus={onInputFocus} />
       )}
 
       {/* Review List */}
@@ -158,11 +160,13 @@ function ReviewForm({
   onSubmit,
   initialContent,
   onCancel,
+  onInputFocus,
 }: {
   courseId: string;
   onSubmit: (courseId: string, content?: string) => Promise<void>;
   initialContent?: string;
   onCancel?: () => void;
+  onInputFocus?: () => void;
 }) {
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -197,6 +201,7 @@ function ReviewForm({
         multiline
         maxLength={500}
         textAlignVertical="top"
+        onFocus={onInputFocus}
       />
       <View style={styles.formActions}>
         {onCancel && (
@@ -230,11 +235,13 @@ function MyReviewCard({
   courseId,
   onUpdate,
   onDelete,
+  onInputFocus,
 }: {
   review: CourseReview;
   courseId: string;
   onUpdate: (courseId: string, content?: string) => Promise<void>;
   onDelete: (reviewId: string, courseId: string) => Promise<void>;
+  onInputFocus?: () => void;
 }) {
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -263,6 +270,7 @@ function MyReviewCard({
         onSubmit={onUpdate}
         initialContent={review.content ?? ''}
         onCancel={() => setIsEditing(false)}
+        onInputFocus={onInputFocus}
       />
     );
   }

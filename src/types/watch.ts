@@ -15,7 +15,7 @@ export interface WatchStatus {
 
 export interface WatchCommandEvent {
   type: 'command';
-  command: 'pause' | 'resume' | 'stop';
+  command: 'start' | 'pause' | 'resume' | 'stop';
   timestamp: number;
 }
 

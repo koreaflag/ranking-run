@@ -33,12 +33,22 @@ class WatchSessionService: NSObject, WCSessionDelegate {
             WatchMessageKeys.command: command.rawValue,
             WatchMessageKeys.timestamp: Date().timeIntervalSince1970 * 1000
         ]
-        WCSession.default.sendMessage(message, replyHandler: nil) { error in
-            print("[WatchSession] Failed to send command: \(error.localizedDescription)")
+
+        guard WCSession.default.activationState == .activated else {
+            print("[WatchSession] sendCommand SKIP: not activated")
+            return
+        }
+
+        // Always queue transferUserInfo for guaranteed delivery.
+        // Also try sendMessage for faster delivery (fire-and-forget, ignore errors).
+        WCSession.default.transferUserInfo(message)
+        if WCSession.default.isReachable {
+            WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: nil)
         }
     }
 
     func sendHeartRate(_ bpm: Double) {
+        guard WCSession.default.isReachable else { return }
         let message: [String: Any] = [
             WatchMessageKeys.type: WatchMessageType.heartRate.rawValue,
             WatchMessageKeys.bpm: bpm,
@@ -47,28 +57,10 @@ class WatchSessionService: NSObject, WCSessionDelegate {
         WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: nil)
     }
 
-    /// Ask Phone for current run state (bypasses applicationContext requirement)
-    /// Always attempts to send — isReachable is flaky in dev builds
-    func requestCurrentState(completion: (([String: Any]) -> Void)? = nil) {
-        guard WCSession.default.activationState == .activated else {
-            completion?(["error": "not_activated"])
-            return
-        }
-        let message: [String: Any] = [
-            WatchMessageKeys.type: WatchMessageType.requestState.rawValue,
-            WatchMessageKeys.timestamp: Date().timeIntervalSince1970 * 1000
-        ]
-        WCSession.default.sendMessage(message, replyHandler: { [weak self] reply in
-            DispatchQueue.main.async {
-                self?.onStateUpdate?(reply)
-                completion?(reply)
-            }
-        }, errorHandler: { error in
-            DispatchQueue.main.async {
-                completion?(["error": error.localizedDescription])
-            }
-        })
-    }
+    // requestCurrentState removed — phone pushes all state via
+    // applicationContext, transferUserInfo, and sendMessage.
+    // Pull-based polling caused persistent sendMessage timeouts
+    // because isReachable == true doesn't guarantee phone will respond.
 
     // MARK: - WCSessionDelegate
 
@@ -88,11 +80,8 @@ class WatchSessionService: NSObject, WCSessionDelegate {
                     self?.onStateUpdate?(ctx)
                 }
             }
-
-            // Always request current state after activation (don't gate on isReachable)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.requestCurrentState()
-            }
+            // No requestCurrentState here — phone pushes state via applicationContext/transferUserInfo.
+            // Avoids sendMessage timeout when phone app is backgrounded.
         }
     }
 
@@ -114,12 +103,8 @@ class WatchSessionService: NSObject, WCSessionDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.onReachabilityChange?(session.isReachable)
         }
-        // When phone becomes reachable, request current state
-        if session.isReachable {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.requestCurrentState()
-            }
-        }
+        // No requestCurrentState here — phone pushes state changes.
+        // sendMessage times out when phone app is backgrounded even if isReachable == true.
     }
 
     func session(
@@ -134,7 +119,15 @@ class WatchSessionService: NSObject, WCSessionDelegate {
 
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         print("[WatchSessionSvc] didReceiveUserInfo: \(userInfo)")
+        // transferUserInfo is used as backup delivery for phase changes
+        // Route it like a regular message so phase transitions are handled
         routeMessage(userInfo)
+        // Also trigger onStateUpdate directly for phase changes (guaranteed delivery path)
+        if let type = userInfo["type"] as? String, type == WatchMessageType.stateUpdate.rawValue {
+            DispatchQueue.main.async { [weak self] in
+                self?.onStateUpdate?(userInfo)
+            }
+        }
     }
 
     private func routeMessage(_ message: [String: Any]) {

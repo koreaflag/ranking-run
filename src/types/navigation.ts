@@ -16,7 +16,7 @@ export type MainTabParamList = {
   WorldTab: undefined;
   HomeTab: undefined;
   CourseTab: undefined;
-  RunningTab: undefined;
+  RunningTab: { screen?: string; params?: Record<string, unknown> } | undefined;
   MyPageTab: undefined;
 };
 
@@ -50,7 +50,7 @@ export type CourseStackParamList = {
 
 export type RunningStackParamList = {
   RunningMain: { courseId?: string } | undefined;
-  RunResult: { sessionId: string };
+  RunResult: { sessionId: string; alreadyCompleted?: boolean };
 };
 
 export type MyPageStackParamList = {

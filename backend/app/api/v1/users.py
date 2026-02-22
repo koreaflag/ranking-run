@@ -14,6 +14,7 @@ from app.models.course import Course, CourseStats
 from app.models.like import CourseLike
 from app.models.ranking import Ranking
 from app.models.run_record import RunRecord
+from app.models.run_session import RunSession
 from app.models.user import User
 from app.schemas.course import CourseStatsInfo, MyCourseItem
 from app.schemas.run import RunCourseInfo, RunHistoryItem, RunHistoryResponse
@@ -178,22 +179,26 @@ async def get_my_runs(
         order_column = desc(order_column)
 
     result = await db.execute(
-        select(RunRecord)
+        select(RunRecord, RunSession.device_info)
+        .outerjoin(RunSession, RunRecord.session_id == RunSession.id)
         .where(RunRecord.user_id == current_user.id)
         .order_by(order_column)
         .offset(page * actual_limit)
         .limit(actual_limit)
     )
-    records = result.scalars().all()
+    rows = result.all()
 
     data = []
-    for record in records:
+    for record, device_info in rows:
         course_info = None
         if record.course is not None:
             course_info = RunCourseInfo(
                 id=str(record.course.id),
                 title=record.course.title,
             )
+        device_model = None
+        if device_info and isinstance(device_info, dict):
+            device_model = device_info.get("device_model")
         data.append(
             RunHistoryItem(
                 id=str(record.id),
@@ -204,6 +209,7 @@ async def get_my_runs(
                 started_at=record.started_at,
                 finished_at=record.finished_at,
                 course=course_info,
+                device_model=device_model,
             )
         )
 
@@ -237,9 +243,12 @@ async def get_my_courses(
             MyCourseItem(
                 id=str(course.id),
                 title=course.title,
+                description=course.description,
                 distance_meters=course.distance_meters,
                 thumbnail_url=course.thumbnail_url,
                 is_public=course.is_public,
+                course_type=course.course_type,
+                lap_count=course.lap_count,
                 created_at=course.created_at,
                 stats=stats_info,
             )

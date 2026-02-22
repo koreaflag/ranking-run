@@ -181,11 +181,20 @@ export const useRunningStore = create<RunningState>((set, get) => ({
     const currentPace =
       event.speed > 0.3 ? 1000 / event.speed : state.currentPaceSecondsPerKm;
 
-    // Calculate average pace
+    // Calculate average pace — only count time while actually moving.
+    // When stationary, elapsed keeps ticking but distance stays the same,
+    // which would inflate avgPace (show slower pace than reality).
+    // Use distance / speed integral instead: track "moving time" separately
+    // is complex, so use the simple fix: if not moving, keep previous avgPace.
     const distance = event.distanceFromStart;
     const elapsed = state.durationSeconds;
-    const avgPace =
-      distance > 0 ? (elapsed / distance) * 1000 : 0;
+    let avgPace = state.avgPaceSecondsPerKm;
+    if (event.speed > 0.3 && distance > 0) {
+      // Only update avg pace when actually moving
+      avgPace = (elapsed / distance) * 1000;
+    } else if (distance <= 0) {
+      avgPace = 0;
+    }
 
     // Estimate calories: ~60 kcal/km for ~65kg person
     const caloriesBurned = Math.round((distance / 1000) * 60);

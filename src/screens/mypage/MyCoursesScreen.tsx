@@ -27,7 +27,7 @@ import type { ThemeColors } from '../../utils/constants';
 import type { MyPageStackParamList } from '../../types/navigation';
 import type { MyCourse } from '../../types/api';
 import { formatDistance, formatNumber, formatDate, formatPace } from '../../utils/format';
-import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
+import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -166,6 +166,8 @@ export default function MyCoursesScreen() {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editPublic, setEditPublic] = useState(true);
+  const [editCourseType, setEditCourseType] = useState<'normal' | 'loop'>('normal');
+  const [editLapCount, setEditLapCount] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -175,8 +177,10 @@ export default function MyCoursesScreen() {
   const handleOpenEdit = useCallback((course: MyCourse) => {
     setEditCourse(course);
     setEditTitle(course.title);
-    setEditDescription('');
+    setEditDescription(course.description ?? '');
     setEditPublic(course.is_public);
+    setEditCourseType(course.course_type === 'loop' ? 'loop' : 'normal');
+    setEditLapCount(course.lap_count ?? 1);
   }, []);
 
   const handleDetail = useCallback(
@@ -194,10 +198,15 @@ export default function MyCoursesScreen() {
     }
     setIsSaving(true);
     try {
+      const isLoopCourse = editCourse.course_type === 'loop';
       await updateMyCourse(editCourse.id, {
         title: editTitle.trim(),
         description: editDescription.trim() || undefined,
         is_public: editPublic,
+        ...(isLoopCourse ? {
+          course_type: editCourseType,
+          lap_count: editCourseType === 'loop' ? editLapCount : undefined,
+        } : {}),
       });
       setEditCourse(null);
     } catch {
@@ -299,6 +308,83 @@ export default function MyCoursesScreen() {
               />
               <Text style={styles.charCount}>{editDescription.length}/200</Text>
             </View>
+
+            {/* Course type (loop courses only) */}
+            {editCourse?.course_type === 'loop' && (
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>코스 유형</Text>
+                <View style={styles.courseTypeRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.courseTypeBtn,
+                      editCourseType === 'normal' && styles.courseTypeBtnActive,
+                    ]}
+                    onPress={() => setEditCourseType('normal')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name="arrow-forward"
+                      size={16}
+                      color={editCourseType === 'normal' ? COLORS.white : colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.courseTypeBtnText,
+                        editCourseType === 'normal' && styles.courseTypeBtnTextActive,
+                      ]}
+                    >
+                      편도
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.courseTypeBtn,
+                      editCourseType === 'loop' && styles.courseTypeBtnActive,
+                    ]}
+                    onPress={() => setEditCourseType('loop')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name="repeat"
+                      size={16}
+                      color={editCourseType === 'loop' ? COLORS.white : colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.courseTypeBtnText,
+                        editCourseType === 'loop' && styles.courseTypeBtnTextActive,
+                      ]}
+                    >
+                      왕복
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {editCourseType === 'loop' && (
+                  <View style={styles.lapCountRow}>
+                    <Text style={styles.lapCountLabel}>랩 수</Text>
+                    <View style={styles.lapCountControls}>
+                      <TouchableOpacity
+                        style={[styles.lapCountBtn, editLapCount <= 1 && styles.lapCountBtnDisabled]}
+                        onPress={() => setEditLapCount(Math.max(1, editLapCount - 1))}
+                        disabled={editLapCount <= 1}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="remove" size={18} color={editLapCount <= 1 ? colors.textTertiary : colors.text} />
+                      </TouchableOpacity>
+                      <Text style={styles.lapCountValue}>{editLapCount}</Text>
+                      <TouchableOpacity
+                        style={styles.lapCountBtn}
+                        onPress={() => setEditLapCount(Math.min(10, editLapCount + 1))}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="add" size={18} color={colors.text} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Public toggle */}
             <View style={styles.toggleRow}>
@@ -549,6 +635,74 @@ const createStyles = (c: ThemeColors) =>
       alignSelf: 'flex-end',
       fontVariant: ['tabular-nums'],
     },
+    // Course type selector
+    courseTypeRow: {
+      flexDirection: 'row',
+      gap: SPACING.md,
+    },
+    courseTypeBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: SPACING.sm,
+      paddingVertical: SPACING.md,
+      borderRadius: BORDER_RADIUS.md,
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    courseTypeBtnActive: {
+      backgroundColor: COLORS.primary,
+      borderColor: COLORS.primary,
+    },
+    courseTypeBtnText: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '600',
+      color: c.textSecondary,
+    },
+    courseTypeBtnTextActive: {
+      color: COLORS.white,
+    },
+    lapCountRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: SPACING.sm,
+      marginTop: SPACING.sm,
+    },
+    lapCountLabel: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '600',
+      color: c.text,
+    },
+    lapCountControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.md,
+    },
+    lapCountBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: c.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    lapCountBtnDisabled: {
+      opacity: 0.4,
+    },
+    lapCountValue: {
+      fontSize: FONT_SIZES.xl,
+      fontWeight: '800',
+      color: c.text,
+      fontVariant: ['tabular-nums'] as any,
+      minWidth: 28,
+      textAlign: 'center',
+    },
+
     toggleRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',

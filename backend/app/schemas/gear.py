@@ -28,7 +28,7 @@ class GearUpdateRequest(BaseModel):
 
 
 class GearResponse(BaseModel):
-    id: str
+    id: UUID
     brand: str
     model_name: str
     image_url: str | None = None

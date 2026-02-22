@@ -10,6 +10,7 @@ enum WatchMessageType: String {
 }
 
 enum WatchCommand: String {
+    case start
     case pause
     case resume
     case stop

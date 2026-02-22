@@ -348,7 +348,9 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         lastFilteredLocation = filteredLocation
 
         // Emit location update event
-        let cadenceSPM = Int(sensorFusion.pedometerTracker.currentCadence * 60)
+        // CMPedometer.currentCadence is steps/second — multiply by 60 for SPM.
+        // When stationary, reset cadence to 0 to avoid stale readings.
+        let cadenceSPM = stationaryDetector.isStationary ? 0 : Int(sensorFusion.pedometerTracker.currentCadence * 60)
         let event: [String: Any] = [
             "latitude": filteredLocation.latitude,
             "longitude": filteredLocation.longitude,

@@ -11,6 +11,7 @@ class GPSTrackerModule: RCTEventEmitter {
         super.init()
         WatchSessionManager.shared.activate()
         setupEngine()
+        observeWatchStartCommand()
         // Send idle state to clear any stale applicationContext from previous sessions
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             if WatchSessionManager.shared.currentRunPhase == "idle" {
@@ -49,6 +50,31 @@ class GPSTrackerModule: RCTEventEmitter {
         locationEngine = engine
     }
 
+    /// Listen for Watch "start" command via NotificationCenter.
+    /// Starts GPS tracking natively and emits an event to RN for UI navigation.
+    private func observeWatchStartCommand() {
+        NotificationCenter.default.addObserver(
+            forName: WatchSessionManager.watchStartRunNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            NSLog("[GPSTrackerModule] Watch start command received — starting tracking")
+            self.hasListeners = true
+            self.locationEngine?.startTracking()
+            WatchSessionManager.shared.sendRunStateUpdate([
+                "phase": "running",
+                "distanceMeters": 0,
+                "durationSeconds": 0,
+                "currentPace": 0,
+                "avgPace": 0,
+                "calories": 0
+            ])
+            // Notify RN so it can navigate to RunningScreen
+            self.sendEvent(withName: "GPSTracker_onWatchStartRun", body: nil)
+        }
+    }
+
     // MARK: - RCTEventEmitter
 
     override func supportedEvents() -> [String]! {
@@ -56,7 +82,8 @@ class GPSTrackerModule: RCTEventEmitter {
             "GPSTracker_onLocationUpdate",
             "GPSTracker_onGPSStatusChange",
             "GPSTracker_onRunningStateChange",
-            "GPSTracker_onHeadingUpdate"
+            "GPSTracker_onHeadingUpdate",
+            "GPSTracker_onWatchStartRun"
         ]
     }
 

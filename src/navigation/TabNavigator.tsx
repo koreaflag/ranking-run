@@ -12,6 +12,8 @@ import MyPageStack from './MyPageStack';
 import { COLORS, FONT_SIZES } from '../utils/constants';
 import { useTheme } from '../hooks/useTheme';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useWatchStartListener } from '../hooks/useWatchStartListener';
+import { useWatchRunSync } from '../hooks/useWatchRunSync';
 import type { ThemeColors } from '../utils/constants';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -77,6 +79,11 @@ function WorldTabIcon({ focused, colors }: { focused: boolean; colors: ThemeColo
 
 export default function TabNavigator() {
   const colors = useTheme();
+
+  // Global: listen for Watch-initiated run start and navigate to RunningTab
+  useWatchStartListener();
+  // Global: listen for standalone Watch run completion and sync to server
+  useWatchRunSync();
 
   return (
     <Tab.Navigator

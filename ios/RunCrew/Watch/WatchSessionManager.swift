@@ -1,7 +1,9 @@
 import Foundation
+import UIKit
 import WatchConnectivity
 
 /// Singleton that owns WCSession and mediates Phone <-> Watch communication
+@objcMembers
 final class WatchSessionManager: NSObject, WCSessionDelegate {
     static let shared = WatchSessionManager()
 
@@ -9,17 +11,49 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     var onWatchCommand: (([String: Any]) -> Void)?
     var onHeartRateUpdate: (([String: Any]) -> Void)?
     var onWatchReachabilityChange: ((Bool) -> Void)?
+    var onStandaloneRunReceived: (([String: Any]) -> Void)? {
+        didSet {
+            // Flush any standalone runs that arrived before the callback was set
+            guard onStandaloneRunReceived != nil else { return }
+            let buffered = pendingStandaloneRuns
+            pendingStandaloneRuns.removeAll()
+            for run in buffered {
+                NSLog("[WatchSessionMgr] Flushing buffered standalone run to callback")
+                onStandaloneRunReceived?(run)
+            }
+        }
+    }
+
+    /// Buffer standalone runs received before WatchBridgeModule sets its callback
+    private var pendingStandaloneRuns: [[String: Any]] = []
 
     private var lastSendTime: TimeInterval = 0
     private let throttleInterval: TimeInterval = 1.0  // 1 second minimum between location updates
     private(set) var lastRunState: [String: Any]?  // Cache last state for re-send on reconnect
     private(set) var currentRunPhase: String = "idle"
 
+    /// Posted when Watch sends a "start" command so GPSTrackerModule can begin tracking.
+    static let watchStartRunNotification = Notification.Name("WatchStartRunRequested")
+
     private override init() {
         super.init()
     }
 
     private var session: WCSession { WCSession.default }
+
+    /// Route Watch commands, with special handling for "start" (triggers native GPS tracking).
+    private func handleWatchCommand(_ message: [String: Any]) {
+        let cmd = message["command"] as? String ?? ""
+        NSLog("[WatchSessionMgr] handleWatchCommand: %@", cmd)
+
+        if cmd == "start" {
+            // Immediately start tracking on the native side and notify RN
+            NotificationCenter.default.post(name: Self.watchStartRunNotification, object: nil)
+        }
+
+        // Forward all commands (including start) to RN bridge
+        onWatchCommand?(message)
+    }
 
     func activate() {
         guard WCSession.isSupported() else {
@@ -56,7 +90,7 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     }
 
     /// Send state update to Watch.
-    /// Phase transitions get aggressive retry + applicationContext.
+    /// Phase transitions get aggressive retry + applicationContext + transferUserInfo.
     /// Continuous metric updates (same phase) get a single sendMessage.
     func sendRunStateUpdate(_ state: [String: Any]) {
         var message = state
@@ -71,15 +105,23 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         }
 
         if isPhaseChange {
-            // Critical phase transition: applicationContext + 3x retry
-            NSLog("[WatchSessionMgr] PHASE CHANGE → %@ reachable=%d",
-                  newPhase ?? "nil", session.isReachable ? 1 : 0)
+            // Critical phase transition: applicationContext + transferUserInfo + 3x retry
+            NSLog("[WatchSessionMgr] PHASE CHANGE → %@ reachable=%d activated=%d paired=%d installed=%d",
+                  newPhase ?? "nil", session.isReachable ? 1 : 0,
+                  session.activationState.rawValue,
+                  session.isPaired ? 1 : 0,
+                  session.isWatchAppInstalled ? 1 : 0)
 
             do {
                 try session.updateApplicationContext(message)
+                NSLog("[WatchSessionMgr] updateApplicationContext OK")
             } catch {
                 NSLog("[WatchSessionMgr] updateApplicationContext FAIL: %@", error.localizedDescription)
             }
+
+            // transferUserInfo: queued, guaranteed delivery even if watch app is not running
+            session.transferUserInfo(message)
+            NSLog("[WatchSessionMgr] transferUserInfo queued for phase=%@", newPhase ?? "nil")
 
             trySendMessage(message)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -95,8 +137,13 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     }
 
     private func trySendMessage(_ message: [String: Any]) {
-        guard session.activationState == .activated else { return }
-        session.sendMessage(message, replyHandler: nil, errorHandler: nil)
+        guard session.activationState == .activated else {
+            NSLog("[WatchSessionMgr] trySendMessage SKIP: not activated (state=%d)", session.activationState.rawValue)
+            return
+        }
+        session.sendMessage(message, replyHandler: nil) { error in
+            NSLog("[WatchSessionMgr] sendMessage FAIL: %@", error.localizedDescription)
+        }
     }
 
     /// Send km milestone to Watch
@@ -123,6 +170,11 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
               activationState.rawValue, session.isPaired ? 1 : 0,
               session.isWatchAppInstalled ? 1 : 0, session.isReachable ? 1 : 0,
               error?.localizedDescription ?? "none")
+        // Delay alert so root view controller is ready
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            self.showDebugAlert("WCSession Activated",
+                                "state=\(activationState.rawValue) paired=\(session.isPaired) reachable=\(session.isReachable)")
+        }
     }
 
     func sessionDidBecomeInactive(_ session: WCSession) {}
@@ -141,13 +193,55 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         }
     }
 
+    /// Deliver standalone run data to callback, or buffer if callback not yet set.
+    private func deliverStandaloneRun(_ data: [String: Any]) {
+        if let callback = onStandaloneRunReceived {
+            callback(data)
+        } else {
+            NSLog("[WatchSessionMgr] Buffering standalone run (callback not set yet)")
+            pendingStandaloneRuns.append(data)
+        }
+    }
+
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         guard let type = message["type"] as? String else { return }
         switch type {
         case "command":
-            onWatchCommand?(message)
+            handleWatchCommand(message)
         case "heartRate":
             onHeartRateUpdate?(message)
+        case "standaloneRunComplete":
+            NSLog("[WatchSessionMgr] Received standalone run data from watch")
+            deliverStandaloneRun(message)
+        default:
+            break
+        }
+    }
+
+    // DEBUG: show native alert to verify data reaches phone
+    private func showDebugAlert(_ title: String, _ message: String) {
+        DispatchQueue.main.async {
+            let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .default))
+            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let root = scene.windows.first?.rootViewController {
+                root.present(alert, animated: true)
+            }
+        }
+    }
+
+    // Handle transferUserInfo (guaranteed delivery, used for standalone run sync + command fallback)
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String : Any]) {
+        let type = userInfo["type"] as? String ?? ""
+        NSLog("[WatchSessionMgr] didReceiveUserInfo type=%@", type)
+        showDebugAlert("didReceiveUserInfo", "type=\(type) keys=\(userInfo.keys.sorted().joined(separator: ","))")
+
+        switch type {
+        case "standaloneRunComplete":
+            NSLog("[WatchSessionMgr] Received standalone run via transferUserInfo")
+            deliverStandaloneRun(userInfo)
+        case "command":
+            handleWatchCommand(userInfo)
         default:
             break
         }
@@ -163,10 +257,14 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         }
         switch type {
         case "command":
-            onWatchCommand?(message)
+            handleWatchCommand(message)
             replyHandler(["status": "ok"])
         case "heartRate":
             onHeartRateUpdate?(message)
+            replyHandler(["status": "ok"])
+        case "standaloneRunComplete":
+            NSLog("[WatchSessionMgr] Received standalone run data from watch (with reply)")
+            deliverStandaloneRun(message)
             replyHandler(["status": "ok"])
         case "requestState":
             // Watch is asking for current run state

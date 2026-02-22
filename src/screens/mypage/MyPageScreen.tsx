@@ -8,7 +8,6 @@ import {
   RefreshControl,
   SafeAreaView,
   Alert,
-  Switch,
   Image,
   Linking,
 } from 'react-native';
@@ -18,10 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../stores/authStore';
 import type { MyPageStackParamList } from '../../types/navigation';
-import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../hooks/useTheme';
 import StatItem from '../../components/common/StatItem';
-import EmptyState from '../../components/common/EmptyState';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import type {
   UserStats,
@@ -35,7 +32,6 @@ import {
   formatDuration,
   formatPace,
   formatNumber,
-  formatRelativeTime,
   metersToKm,
 } from '../../utils/format';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
@@ -48,37 +44,33 @@ const PERIOD_OPTIONS: Array<{ label: string; value: StatsPeriod }> = [
   { label: '전체', value: 'all' },
 ];
 
+
 type Nav = NativeStackNavigationProp<MyPageStackParamList, 'MyPage'>;
 
 export default function MyPageScreen() {
   const navigation = useNavigation<Nav>();
-  const { user, logout } = useAuthStore();
+  const { user } = useAuthStore();
   const colors = useTheme();
-  const { darkMode, setDarkMode, voiceGuidance, setVoiceGuidance, backgroundImageUri, setBackgroundImageUri } = useSettingsStore();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [stats, setStats] = useState<UserStats | null>(null);
-  const [recentRuns, setRecentRuns] = useState<RunHistoryItem[]>([]);
+  const [allRuns, setAllRuns] = useState<RunHistoryItem[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<StatsPeriod>('month');
   const [refreshing, setRefreshing] = useState(false);
-  const [isLoadingStats, setIsLoadingStats] = useState(false);
   const [socialCounts, setSocialCounts] = useState<{ followers: number; likes: number }>({ followers: 0, likes: 0 });
 
   const loadData = useCallback(async () => {
-    setIsLoadingStats(true);
     try {
       const [statsData, runsData, socialData] = await Promise.all([
         userService.getStats(selectedPeriod).catch(() => null),
-        userService.getRunHistory(0, 5).catch(() => ({ data: [], total_count: 0, has_next: false })),
+        userService.getRunHistory(0, 200).catch(() => ({ data: [], total_count: 0, has_next: false })),
         userService.getSocialCounts().catch(() => ({ followers_count: 0, following_count: 0, total_likes_received: 0 })),
       ]);
       setStats(statsData);
-      setRecentRuns(runsData.data);
+      setAllRuns(runsData.data);
       setSocialCounts({ followers: socialData.followers_count, likes: socialData.total_likes_received });
     } catch {
       // Partial failures are acceptable
-    } finally {
-      setIsLoadingStats(false);
     }
   }, [selectedPeriod]);
 
@@ -147,31 +139,21 @@ export default function MyPageScreen() {
     }
   };
 
-  const handlePickBackgroundImage = () => {
-    Alert.alert('준비 중', '배경 이미지 선택은 네이티브 빌드 후 사용할 수 있습니다.');
-  };
-
-  const handleRemoveBackgroundImage = () => {
-    Alert.alert('배경 이미지 제거', '기본 배경으로 되돌리시겠습니까?', [
-      { text: '취소', style: 'cancel' },
-      { text: '제거', style: 'destructive', onPress: () => setBackgroundImageUri(null) },
-    ]);
-  };
-
-  const handleLogout = () => {
-    Alert.alert('로그아웃', '정말 로그아웃하시겠습니까?', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '로그아웃',
-        style: 'destructive',
-        onPress: () => logout(),
-      },
-    ]);
-  };
-
   return (
     <BlurredBackground>
       <SafeAreaView style={styles.container}>
+      {/* Top Header */}
+      <View style={styles.headerRow}>
+        <View style={styles.headerSpacer} />
+        <TouchableOpacity
+          onPress={() => navigation.navigate('ProfileEdit')}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={styles.headerEditText}>편집</Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
@@ -216,105 +198,102 @@ export default function MyPageScreen() {
               <Text style={styles.instagramText}>@{user.instagram_username}</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity
-            style={styles.editProfileButton}
-            onPress={() => navigation.navigate('ProfileEdit')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.editProfileText}>프로필 편집</Text>
-          </TouchableOpacity>
-        </View>
 
-        {/* Dashboard stats card */}
-        <View style={styles.dashboardCard}>
-          <View style={styles.dashboardItem}>
-            <Text style={styles.dashboardValue}>
-              {formatDistance(user?.total_distance_meters ?? 0)}
-            </Text>
-            <Text style={styles.dashboardLabel}>총 거리</Text>
-          </View>
-          <View style={styles.dashboardDivider} />
-          <View style={styles.dashboardItem}>
-            <Text style={styles.dashboardValue}>
-              {user?.total_runs ?? 0}
-            </Text>
-            <Text style={styles.dashboardLabel}>러닝</Text>
-          </View>
-          <View style={styles.dashboardDivider} />
-          <View style={styles.dashboardItem}>
-            <Text style={styles.dashboardValue}>
-              {socialCounts.likes}
-            </Text>
-            <Text style={styles.dashboardLabel}>좋아요</Text>
-          </View>
-          <View style={styles.dashboardDivider} />
-          <View style={styles.dashboardItem}>
-            <Text style={styles.dashboardValue}>
-              {socialCounts.followers}
-            </Text>
-            <Text style={styles.dashboardLabel}>팔로워</Text>
+          {/* Profile inline stats */}
+          <View style={styles.profileStatsRow}>
+            <View style={styles.profileStatItem}>
+              <Text style={styles.profileStatValue}>
+                {socialCounts.followers}
+              </Text>
+              <Text style={styles.profileStatLabel}>팔로워</Text>
+            </View>
+            <View style={styles.profileStatDivider} />
+            <View style={styles.profileStatItem}>
+              <Text style={styles.profileStatValue}>
+                {socialCounts.likes}
+              </Text>
+              <Text style={styles.profileStatLabel}>좋아요</Text>
+            </View>
           </View>
         </View>
 
-        {/* Period Selector */}
-        <View style={styles.periodSelector}>
-          {PERIOD_OPTIONS.map((option) => {
-            const isActive = selectedPeriod === option.value;
-            return (
-              <TouchableOpacity
-                key={option.value}
-                style={[
-                  styles.periodChip,
-                  isActive && styles.periodChipActive,
-                ]}
-                onPress={() => handlePeriodChange(option.value)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.periodChipText,
-                    isActive && styles.periodChipTextActive,
-                  ]}
-                >
-                  {option.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {/* Recent Runs */}
+        {allRuns.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>최근 러닝</Text>
+            {allRuns.slice(0, 5).map(run => {
+              const dateStr = run.finished_at.slice(0, 10);
+              const [, mm, dd] = dateStr.split('-');
+              return (
+                <View key={run.id} style={styles.recentRunRow}>
+                  <View style={styles.recentRunLeft}>
+                    <View style={styles.recentRunDateBox}>
+                      <Text style={styles.recentRunDateMonth}>{Number(mm)}/{Number(dd)}</Text>
+                    </View>
+                    <View style={styles.recentRunInfo}>
+                      <Text style={styles.recentRunTitle} numberOfLines={1}>
+                        {run.course ? run.course.title : run.device_model === 'Apple Watch' ? 'Watch 러닝' : '자유 러닝'}
+                      </Text>
+                      <Text style={styles.recentRunMeta}>
+                        {formatDistance(run.distance_meters)} · {formatPace(run.avg_pace_seconds_per_km)}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.recentRunDuration}>
+                    {formatDuration(run.duration_seconds)}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* Stats Dashboard */}
         {stats && (
           <>
-            {/* Main stats */}
+            {/* Main stats with period selector */}
             <View style={styles.card}>
+              <View style={styles.periodSelector}>
+                {PERIOD_OPTIONS.map((option) => {
+                  const isActive = selectedPeriod === option.value;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.periodChip,
+                        isActive && styles.periodChipActive,
+                      ]}
+                      onPress={() => handlePeriodChange(option.value)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.periodChipText,
+                          isActive && styles.periodChipTextActive,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
               <View style={styles.statsGrid}>
                 <StatItem
-                  label="총 거리"
+                  label="거리"
                   value={metersToKm(stats.total_distance_meters)}
                   unit="km"
-                  large
                 />
                 <StatItem
-                  label="총 시간"
+                  label="시간"
                   value={formatDuration(stats.total_duration_seconds)}
                 />
-                <StatItem
-                  label="총 횟수"
-                  value={`${stats.total_runs}`}
-                  unit="회"
-                />
-              </View>
-            </View>
-
-            {/* Detail stats */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>상세 기록</Text>
-              <View style={styles.statsGrid}>
                 <StatItem
                   label="평균 페이스"
                   value={formatPace(stats.avg_pace_seconds_per_km)}
                 />
+              </View>
+              <View style={styles.statsGrid}>
                 <StatItem
                   label="최고 페이스"
                   value={formatPace(stats.best_pace_seconds_per_km)}
@@ -323,12 +302,12 @@ export default function MyPageScreen() {
                   label="평균 거리"
                   value={formatDistance(stats.avg_distance_per_run_meters)}
                 />
-              </View>
-              <View style={styles.statsGrid}>
                 <StatItem
                   label="최장 거리"
                   value={formatDistance(stats.longest_run_meters)}
                 />
+              </View>
+              <View style={styles.statsGrid}>
                 <StatItem
                   label="총 고도"
                   value={`${formatNumber(Math.round(stats.total_elevation_gain_meters))}`}
@@ -339,30 +318,11 @@ export default function MyPageScreen() {
                   value={formatNumber(stats.estimated_calories)}
                   unit="kcal"
                 />
-              </View>
-            </View>
-
-            {/* Streaks */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>연속 기록</Text>
-              <View style={styles.streakRow}>
-                <View style={styles.streakItem}>
-                  <Text style={styles.streakEmoji}>🔥</Text>
-                  <Text style={styles.streakValue}>
-                    {stats.current_streak_days}
-                    <Text style={styles.streakUnit}>일</Text>
-                  </Text>
-                  <Text style={styles.streakLabel}>현재 연속</Text>
-                </View>
-                <View style={styles.streakDivider} />
-                <View style={styles.streakItem}>
-                  <Text style={styles.streakEmoji}>⭐</Text>
-                  <Text style={styles.streakValue}>
-                    {stats.best_streak_days}
-                    <Text style={styles.streakUnit}>일</Text>
-                  </Text>
-                  <Text style={styles.streakLabel}>최고 연속</Text>
-                </View>
+                <StatItem
+                  label="러닝 횟수"
+                  value={`${stats.total_runs ?? 0}`}
+                  unit="회"
+                />
               </View>
             </View>
 
@@ -401,7 +361,10 @@ export default function MyPageScreen() {
             {/* Monthly Distance Chart */}
             {stats.monthly_distance.length > 0 && (
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>월별 거리</Text>
+                <View style={styles.monthlyChartHeader}>
+                  <Text style={styles.cardTitle}>월별 러닝 거리</Text>
+                  <Text style={styles.monthlyUnit}>km</Text>
+                </View>
                 <View style={styles.monthlyChart}>
                   {stats.monthly_distance.map((md) => {
                     const maxDist = Math.max(
@@ -434,21 +397,6 @@ export default function MyPageScreen() {
             )}
           </>
         )}
-
-        {/* Recent Runs */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>최근 러닝</Text>
-          {recentRuns.length > 0 ? (
-            recentRuns.map((run) => (
-              <RunHistoryRow key={run.id} run={run} />
-            ))
-          ) : (
-            <EmptyState
-              title="아직 러닝 기록이 없습니다"
-              description="첫 러닝을 시작해 보세요!"
-            />
-          )}
-        </View>
 
         {/* Gear & Import */}
         <View style={styles.section}>
@@ -504,126 +452,28 @@ export default function MyPageScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Background Image Setting */}
-        <View style={styles.bgImageSection}>
-          <Text style={styles.sectionTitle}>배경 이미지</Text>
-          <View style={styles.bgImageCard}>
-            {backgroundImageUri ? (
-              <View style={styles.bgImagePreviewRow}>
-                <Image
-                  source={{ uri: backgroundImageUri }}
-                  style={styles.bgImagePreview}
-                />
-                <View style={styles.bgImageActions}>
-                  <TouchableOpacity
-                    style={styles.bgImageButton}
-                    onPress={handlePickBackgroundImage}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="image-outline" size={18} color={colors.text} />
-                    <Text style={styles.bgImageButtonText}>변경</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.bgImageButtonDanger}
-                    onPress={handleRemoveBackgroundImage}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="trash-outline" size={18} color={colors.error} />
-                    <Text style={styles.bgImageButtonDangerText}>제거</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.bgImagePlaceholder}
-                onPress={handlePickBackgroundImage}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="image-outline" size={32} color={colors.textTertiary} />
-                <Text style={styles.bgImagePlaceholderText}>
-                  배경 이미지를 설정하면{'\n'}블러 효과가 적용됩니다
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* Theme Toggle */}
-        <View style={styles.themeToggleSection}>
-          <View style={styles.themeToggleRow}>
-            <View style={styles.themeToggleInfo}>
-              <Text style={styles.themeToggleLabel}>다크 모드</Text>
-              <Text style={styles.themeToggleDescription}>
-                {darkMode ? '어두운 테마 사용 중' : '밝은 테마 사용 중'}
-              </Text>
-            </View>
-            <Switch
-              value={darkMode}
-              onValueChange={setDarkMode}
-              trackColor={{ false: '#D1D5DB', true: '#FF7A33' }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-          <View style={styles.themeToggleRow}>
-            <View style={styles.themeToggleInfo}>
-              <Text style={styles.themeToggleLabel}>음성 안내</Text>
-              <Text style={styles.themeToggleDescription}>
-                {voiceGuidance ? '코스 런닝 중 음성 안내 활성화' : '음성 안내 비활성화'}
-              </Text>
-            </View>
-            <Switch
-              value={voiceGuidance}
-              onValueChange={setVoiceGuidance}
-              trackColor={{ false: '#D1D5DB', true: '#FF7A33' }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-        </View>
-
-        {/* Logout */}
-        <View style={styles.footerActions}>
+        {/* Settings */}
+        <View style={styles.section}>
           <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={handleLogout}
-            activeOpacity={0.5}
+            style={styles.importButton}
+            onPress={() => navigation.navigate('Settings')}
+            activeOpacity={0.7}
           >
-            <Text style={styles.logoutText}>로그아웃</Text>
+            <View style={styles.importButtonLeft}>
+              <View style={styles.importIconCircle}>
+                <Ionicons name="settings-outline" size={20} color={colors.primary} />
+              </View>
+              <View>
+                <Text style={styles.importButtonTitle}>설정</Text>
+                <Text style={styles.importButtonDesc}>다크 모드, 음성 안내, 지도 설정</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
           </TouchableOpacity>
         </View>
       </ScrollView>
       </SafeAreaView>
     </BlurredBackground>
-  );
-}
-
-// ---- Sub-component ----
-
-function RunHistoryRow({ run }: { run: RunHistoryItem }) {
-  const colors = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
-
-  return (
-    <View style={styles.runRow}>
-      <View style={styles.runRowLeft}>
-        <Text style={styles.runTitle}>
-          {run.course ? run.course.title : '자유 러닝'}
-        </Text>
-        <Text style={styles.runDate}>
-          {formatRelativeTime(run.finished_at)}
-        </Text>
-      </View>
-      <View style={styles.runRowRight}>
-        <Text style={styles.runStatPrimary}>
-          {formatDistance(run.distance_meters)}
-        </Text>
-        <Text style={styles.runStatSecondary}>
-          {formatDuration(run.duration_seconds)}
-        </Text>
-        <Text style={styles.runStatSecondary}>
-          {formatPace(run.avg_pace_seconds_per_km)}
-        </Text>
-      </View>
-    </View>
   );
 }
 
@@ -642,11 +492,30 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
 
   // ------------------------------------------------------------------
+  // Header
+  // ------------------------------------------------------------------
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.xxl,
+    paddingVertical: SPACING.sm,
+  },
+  headerSpacer: {
+    flex: 1,
+  },
+  headerEditText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: c.primary,
+  },
+
+  // ------------------------------------------------------------------
   // Profile
   // ------------------------------------------------------------------
   profileSection: {
     alignItems: 'center',
-    paddingTop: SPACING.xxxl + SPACING.sm,
+    paddingTop: SPACING.sm,
     paddingBottom: SPACING.md,
     gap: SPACING.md,
   },
@@ -690,19 +559,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.text,
     letterSpacing: -0.3,
   },
-  editProfileButton: {
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.xl,
-    borderRadius: BORDER_RADIUS.full,
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.card,
-  },
-  editProfileText: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: c.textSecondary,
-  },
   bioText: {
     fontSize: FONT_SIZES.sm,
     color: c.textSecondary,
@@ -720,38 +576,32 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.textSecondary,
     fontWeight: '500',
   },
-  dashboardCard: {
+  profileStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-evenly',
-    marginHorizontal: SPACING.xxl,
-    backgroundColor: c.card,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.xl,
+    width: '100%',
     paddingHorizontal: SPACING.lg,
-    borderWidth: 1,
-    borderColor: c.border,
+    paddingVertical: SPACING.sm,
   },
-  dashboardItem: {
+  profileStatItem: {
     alignItems: 'center',
-    gap: SPACING.xs,
+    gap: 2,
   },
-  dashboardValue: {
-    fontSize: FONT_SIZES.xxl,
+  profileStatValue: {
+    fontSize: FONT_SIZES.xl,
     fontWeight: '800',
     color: c.text,
     fontVariant: ['tabular-nums'],
   },
-  dashboardLabel: {
+  profileStatLabel: {
     fontSize: FONT_SIZES.xs,
     fontWeight: '600',
     color: c.textTertiary,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
   },
-  dashboardDivider: {
+  profileStatDivider: {
     width: 1,
-    height: 36,
+    height: 28,
     backgroundColor: c.divider,
   },
 
@@ -760,25 +610,23 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   // ------------------------------------------------------------------
   periodSelector: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.xxl,
+    gap: SPACING.xs,
+    backgroundColor: c.surfaceLight,
+    borderRadius: BORDER_RADIUS.md,
+    padding: 3,
   },
   periodChip: {
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: BORDER_RADIUS.full,
-    backgroundColor: c.card,
-    borderWidth: 1,
-    borderColor: c.border,
+    flex: 1,
+    paddingVertical: SPACING.sm - 2,
+    alignItems: 'center',
+    borderRadius: BORDER_RADIUS.md - 2,
   },
   periodChipActive: {
     backgroundColor: c.primary,
-    borderColor: c.primary,
   },
   periodChipText: {
-    fontSize: FONT_SIZES.sm,
-    color: c.textSecondary,
+    fontSize: FONT_SIZES.xs,
+    color: c.textTertiary,
     fontWeight: '600',
   },
   periodChipTextActive: {
@@ -787,7 +635,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
 
   // ------------------------------------------------------------------
-  // Cards (shared base)
+  // Cards
   // ------------------------------------------------------------------
   card: {
     marginHorizontal: SPACING.xxl,
@@ -814,45 +662,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingVertical: SPACING.sm,
-  },
-
-  // ------------------------------------------------------------------
-  // Streaks
-  // ------------------------------------------------------------------
-  streakRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingVertical: SPACING.xs,
-  },
-  streakItem: {
-    alignItems: 'center',
-    gap: SPACING.xs,
-    flex: 1,
-  },
-  streakDivider: {
-    width: 1,
-    height: 52,
-    backgroundColor: c.divider,
-  },
-  streakEmoji: {
-    fontSize: 28,
-  },
-  streakValue: {
-    fontSize: FONT_SIZES.title,
-    fontWeight: '900',
-    color: c.text,
-    fontVariant: ['tabular-nums'],
-  },
-  streakUnit: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
-    color: c.textSecondary,
-  },
-  streakLabel: {
-    fontSize: FONT_SIZES.sm,
-    color: c.textTertiary,
-    fontWeight: '600',
   },
 
   // ------------------------------------------------------------------
@@ -901,6 +710,16 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   // ------------------------------------------------------------------
   // Monthly Chart
   // ------------------------------------------------------------------
+  monthlyChartHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  monthlyUnit: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '600',
+    color: c.textTertiary,
+  },
   monthlyChart: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -939,6 +758,54 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
 
   // ------------------------------------------------------------------
+  // Recent Runs
+  // ------------------------------------------------------------------
+  recentRunRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: c.border,
+  },
+  recentRunLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    flex: 1,
+  },
+  recentRunDateBox: {
+    width: 40,
+    alignItems: 'center',
+  },
+  recentRunDateMonth: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    color: c.textSecondary,
+    fontVariant: ['tabular-nums'],
+  },
+  recentRunInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  recentRunTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: c.text,
+  },
+  recentRunMeta: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textTertiary,
+    fontWeight: '500',
+  },
+  recentRunDuration: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    color: c.text,
+    fontVariant: ['tabular-nums'],
+  },
+
+  // ------------------------------------------------------------------
   // Section
   // ------------------------------------------------------------------
   section: {
@@ -950,152 +817,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '800',
     color: c.text,
     letterSpacing: -0.2,
-  },
-
-  // ------------------------------------------------------------------
-  // Run History
-  // ------------------------------------------------------------------
-  runRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: c.card,
-    borderRadius: BORDER_RADIUS.md,
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.xl,
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  runRowLeft: {
-    flex: 1,
-    gap: SPACING.xs,
-  },
-  runRowRight: {
-    alignItems: 'flex-end',
-    gap: SPACING.xs,
-  },
-  runTitle: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '700',
-    color: c.text,
-  },
-  runDate: {
-    fontSize: FONT_SIZES.xs,
-    color: c.textTertiary,
-    fontWeight: '500',
-  },
-  runStatPrimary: {
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '800',
-    color: c.text,
-    fontVariant: ['tabular-nums'],
-  },
-  runStatSecondary: {
-    fontSize: FONT_SIZES.sm,
-    color: c.textSecondary,
-    fontVariant: ['tabular-nums'],
-    fontWeight: '500',
-  },
-
-  // ------------------------------------------------------------------
-  // Background Image Setting
-  // ------------------------------------------------------------------
-  bgImageSection: {
-    paddingHorizontal: SPACING.xxl,
-    gap: SPACING.md,
-  },
-  bgImageCard: {
-    backgroundColor: c.card,
-    borderRadius: BORDER_RADIUS.lg,
-    borderWidth: 1,
-    borderColor: c.border,
-    overflow: 'hidden',
-  },
-  bgImagePreviewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: SPACING.lg,
-    gap: SPACING.lg,
-  },
-  bgImagePreview: {
-    width: 64,
-    height: 64,
-    borderRadius: BORDER_RADIUS.md,
-  },
-  bgImageActions: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: SPACING.md,
-  },
-  bgImageButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: BORDER_RADIUS.sm,
-    backgroundColor: c.surfaceLight,
-  },
-  bgImageButtonText: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: c.text,
-  },
-  bgImageButtonDanger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: BORDER_RADIUS.sm,
-    backgroundColor: c.surfaceLight,
-  },
-  bgImageButtonDangerText: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: c.error,
-  },
-  bgImagePlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: SPACING.xxxl,
-    gap: SPACING.md,
-  },
-  bgImagePlaceholderText: {
-    fontSize: FONT_SIZES.sm,
-    color: c.textTertiary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-
-  // ------------------------------------------------------------------
-  // Theme Toggle
-  // ------------------------------------------------------------------
-  themeToggleSection: {
-    paddingHorizontal: SPACING.xxl,
-  },
-  themeToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: c.card,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.xl,
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  themeToggleInfo: {
-    gap: SPACING.xs,
-  },
-  themeToggleLabel: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '700',
-    color: c.text,
-  },
-  themeToggleDescription: {
-    fontSize: FONT_SIZES.sm,
-    color: c.textTertiary,
   },
 
   // ------------------------------------------------------------------
@@ -1134,26 +855,5 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: FONT_SIZES.xs,
     color: c.textTertiary,
     marginTop: 2,
-  },
-
-  // ------------------------------------------------------------------
-  // Footer
-  // ------------------------------------------------------------------
-  footerActions: {
-    paddingHorizontal: SPACING.xxl,
-    paddingTop: SPACING.xl,
-    paddingBottom: SPACING.lg,
-    alignItems: 'center',
-  },
-  logoutButton: {
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.xxxl,
-  },
-  logoutText: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '500',
-    color: c.textTertiary,
-    textDecorationLine: 'underline',
-    textDecorationColor: c.textTertiary,
   },
 });
