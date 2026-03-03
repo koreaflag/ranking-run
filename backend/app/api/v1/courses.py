@@ -7,7 +7,7 @@ from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 
 from app.core.container import Container
-from app.core.deps import CurrentUser, DbSession
+from app.core.deps import CurrentUser, DbSession, OptionalCurrentUser
 from app.core.exceptions import NotFoundError
 from app.schemas.course import (
     CourseCreateRequest,
@@ -23,6 +23,7 @@ from app.schemas.course import (
     NearbyCourse,
 )
 from app.services.course_service import CourseService
+from app.tasks.ranking import recalculate_course_ranking
 from app.tasks.thumbnail import generate_course_thumbnail
 
 router = APIRouter(prefix="/courses", tags=["courses"])
@@ -57,6 +58,14 @@ async def create_course(
 
     background_tasks.add_task(generate_course_thumbnail, course_id=course.id)
 
+    # Register the creator's run on the course leaderboard
+    background_tasks.add_task(
+        recalculate_course_ranking,
+        course_id=course.id,
+        user_id=current_user.id,
+        run_record_id=UUID(body.run_record_id),
+    )
+
     return CourseCreateResponse(
         id=str(course.id),
         title=course.title,
@@ -70,6 +79,7 @@ async def create_course(
 @inject
 async def list_courses(
     db: DbSession,
+    current_user: OptionalCurrentUser,
     search: str | None = Query(None, min_length=1, max_length=100),
     min_distance: int | None = Query(None, ge=0),
     max_distance: int | None = Query(None, ge=0),
@@ -95,6 +105,7 @@ async def list_courses(
         order=order,
         page=page,
         per_page=per_page,
+        user_id=current_user.id if current_user else None,
     )
 
     data = [
@@ -102,6 +113,7 @@ async def list_courses(
             id=c["id"],
             title=c["title"],
             thumbnail_url=c["thumbnail_url"],
+            route_preview=c.get("route_preview"),
             distance_meters=c["distance_meters"],
             estimated_duration_seconds=c["estimated_duration_seconds"],
             elevation_gain_meters=c["elevation_gain_meters"],
@@ -109,6 +121,9 @@ async def list_courses(
             stats=CourseStatsInfo(**c["stats"]),
             created_at=c["created_at"],
             distance_from_user_meters=c.get("distance_from_user_meters"),
+            like_count=c.get("like_count", 0),
+            my_best_duration_seconds=c.get("my_best_duration_seconds"),
+            active_runners=c.get("active_runners", 0),
         )
         for c in courses_data
     ]
@@ -140,7 +155,7 @@ async def get_courses_in_bounds(
     sw_lng: float = Query(..., ge=-180, le=180),
     ne_lat: float = Query(..., ge=-90, le=90),
     ne_lng: float = Query(..., ge=-180, le=180),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(500, ge=1, le=1000),
     course_service: CourseService = Depends(Provide[Container.course_service]),
 ) -> list[CourseMarker]:
     """Get course markers within a map viewport bounding box."""
@@ -175,6 +190,7 @@ async def get_course_detail(
         is_public=detail["is_public"],
         created_at=detail["created_at"],
         creator=CourseCreatorInfo(**detail["creator"]),
+        checkpoints=detail.get("checkpoints"),
     )
 
 

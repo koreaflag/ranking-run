@@ -13,15 +13,17 @@ import {
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import ScreenHeader from '../../components/common/ScreenHeader';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuthStore } from '../../stores/authStore';
 import { userService } from '../../services/userService';
+import { friendService } from '../../services/friendService';
 import type { ThemeColors } from '../../utils/constants';
 import type { CourseStackParamList } from '../../types/navigation';
-import type { PublicProfile, PublicProfileCourse, PublicProfileRanking, GearItem } from '../../types/api';
+import type { PublicProfile, PublicProfileCourse, PublicProfileRanking, GearItem, FriendshipStatusResponse } from '../../types/api';
 import { formatDistance, formatDuration, formatNumber } from '../../utils/format';
 import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 
@@ -33,6 +35,7 @@ export default function UserProfileScreen() {
   const route = useRoute<ProfileRoute>();
   const { userId } = route.params;
 
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const currentUser = useAuthStore((s) => s.user);
@@ -42,6 +45,8 @@ export default function UserProfileScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followersCount, setFollowersCount] = useState(0);
+  const [friendshipStatus, setFriendshipStatus] = useState<FriendshipStatusResponse | null>(null);
+  const [friendActionLoading, setFriendActionLoading] = useState(false);
 
   const isOwnProfile = currentUser?.id === userId;
   const followScale = useRef(new Animated.Value(1)).current;
@@ -58,8 +63,17 @@ export default function UserProfileScreen() {
       setProfile(data);
       setIsFollowing(data.is_following);
       setFollowersCount(data.followers_count);
+      // Load friendship status
+      if (currentUser?.id && currentUser.id !== userId) {
+        try {
+          const fs = await friendService.getFriendshipStatus(userId);
+          setFriendshipStatus(fs);
+        } catch {
+          // ignore
+        }
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '프로필을 불러올 수 없습니다.';
+      const msg = err instanceof Error ? err.message : t('profile.loadError');
       setError(msg);
     } finally {
       setIsLoading(false);
@@ -85,6 +99,32 @@ export default function UserProfileScreen() {
       // Keep optimistic state — server will sync later
     }
   }, [profile, isFollowing, followersCount, userId]);
+
+  const handleFriendAction = useCallback(async () => {
+    if (!friendshipStatus || friendActionLoading) return;
+    setFriendActionLoading(true);
+    try {
+      if (friendshipStatus.request_status === null || friendshipStatus.request_status === undefined) {
+        // Send friend request
+        await friendService.sendRequest(userId);
+        setFriendshipStatus({ ...friendshipStatus, request_status: 'pending_sent' });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else if (friendshipStatus.request_status === 'pending_received') {
+        // Accept the request — need to find the request ID
+        const received = await friendService.getReceivedRequests(0, 50);
+        const req = received.data.find((r) => r.requester.id === userId);
+        if (req) {
+          await friendService.acceptRequest(req.id);
+          setFriendshipStatus({ ...friendshipStatus, is_friend: true, request_status: 'accepted' });
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setFriendActionLoading(false);
+    }
+  }, [friendshipStatus, friendActionLoading, userId]);
 
   const handleOpenInstagram = useCallback((username: string) => {
     Linking.openURL(`https://instagram.com/${username}`);
@@ -116,14 +156,14 @@ export default function UserProfileScreen() {
         <ScreenHeader title="" onBack={() => navigation.goBack()} />
         <View style={styles.loadingContainer}>
           <Text style={styles.errorText}>
-            {error || '프로필 정보를 불러올 수 없습니다.'}
+            {error || t('profile.loadDetailError')}
           </Text>
           <TouchableOpacity
             style={styles.retryButton}
             onPress={loadProfile}
             activeOpacity={0.7}
           >
-            <Text style={styles.retryButtonText}>다시 시도</Text>
+            <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -153,7 +193,7 @@ export default function UserProfileScreen() {
           )}
 
           {/* Nickname */}
-          <Text style={styles.nickname}>{profile.nickname ?? '러너'}</Text>
+          <Text style={styles.nickname}>{profile.nickname ?? t('profile.defaultNickname')}</Text>
 
           {/* Bio */}
           {profile.bio && (
@@ -172,12 +212,12 @@ export default function UserProfileScreen() {
           <View style={styles.followStats}>
             <View style={styles.followStatItem}>
               <Text style={styles.followStatValue}>{formatNumber(followersCount)}</Text>
-              <Text style={styles.followStatLabel}>팔로워</Text>
+              <Text style={styles.followStatLabel}>{t('profile.followers')}</Text>
             </View>
             <View style={styles.followStatDivider} />
             <View style={styles.followStatItem}>
               <Text style={styles.followStatValue}>{formatNumber(profile.following_count)}</Text>
-              <Text style={styles.followStatLabel}>팔로잉</Text>
+              <Text style={styles.followStatLabel}>{t('profile.following')}</Text>
             </View>
           </View>
 
@@ -207,10 +247,60 @@ export default function UserProfileScreen() {
                       isFollowing && styles.followButtonTextActive,
                     ]}
                   >
-                    {isFollowing ? '팔로잉' : '팔로우'}
+                    {isFollowing ? t('profile.unfollow') : t('profile.follow')}
                   </Text>
                 </TouchableOpacity>
               </Animated.View>
+            )}
+
+            {/* Friend request button */}
+            {!isOwnProfile && friendshipStatus && (
+              <TouchableOpacity
+                style={[
+                  styles.friendButton,
+                  friendshipStatus.is_friend && styles.friendButtonActive,
+                  friendshipStatus.request_status === 'pending_sent' && styles.friendButtonPending,
+                ]}
+                onPress={handleFriendAction}
+                activeOpacity={0.7}
+                disabled={
+                  friendActionLoading ||
+                  friendshipStatus.is_friend ||
+                  friendshipStatus.request_status === 'pending_sent'
+                }
+              >
+                {friendActionLoading ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : friendshipStatus.is_friend ? (
+                  <>
+                    <Ionicons name="people" size={16} color={colors.success} />
+                    <Text style={[styles.friendButtonText, { color: colors.success }]}>
+                      {t('friend.friends')}
+                    </Text>
+                  </>
+                ) : friendshipStatus.request_status === 'pending_sent' ? (
+                  <>
+                    <Ionicons name="time-outline" size={16} color={colors.textTertiary} />
+                    <Text style={[styles.friendButtonText, { color: colors.textTertiary }]}>
+                      {t('friend.requested')}
+                    </Text>
+                  </>
+                ) : friendshipStatus.request_status === 'pending_received' ? (
+                  <>
+                    <Ionicons name="checkmark-circle-outline" size={16} color={colors.white} />
+                    <Text style={styles.friendButtonText}>
+                      {t('friend.acceptRequest')}
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="person-add-outline" size={16} color={colors.white} />
+                    <Text style={styles.friendButtonText}>
+                      {t('friend.addFriend')}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
             )}
 
             {/* Instagram button */}
@@ -233,14 +323,14 @@ export default function UserProfileScreen() {
               <Text style={styles.statsValue}>
                 {formatDistance(profile.total_distance_meters)}
               </Text>
-              <Text style={styles.statsLabel}>총 거리</Text>
+              <Text style={styles.statsLabel}>{t('profile.totalDistance')}</Text>
             </View>
             <View style={styles.statsDivider} />
             <View style={styles.statsCell}>
               <Text style={styles.statsValue}>
                 {formatNumber(profile.total_runs)}
               </Text>
-              <Text style={styles.statsLabel}>총 런닝</Text>
+              <Text style={styles.statsLabel}>{t('profile.totalRuns')}</Text>
             </View>
           </View>
         </View>
@@ -248,7 +338,7 @@ export default function UserProfileScreen() {
         {/* Gear Section */}
         {(profile.primary_gear || (profile.gear_items && profile.gear_items.length > 0)) && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>기어</Text>
+            <Text style={styles.sectionTitle}>{t('profile.gear')}</Text>
             <View style={styles.gearList}>
               {/* Primary gear (featured) */}
               {profile.primary_gear && (
@@ -267,7 +357,7 @@ export default function UserProfileScreen() {
         {/* Courses Section */}
         {profile.courses.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>이 러너의 코스</Text>
+            <Text style={styles.sectionTitle}>{t('profile.courses')}</Text>
             <View style={styles.courseList}>
               {profile.courses.map((course) => (
                 <CourseCard
@@ -284,7 +374,7 @@ export default function UserProfileScreen() {
         {/* Top Rankings Section */}
         {profile.top_rankings.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>TOP 기록</Text>
+            <Text style={styles.sectionTitle}>{t('profile.rankings')}</Text>
             <View style={styles.rankingList}>
               {profile.top_rankings.map((ranking) => (
                 <RankingCard
@@ -395,6 +485,7 @@ const GearCard = React.memo(function GearCard({
   colors: ThemeColors;
   featured?: boolean;
 }) {
+  const { t } = useTranslation();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   if (featured) {
@@ -407,7 +498,7 @@ const GearCard = React.memo(function GearCard({
           <View style={styles.gearNameRow}>
             <Text style={styles.gearBrandFeatured}>{gear.brand}</Text>
             <View style={styles.primaryBadge}>
-              <Text style={styles.primaryBadgeText}>대표</Text>
+              <Text style={styles.primaryBadgeText}>{t('profile.primaryGear')}</Text>
             </View>
           </View>
           <Text style={styles.gearModelFeatured}>{gear.model_name}</Text>
@@ -561,6 +652,30 @@ const createStyles = (c: ThemeColors) =>
     },
     followButtonTextActive: {
       color: c.textSecondary,
+    },
+    friendButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+      backgroundColor: c.primary,
+      paddingVertical: SPACING.sm + 2,
+      paddingHorizontal: SPACING.lg,
+      borderRadius: BORDER_RADIUS.lg,
+    },
+    friendButtonActive: {
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    friendButtonPending: {
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    friendButtonText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.white,
     },
     instagramButton: {
       width: 40,

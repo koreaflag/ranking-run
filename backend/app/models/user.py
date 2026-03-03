@@ -1,5 +1,6 @@
 """User, SocialAccount, and RefreshToken models."""
 
+import random
 import uuid
 from datetime import date, datetime
 
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Index,
+    event,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -26,6 +28,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "users"
 
+    user_code: Mapped[str] = mapped_column(String(8), unique=True, index=True, nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     nickname: Mapped[str | None] = mapped_column(String(12), nullable=True, unique=True)
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -33,9 +36,16 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     bio: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    crew_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     instagram_username: Mapped[str | None] = mapped_column(String(30), nullable=True)
     activity_region: Mapped[str | None] = mapped_column(String(100), nullable=True)
     country: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    phone_number_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    consent_terms_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consent_privacy_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consent_location_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consent_contacts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consent_marketing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     total_distance_meters: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     total_runs: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
@@ -55,6 +65,18 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         cascade="all, delete-orphan",
         lazy="noload",
     )
+
+
+def _generate_user_code() -> str:
+    """Generate a random 5-digit user code (10000–99999)."""
+    return str(random.randint(10000, 99999))
+
+
+@event.listens_for(User, "init")
+def _set_default_user_code(target: User, _args: tuple, _kwargs: dict) -> None:
+    """Auto-assign a user_code when a new User instance is created."""
+    if not target.user_code:
+        target.user_code = _generate_user_code()
 
 
 class SocialAccount(Base, UUIDPrimaryKeyMixin):

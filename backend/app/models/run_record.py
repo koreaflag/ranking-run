@@ -65,6 +65,9 @@ class RunRecord(Base, UUIDPrimaryKeyMixin):
     pause_intervals: Mapped[list | None] = mapped_column(JSONB, server_default="[]")
     filter_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # Checkpoint results
+    checkpoint_results: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
     # Course completion judgment
     course_completed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     route_match_percent: Mapped[float | None] = mapped_column(Float, nullable=True)

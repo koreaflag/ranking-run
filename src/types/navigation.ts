@@ -9,14 +9,17 @@ export type RootStackParamList = {
 
 export type AuthStackParamList = {
   Login: undefined;
+  Consent: undefined;
+  TermsDetail: undefined;
+  PrivacyDetail: undefined;
   Onboarding: undefined;
 };
 
 export type MainTabParamList = {
-  WorldTab: undefined;
+  WorldTab: { screen?: string; params?: Record<string, unknown> } | undefined;
   HomeTab: undefined;
   CourseTab: undefined;
-  RunningTab: { screen?: string; params?: Record<string, unknown> } | undefined;
+  CommunityTab: undefined;
   MyPageTab: undefined;
 };
 
@@ -24,6 +27,8 @@ export type WorldStackParamList = {
   World: undefined;
   CourseDetail: { courseId: string };
   UserProfile: { userId: string };
+  RunningMain: { courseId?: string } | undefined;
+  RunResult: { sessionId: string; alreadyCompleted?: boolean };
 };
 
 export type HomeStackParamList = {
@@ -31,10 +36,25 @@ export type HomeStackParamList = {
   CourseDetail: { courseId: string };
   RunHistory: undefined;
   UserProfile: { userId: string };
+  CrewCreate: undefined;
+  CrewDetail: { crewId: string };
+  CrewMembers: { crewId: string };
+  CrewSearch: undefined;
+  CommunityFeed: undefined;
+  CommunityPostDetail: { postId: string };
+  CommunityPostCreate: { crewId?: string } | undefined;
+  CrewBoard: { crewId: string; crewName: string };
+  CrewEdit: { crewId: string };
+  CommunityPostEdit: { postId: string; title: string; content: string; imageUrl?: string; postType: string };
+  World: undefined;
+  CourseList: undefined;
+  FollowList: { userId: string; type: 'followers' | 'following' };
+  Friends: undefined;
 };
 
 export type CourseStackParamList = {
   CourseList: undefined;
+  CourseSearch: { initialSort?: 'total_runs' | 'created_at' | 'distance_meters' } | undefined;
   CourseDetail: { courseId: string; openReview?: boolean };
   CourseRanking: { courseId: string };
   CourseCreate: {
@@ -46,11 +66,30 @@ export type CourseStackParamList = {
     isLoop?: boolean;
   };
   UserProfile: { userId: string };
+  RunningMain: { courseId?: string } | undefined;
+  RunResult: { sessionId: string; alreadyCompleted?: boolean };
 };
 
 export type RunningStackParamList = {
   RunningMain: { courseId?: string } | undefined;
   RunResult: { sessionId: string; alreadyCompleted?: boolean };
+};
+
+export type CommunityStackParamList = {
+  CommunityFeed: undefined;
+  CommunityPostDetail: { postId: string };
+  CommunityPostCreate: { crewId?: string } | undefined;
+  CrewCreate: undefined;
+  CrewDetail: { crewId: string };
+  CrewMembers: { crewId: string };
+  CrewSearch: undefined;
+  UserProfile: { userId: string };
+  FindFriends: undefined;
+  CrewBoard: { crewId: string; crewName: string };
+  CrewEdit: { crewId: string };
+  CommunityPostEdit: { postId: string; title: string; content: string; imageUrl?: string; postType: string };
+  FollowList: { userId: string; type: 'followers' | 'following' };
+  Friends: undefined;
 };
 
 export type MyPageStackParamList = {
@@ -60,9 +99,14 @@ export type MyPageStackParamList = {
   MyCourses: undefined;
   CourseDetail: { courseId: string };
   Settings: undefined;
+  PrivacyPolicy: undefined;
+  TermsOfService: undefined;
   ProfileEdit: undefined;
   UserProfile: { userId: string };
   ImportActivity: undefined;
   StravaConnect: undefined;
   GearManage: undefined;
+  FindFriends: undefined;
+  FollowList: { userId: string; type: 'followers' | 'following' };
+  Friends: undefined;
 };

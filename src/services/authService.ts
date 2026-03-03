@@ -79,6 +79,20 @@ export const authService = {
   },
 
   /**
+   * Submit user consent preferences (terms, privacy, location, contacts, marketing).
+   * Called during onboarding flow before profile setup.
+   */
+  async submitConsent(request: {
+    terms: boolean;
+    privacy: boolean;
+    location: boolean;
+    contacts: boolean;
+    marketing: boolean;
+  }): Promise<{ status: string }> {
+    return api.put('/users/me/consent', request);
+  },
+
+  /**
    * Upload avatar image. Returns the public URL to use with updateProfile.
    * Uses FormData with raw fetch headers to bypass JSON serialization.
    */

@@ -225,3 +225,45 @@ if [ -f "$EXJSI_UTILS_H" ]; then
     echo "[patch-expo-nullability] EXJSIUtils.h: already patched or pattern not found"
   fi
 fi
+
+# ---------------------------------------------------------------------------
+# Fix expo-location LocationModule.swift: permissionsManager is optional but
+# passed where non-optional is expected (Xcode 26 strict optionals).
+# ---------------------------------------------------------------------------
+LOCATION_MODULE="$PROJECT_ROOT/node_modules/expo-location/ios/LocationModule.swift"
+if [ -f "$LOCATION_MODULE" ]; then
+  if grep -q 'withPermissionsManager: permissionsManager$' "$LOCATION_MODULE" 2>/dev/null && \
+     ! grep -q 'if let permissionsManager = permissionsManager' "$LOCATION_MODULE" 2>/dev/null; then
+    python3 -c "
+filepath = '$LOCATION_MODULE'
+with open(filepath, 'r') as f:
+    content = f.read()
+old = '''      EXPermissionsMethodsDelegate.register(
+        [
+          EXLocationPermissionRequester(),
+          EXForegroundPermissionRequester(),
+          EXBackgroundLocationPermissionRequester()
+        ],
+        withPermissionsManager: permissionsManager
+      )'''
+new = '''      if let permissionsManager = permissionsManager {
+        EXPermissionsMethodsDelegate.register(
+          [
+            EXLocationPermissionRequester(),
+            EXForegroundPermissionRequester(),
+            EXBackgroundLocationPermissionRequester()
+          ],
+          withPermissionsManager: permissionsManager
+        )
+      }'''
+new_content = content.replace(old, new)
+if new_content != content:
+    with open(filepath, 'w') as f:
+        f.write(new_content)
+    print('[patch-expo-nullability] LocationModule.swift: wrapped permissionsManager in if-let')
+"
+    PATCHED=$((PATCHED + 1))
+  else
+    echo "[patch-expo-nullability] LocationModule.swift: already patched or pattern not found"
+  fi
+fi

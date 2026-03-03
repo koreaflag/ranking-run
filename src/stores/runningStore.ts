@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import type { LocationUpdateEvent, GPSStatus, FilteredLocation } from '../types/gps';
-import type { Split, PauseInterval } from '../types/api';
+import type { Split, PauseInterval, CheckpointPass } from '../types/api';
 import { haversineDistance } from '../utils/geo';
+import { useSettingsStore } from './settingsStore';
 
 // Loop detection constants
 const LOOP_MIN_DISTANCE_M = 300;      // Min distance before checking (avoid false positive at start)
@@ -58,12 +59,21 @@ interface RunningState {
   loopDetected: boolean;         // confirmed round-trip
   loopDetectedAt: number | null; // timestamp of detection (for cooldown)
 
+  // Checkpoint passes (course running)
+  checkpointPasses: CheckpointPass[];
+
   // Stop location (captured when user taps stop)
   stopLocation: { latitude: number; longitude: number } | null;
 
   // Timer
   startTime: number | null;
   elapsedBeforePause: number;
+
+  // Auto-pause (timer frozen while stationary, phase stays "running")
+  isAutoPaused: boolean;
+
+  // Run goal
+  runGoal: { type: 'distance' | 'time' | 'pace' | null; value: number | null };
 
   // Actions
   startSession: (sessionId: string, courseId: string | null) => void;
@@ -80,6 +90,9 @@ interface RunningState {
   setPhase: (phase: RunningPhase) => void;
   updateHeartRate: (bpm: number) => void;
   setWatchConnected: (connected: boolean) => void;
+  setCheckpointPasses: (passes: CheckpointPass[]) => void;
+  setAutoPaused: (paused: boolean) => void;
+  setRunGoal: (goal: { type: 'distance' | 'time' | 'pace' | null; value: number | null }) => void;
 }
 
 export const useRunningStore = create<RunningState>((set, get) => ({
@@ -121,10 +134,13 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   loopDetected: false,
   loopDetectedAt: null,
 
+  checkpointPasses: [],
   stopLocation: null,
 
   startTime: null,
   elapsedBeforePause: 0,
+  isAutoPaused: false,
+  runGoal: { type: null, value: null },
 
   startSession: (sessionId, courseId) => {
     set({
@@ -159,7 +175,10 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       isNearStart: false,
       loopDetected: false,
       loopDetectedAt: null,
+      checkpointPasses: [],
       stopLocation: null,
+      isAutoPaused: false,
+      // runGoal is intentionally NOT reset here — it's set before startSession
     });
   },
 
@@ -173,6 +192,34 @@ export const useRunningStore = create<RunningState>((set, get) => ({
 
     const currentPos = { latitude: event.latitude, longitude: event.longitude };
     const newRoutePoints = [...state.routePoints, currentPos];
+
+    // --- Auto-pause: freeze timer when stationary ---
+    const { autoPause } = useSettingsStore.getState();
+    let { isAutoPaused } = state;
+    let startTime = state.startTime;
+    let elapsedBeforePause = state.elapsedBeforePause;
+
+    // Grace period: don't auto-pause within the first 15 seconds of a run.
+    // Prevents immediate pause when standing still at start (common during testing
+    // and real use — user may not be moving right after countdown ends).
+    const gracePeriodOver = state.durationSeconds >= 15;
+
+    if (autoPause && gracePeriodOver) {
+      if (!event.isMoving && !isAutoPaused) {
+        // Transition: moving → stationary — freeze timer
+        isAutoPaused = true;
+        elapsedBeforePause = state.durationSeconds;
+        startTime = null;
+      } else if (event.isMoving && isAutoPaused) {
+        // Transition: stationary → moving — unfreeze timer
+        isAutoPaused = false;
+        startTime = Date.now();
+      }
+    } else if (isAutoPaused) {
+      // Auto-pause was disabled mid-run — unfreeze
+      isAutoPaused = false;
+      startTime = Date.now();
+    }
 
     // Save start point from first GPS fix
     const startPoint = state.startPoint ?? currentPos;
@@ -240,12 +287,18 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       routePoints: newRoutePoints,
       calories: caloriesBurned,
       cadence: event.cadence ?? state.cadence,
+      elevationGainMeters: event.elevationGain ?? state.elevationGainMeters,
+      elevationLossMeters: event.elevationLoss ?? state.elevationLossMeters,
       startPoint,
       distanceToStart,
       isApproachingStart,
       isNearStart,
       loopDetected,
       loopDetectedAt,
+      // Auto-pause timer state
+      isAutoPaused,
+      startTime,
+      elapsedBeforePause,
       // Auto-set GPS locked when we receive a location update
       ...(state.gpsStatus !== 'locked' ? { gpsStatus: 'locked' as const } : {}),
     });
@@ -326,9 +379,12 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       isNearStart: false,
       loopDetected: false,
       loopDetectedAt: null,
+      checkpointPasses: [],
       stopLocation: null,
       startTime: null,
       elapsedBeforePause: 0,
+      isAutoPaused: false,
+      runGoal: { type: null, value: null },
     });
   },
 
@@ -357,4 +413,26 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   setWatchConnected: (connected) => {
     set({ watchConnected: connected });
   },
+
+  setCheckpointPasses: (passes) => {
+    set({ checkpointPasses: passes });
+  },
+
+  setAutoPaused: (paused) => {
+    const state = get();
+    if (paused && !state.isAutoPaused) {
+      set({
+        isAutoPaused: true,
+        elapsedBeforePause: state.durationSeconds,
+        startTime: null,
+      });
+    } else if (!paused && state.isAutoPaused) {
+      set({
+        isAutoPaused: false,
+        startTime: Date.now(),
+      });
+    }
+  },
+
+  setRunGoal: (goal) => set({ runGoal: goal }),
 }));

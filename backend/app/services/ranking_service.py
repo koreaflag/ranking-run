@@ -47,6 +47,7 @@ class RankingService:
                     "id": str(ranking.user.id),
                     "nickname": ranking.user.nickname,
                     "avatar_url": ranking.user.avatar_url,
+                    "crew_name": ranking.user.crew_name,
                 },
                 "best_duration_seconds": ranking.best_duration_seconds,
                 "best_pace_seconds_per_km": ranking.best_pace_seconds_per_km,

@@ -27,6 +27,12 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
+          <string>com.googleusercontent.apps.61103557165-n17ms089q66usovminu6atdoruj0udq6</string>
+        </array>
+      </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
           <string>app.runcrew</string>
         </array>
       </dict>
@@ -34,12 +40,6 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>exp+runcrew</string>
-        </array>
-      </dict>
-      <dict>
-        <key>CFBundleURLSchemes</key>
-        <array>
-          <string>com.googleusercontent.apps.YOUR_GOOGLE_IOS_CLIENT_ID</string>
         </array>
       </dict>
     </array>
@@ -69,25 +69,28 @@
     <key>NSFaceIDUsageDescription</key>
     <string>Allow $(PRODUCT_NAME) to access your Face ID biometric data.</string>
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>백그라운드에서 런닝을 계속 기록하기 위해 항상 위치 접근이 필요합니다.</string>
+    <string>RUNVS needs Always location access to continue tracking your run in the background.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>런닝 경로를 기록하기 위해 위치 정보가 필요합니다.</string>
+    <string>RUNVS needs your location to record running routes, distance, and pace.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>프로필 사진을 선택하기 위해 사진 라이브러리 접근이 필요합니다.</string>
+    <string>RUNVS needs access to your photo library to select a profile picture.</string>
     <key>NSCameraUsageDescription</key>
-    <string>프로필 사진을 촬영하기 위해 카메라 접근이 필요합니다.</string>
+    <string>RUNVS needs camera access to take a profile picture.</string>
+    <key>NSContactsUsageDescription</key>
+    <string>RUNVS uses your contacts to find friends who are already using the app. Phone numbers are encrypted on your device and never stored on our servers.</string>
     <key>NSMotionUsageDescription</key>
-    <string>걸음 수와 움직임을 감지하여 정확한 러닝 데이터를 제공합니다.</string>
+    <string>RUNVS uses motion data to detect steps and improve running accuracy.</string>
     <key>NSHealthShareUsageDescription</key>
-    <string>Apple Watch에서 측정한 심박수를 런닝 기록에 포함합니다.</string>
+    <string>RUNVS reads heart rate data from Apple Watch to display real-time BPM during your runs.</string>
     <key>NSHealthUpdateUsageDescription</key>
-    <string>운동 기록을 저장합니다.</string>
+    <string>RUNVS saves your workout sessions to Apple Health, including distance, pace, and calories burned during your runs.</string>
     <key>LSApplicationQueriesSchemes</key>
     <array>
     </array>
     <key>UIBackgroundModes</key>
     <array>
       <string>location</string>
+      <string>audio</string>
     </array>
     <key>UILaunchStoryboardName</key>
     <string>SplashScreen</string>
@@ -115,5 +118,7 @@
     <string>Automatic</string>
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <false/>
+    <key>NSSupportsLiveActivities</key>
+    <true/>
   </dict>
 </plist>

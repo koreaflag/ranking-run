@@ -18,21 +18,30 @@
   // is not activated until JS accesses the module.
   // Use runtime messaging to avoid importing RunCrew-Swift.h (which triggers
   // ExpoModulesProvider/ModulesProvider build error in Xcode 26 with .mm files).
+  // @objc(WatchSessionManager) ensures the class is findable without module prefix.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-  Class watchSessionMgrClass = NSClassFromString(@"RunCrew.WatchSessionManager");
+  Class watchSessionMgrClass = NSClassFromString(@"WatchSessionManager");
   if (!watchSessionMgrClass) {
-    watchSessionMgrClass = NSClassFromString(@"WatchSessionManager");
+    watchSessionMgrClass = NSClassFromString(@"RunCrew.WatchSessionManager");
   }
+  if (!watchSessionMgrClass) {
+    watchSessionMgrClass = NSClassFromString(@"RUNVS.WatchSessionManager");
+  }
+  NSLog(@"[AppDelegate] WatchSessionManager class lookup: %@", watchSessionMgrClass ? @"FOUND" : @"NOT FOUND");
   if (watchSessionMgrClass) {
     SEL sharedSel = NSSelectorFromString(@"shared");
     SEL activateSel = NSSelectorFromString(@"activate");
     if ([watchSessionMgrClass respondsToSelector:sharedSel]) {
       id shared = [watchSessionMgrClass performSelector:sharedSel];
+      NSLog(@"[AppDelegate] WatchSessionManager.shared: %@", shared ? @"OK" : @"NIL");
       if ([shared respondsToSelector:activateSel]) {
         [shared performSelector:activateSel];
+        NSLog(@"[AppDelegate] WCSession activate() called successfully");
       }
     }
+  } else {
+    NSLog(@"[AppDelegate] ERROR: WatchSessionManager class NOT found! WCSession will NOT activate on phone side.");
   }
 #pragma clang diagnostic pop
 

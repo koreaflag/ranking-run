@@ -2,6 +2,8 @@
 // Formatting Utilities
 // ============================================================
 
+import i18n from '../i18n';
+
 /**
  * Converts pace (seconds per km) to a display string like "5'30\""
  */
@@ -56,10 +58,10 @@ export function formatRelativeTime(isoString: string): string {
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffMinutes < 1) return '방금 전';
-  if (diffMinutes < 60) return `${diffMinutes}분 전`;
-  if (diffHours < 24) return `${diffHours}시간 전`;
-  if (diffDays < 7) return `${diffDays}일 전`;
+  if (diffMinutes < 1) return i18n.t('format.justNow');
+  if (diffMinutes < 60) return i18n.t('format.minutesAgo', { count: diffMinutes });
+  if (diffHours < 24) return i18n.t('format.hoursAgo', { count: diffHours });
+  if (diffDays < 7) return i18n.t('format.daysAgo', { count: diffDays });
 
   const year = date.getFullYear();
   const month = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -82,7 +84,9 @@ export function formatDate(isoString: string): string {
  * Formats a number with commas for thousands separator.
  */
 export function formatNumber(num: number): string {
-  return num.toLocaleString('ko-KR');
+  const localeMap: Record<string, string> = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP' };
+  const locale = localeMap[i18n.language] ?? 'en-US';
+  return num.toLocaleString(locale);
 }
 
 /**

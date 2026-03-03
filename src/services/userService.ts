@@ -10,6 +10,10 @@ import type {
   SocialCounts,
   ActivityFeedItem,
   ActivityFeedResponse,
+  FriendRunning,
+  AnalyticsData,
+  UserSearchByCodeResult,
+  FollowListResponse,
 } from '../types/api';
 
 export const userService = {
@@ -81,10 +85,37 @@ export const userService = {
   },
 
   /**
+   * Search for a user by their unique code.
+   */
+  async searchByCode(code: string): Promise<UserSearchByCodeResult | null> {
+    try {
+      return await api.get<UserSearchByCodeResult>(
+        `/follows/search-by-code/${encodeURIComponent(code)}`,
+      );
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Follow a user by their unique code.
+   */
+  async followByCode(userCode: string): Promise<void> {
+    await api.post('/follows/by-code', { user_code: userCode });
+  },
+
+  /**
    * Fetch social counts (followers, following, total likes) for the current user.
    */
   async getSocialCounts(): Promise<SocialCounts> {
     return api.get<SocialCounts>('/users/me/social-counts');
+  },
+
+  /**
+   * Fetch analytics data (charts, heatmap, best efforts, weekly goal).
+   */
+  async getAnalytics(): Promise<AnalyticsData> {
+    return api.get<AnalyticsData>('/users/me/analytics');
   },
 
   /**
@@ -93,5 +124,30 @@ export const userService = {
   async getActivityFeed(limit: number = 20): Promise<ActivityFeedItem[]> {
     const resp = await api.get<ActivityFeedResponse>(`/follows/activity-feed?limit=${limit}`);
     return resp.data;
+  },
+
+  /**
+   * Fetch friends who are currently running.
+   */
+  async getFriendsRunning(): Promise<FriendRunning[]> {
+    return api.get<FriendRunning[]>('/follows/friends-running');
+  },
+
+  /**
+   * Fetch a user's followers list (paginated).
+   */
+  async getFollowers(userId: string, page = 0, perPage = 20): Promise<FollowListResponse> {
+    return api.get<FollowListResponse>(
+      `/users/${userId}/followers?page=${page}&per_page=${perPage}`,
+    );
+  },
+
+  /**
+   * Fetch a user's following list (paginated).
+   */
+  async getFollowing(userId: string, page = 0, perPage = 20): Promise<FollowListResponse> {
+    return api.get<FollowListResponse>(
+      `/users/${userId}/following?page=${page}&per_page=${perPage}`,
+    );
   },
 };

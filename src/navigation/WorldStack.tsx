@@ -4,6 +4,8 @@ import type { WorldStackParamList } from '../types/navigation';
 import WorldScreen from '../screens/world/WorldScreen';
 import CourseDetailScreen from '../screens/course/CourseDetailScreen';
 import UserProfileScreen from '../screens/profile/UserProfileScreen';
+import RunningScreen from '../screens/running/RunningScreen';
+import RunResultScreen from '../screens/running/RunResultScreen';
 import { useTheme } from '../hooks/useTheme';
 
 const Stack = createNativeStackNavigator<WorldStackParamList>();
@@ -21,6 +23,8 @@ export default function WorldStack() {
       <Stack.Screen name="World" component={WorldScreen} />
       <Stack.Screen name="CourseDetail" component={CourseDetailScreen} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+      <Stack.Screen name="RunningMain" component={RunningScreen} options={{ gestureEnabled: false }} />
+      <Stack.Screen name="RunResult" component={RunResultScreen} />
     </Stack.Navigator>
   );
 }

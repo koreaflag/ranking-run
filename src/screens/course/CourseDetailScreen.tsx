@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,14 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
+  Modal,
+  TextInput,
+  Switch,
+  Image,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCourseStore } from '../../stores/courseStore';
@@ -25,7 +30,8 @@ import DifficultyBadge from '../../components/course/DifficultyBadge';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import type { CourseStackParamList } from '../../types/navigation';
-import type { RankingEntry } from '../../types/api';
+import type { RankingEntry, CourseCheckpoint } from '../../types/api';
+import type { CheckpointMarkerData } from '../../components/map/RouteMapView';
 import {
   formatDistance,
   formatDuration,
@@ -33,7 +39,8 @@ import {
   formatNumber,
   formatDate,
 } from '../../utils/format';
-import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS, type DifficultyLevel } from '../../utils/constants';
+import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS, type DifficultyLevel } from '../../utils/constants';
+import { courseService } from '../../services/courseService';
 import { useAuthStore } from '../../stores/authStore';
 
 type DetailRoute = RouteProp<CourseStackParamList, 'CourseDetail'>;
@@ -47,6 +54,7 @@ function inferDifficulty(distanceMeters: number, elevationGain: number): Difficu
 }
 
 export default function CourseDetailScreen() {
+  const { t } = useTranslation();
   const navigation = useNavigation<NativeStackNavigationProp<CourseStackParamList>>();
   const route = useRoute<DetailRoute>();
   const { courseId, openReview } = route.params;
@@ -76,6 +84,51 @@ export default function CourseDetailScreen() {
 
   const isFavorited = favoriteIds.includes(courseId);
 
+  // Edit modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editPublic, setEditPublic] = useState(true);
+  const [editCourseType, setEditCourseType] = useState<'normal' | 'loop'>('normal');
+  const [editLapCount, setEditLapCount] = useState(1);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleOpenEdit = useCallback(() => {
+    if (!selectedCourse) return;
+    setEditTitle(selectedCourse.title);
+    setEditDescription(selectedCourse.description ?? '');
+    setEditPublic(selectedCourse.is_public);
+    setEditCourseType((selectedCourse as any).course_type === 'loop' ? 'loop' : 'normal');
+    setEditLapCount((selectedCourse as any).lap_count ?? 1);
+    setShowEditModal(true);
+  }, [selectedCourse]);
+
+  const handleSaveEdit = async () => {
+    if (!selectedCourse || editTitle.trim().length < 1) {
+      Alert.alert(t('course.detail.titleCheck'), t('course.detail.enterTitle'));
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const isLoopCourse = (selectedCourse as any).course_type === 'loop';
+      await courseService.updateCourse(selectedCourse.id, {
+        title: editTitle.trim(),
+        description: editDescription.trim() || undefined,
+        is_public: editPublic,
+        ...(isLoopCourse ? {
+          course_type: editCourseType,
+          lap_count: editCourseType === 'loop' ? editLapCount : undefined,
+        } : {}),
+      });
+      setShowEditModal(false);
+      fetchCourseDetail(courseId);
+    } catch {
+      Alert.alert(t('common.error'), t('common.errorRetry'));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Tap animation scales
   const likeScale = useRef(new Animated.Value(1)).current;
   const favScale = useRef(new Animated.Value(1)).current;
@@ -104,39 +157,42 @@ export default function CourseDetailScreen() {
     }
   }, [openReview, selectedCourse, isLoadingDetail]);
 
-  // Detect if opened from WorldStack (sibling route 'World' exists)
-  const isFromWorld = (navigation.getState().routeNames as string[]).includes('World');
+  // Convert course checkpoints to map marker data (must be before early returns)
+  const checkpointMarkers: CheckpointMarkerData[] = useMemo(() => {
+    if (!selectedCourse) return [];
+    const cps = (selectedCourse as any).checkpoints as CourseCheckpoint[] | null | undefined;
+    if (!cps || cps.length === 0) return [];
+    return cps.map((cp) => ({
+      id: cp.id,
+      order: cp.order,
+      lat: cp.lat,
+      lng: cp.lng,
+    }));
+  }, [selectedCourse]);
 
   const handleRunThisCourse = () => {
-    if (isFromWorld) {
-      // Already in World tab — go straight to running
-      navigation.getParent()?.navigate('RunningTab', {
-        screen: 'RunningMain',
-        params: { courseId },
-      });
-    } else {
-      // From other tabs — navigate to World tab and focus on course
-      useCourseStore.getState().setPendingFocusCourseId(courseId);
-      navigation.getParent()?.navigate('WorldTab');
-    }
+    // Set pending course so WorldScreen focuses on it with 3D preview
+    useCourseStore.getState().setPendingFocusCourseId(courseId);
+    // Navigate to WorldTab → World screen (pops any stacked screens like CourseDetail)
+    (navigation as any).getParent()?.navigate('WorldTab', { screen: 'World' });
   };
 
   const handleDeleteCourse = () => {
     Alert.alert(
-      '코스 삭제',
-      '이 코스를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.',
+      t('course.detail.deleteTitle'),
+      t('course.detail.deleteMsg'),
       [
-        { text: '취소', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: '삭제',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
               await deleteMyCourse(courseId);
               navigation.goBack();
             } catch (err) {
-              const msg = err instanceof Error ? err.message : '알 수 없는 오류';
-              Alert.alert('앗...!', `코스 삭제에 실패했습니다.\n(${msg})`);
+              const msg = err instanceof Error ? err.message : t('review.unknownError');
+              Alert.alert(t('common.error'), `${msg}`);
             }
           },
         },
@@ -161,14 +217,14 @@ export default function CourseDetailScreen() {
         <ScreenHeader title="" onBack={() => navigation.goBack()} />
         <View style={styles.loadingContainer}>
           <Text style={styles.errorText}>
-            {error || '코스 정보를 불러올 수 없습니다.'}
+            {error || t('course.detail.loadError')}
           </Text>
           <TouchableOpacity
             style={styles.retryButton}
             onPress={() => fetchCourseDetail(courseId)}
             activeOpacity={0.7}
           >
-            <Text style={styles.retryButtonText}>다시 시도</Text>
+            <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -204,7 +260,7 @@ export default function CourseDetailScreen() {
       >
         {/* Large map at top */}
         <View style={styles.mapWrapper}>
-          <RouteMapView routePoints={routePoints} style={styles.mapPreview} />
+          <RouteMapView routePoints={routePoints} checkpoints={checkpointMarkers} style={styles.mapPreview} />
         </View>
 
         {/* Course title + difficulty badge */}
@@ -272,14 +328,24 @@ export default function CourseDetailScreen() {
             </View>
           </View>
           {currentUser?.id === course.creator.id && (
-            <TouchableOpacity
-              style={styles.deleteButton}
-              onPress={handleDeleteCourse}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="trash-outline" size={16} color={colors.error} />
-              <Text style={styles.deleteButtonText}>코스 삭제</Text>
-            </TouchableOpacity>
+            <View style={styles.ownerActions}>
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={handleOpenEdit}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="pencil" size={14} color={colors.primary} />
+                <Text style={styles.editButtonText}>{t('common.edit')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={handleDeleteCourse}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={14} color={colors.error} />
+                <Text style={styles.deleteButtonText}>{t('common.delete')}</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
 
@@ -290,21 +356,21 @@ export default function CourseDetailScreen() {
               <Text style={styles.dashboardValue}>
                 {formatDistance(course.distance_meters)}
               </Text>
-              <Text style={styles.dashboardLabel}>거리</Text>
+              <Text style={styles.dashboardLabel}>{t('course.detail.distance')}</Text>
             </View>
             <View style={styles.dashboardDivider} />
             <View style={styles.dashboardCell}>
               <Text style={styles.dashboardValue}>
                 {formatDuration(course.estimated_duration_seconds)}
               </Text>
-              <Text style={styles.dashboardLabel}>예상 시간</Text>
+              <Text style={styles.dashboardLabel}>{t('course.detail.estimatedTime')}</Text>
             </View>
             <View style={styles.dashboardDivider} />
             <View style={styles.dashboardCell}>
               <Text style={styles.dashboardValue}>
                 {Math.round(course.elevation_gain_meters)}m
               </Text>
-              <Text style={styles.dashboardLabel}>고도 상승</Text>
+              <Text style={styles.dashboardLabel}>{t('course.detail.elevationGain')}</Text>
             </View>
           </View>
         </View>
@@ -312,27 +378,27 @@ export default function CourseDetailScreen() {
         {/* Course Stats */}
         {stats && (
           <View style={styles.statsCard}>
-            <Text style={styles.sectionTitle}>코스 통계</Text>
+            <Text style={styles.sectionTitle}>{t('course.detail.stats')}</Text>
             <View style={styles.dashboardGrid}>
               <View style={styles.dashboardCell}>
                 <Text style={styles.dashboardValue}>
                   {formatNumber(stats.total_runs)}
                 </Text>
-                <Text style={styles.dashboardLabel}>총 달린 횟수</Text>
+                <Text style={styles.dashboardLabel}>{t('course.detail.totalRuns')}</Text>
               </View>
               <View style={styles.dashboardDivider} />
               <View style={styles.dashboardCell}>
                 <Text style={styles.dashboardValue}>
                   {formatNumber(stats.unique_runners)}
                 </Text>
-                <Text style={styles.dashboardLabel}>러너</Text>
+                <Text style={styles.dashboardLabel}>{t('course.detail.runners')}</Text>
               </View>
               <View style={styles.dashboardDivider} />
               <View style={styles.dashboardCell}>
                 <Text style={styles.dashboardValue}>
                   {Math.round(stats.completion_rate * 100)}%
                 </Text>
-                <Text style={styles.dashboardLabel}>완주율</Text>
+                <Text style={styles.dashboardLabel}>{t('course.detail.completionRate')}</Text>
               </View>
             </View>
             <View style={styles.statsRowDivider} />
@@ -341,21 +407,21 @@ export default function CourseDetailScreen() {
                 <Text style={styles.dashboardValue}>
                   {formatPace(stats.avg_pace_seconds_per_km)}
                 </Text>
-                <Text style={styles.dashboardLabel}>평균 페이스</Text>
+                <Text style={styles.dashboardLabel}>{t('course.detail.avgPace')}</Text>
               </View>
               <View style={styles.dashboardDivider} />
               <View style={styles.dashboardCell}>
                 <Text style={styles.dashboardValueHighlight}>
                   {formatPace(stats.best_pace_seconds_per_km)}
                 </Text>
-                <Text style={styles.dashboardLabel}>최고 페이스</Text>
+                <Text style={styles.dashboardLabel}>{t('course.detail.bestPace')}</Text>
               </View>
               <View style={styles.dashboardDivider} />
               <View style={styles.dashboardCell}>
                 <Text style={styles.dashboardValue}>
                   {formatDuration(stats.avg_duration_seconds)}
                 </Text>
-                <Text style={styles.dashboardLabel}>평균 시간</Text>
+                <Text style={styles.dashboardLabel}>{t('course.detail.avgTime')}</Text>
               </View>
             </View>
           </View>
@@ -365,7 +431,7 @@ export default function CourseDetailScreen() {
         {selectedCourseMyBest && (
           <View style={styles.myBestCard}>
             <View style={styles.myBestHeader}>
-              <Text style={styles.sectionTitle}>내 최고 기록</Text>
+              <Text style={styles.sectionTitle}>{t('course.detail.myBest')}</Text>
               <View style={styles.myBestBadge}>
                 <Text style={styles.myBestBadgeText}>PB</Text>
               </View>
@@ -377,7 +443,7 @@ export default function CourseDetailScreen() {
                     selectedCourseMyBest.duration_seconds,
                   )}
                 </Text>
-                <Text style={styles.dashboardLabel}>시간</Text>
+                <Text style={styles.dashboardLabel}>{t('running.metrics.time')}</Text>
               </View>
               <View style={styles.dashboardDivider} />
               <View style={styles.dashboardCell}>
@@ -386,7 +452,7 @@ export default function CourseDetailScreen() {
                     selectedCourseMyBest.avg_pace_seconds_per_km,
                   )}
                 </Text>
-                <Text style={styles.dashboardLabel}>페이스</Text>
+                <Text style={styles.dashboardLabel}>{t('running.metrics.pace')}</Text>
               </View>
             </View>
           </View>
@@ -396,7 +462,7 @@ export default function CourseDetailScreen() {
         {selectedCourseRankings.length > 0 && (
           <View style={styles.rankingSection}>
             <View style={styles.rankingHeader}>
-              <Text style={styles.sectionTitle}>리더보드</Text>
+              <Text style={styles.sectionTitle}>{t('course.detail.leaderboard')}</Text>
               <Text style={styles.rankingCount}>
                 TOP {selectedCourseRankings.length}
               </Text>
@@ -425,17 +491,115 @@ export default function CourseDetailScreen() {
       </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* Edit Modal */}
+      <Modal visible={showEditModal} animationType="slide">
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowEditModal(false)} activeOpacity={0.7}>
+              <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>{t('course.detail.editTitle')}</Text>
+            <TouchableOpacity onPress={handleSaveEdit} disabled={isSaving} activeOpacity={0.7}>
+              <Text style={[styles.modalSave, isSaving && { opacity: 0.4 }]}>
+                {isSaving ? t('common.saving') : t('common.save')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" showsVerticalScrollIndicator={false}>
+            <Text style={styles.fieldLabel}>{t('course.detail.fieldTitle')}</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={editTitle}
+              onChangeText={setEditTitle}
+              placeholder={t('course.detail.fieldTitlePlaceholder')}
+              placeholderTextColor={colors.textTertiary}
+              maxLength={50}
+            />
+
+            <Text style={styles.fieldLabel}>{t('course.detail.fieldDescription')}</Text>
+            <TextInput
+              style={[styles.fieldInput, styles.fieldTextArea]}
+              value={editDescription}
+              onChangeText={(v) => v.length <= 200 && setEditDescription(v)}
+              placeholder={t('course.detail.fieldDescPlaceholder')}
+              placeholderTextColor={colors.textTertiary}
+              multiline
+              maxLength={200}
+            />
+            <Text style={styles.charCount}>{editDescription.length}/200</Text>
+
+            {(selectedCourse as any)?.course_type === 'loop' && (
+              <>
+                <Text style={styles.fieldLabel}>{t('course.detail.courseType')}</Text>
+                <View style={styles.courseTypeRow}>
+                  <TouchableOpacity
+                    style={[styles.courseTypeBtn, editCourseType === 'normal' && styles.courseTypeBtnActive]}
+                    onPress={() => setEditCourseType('normal')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.courseTypeBtnText, editCourseType === 'normal' && styles.courseTypeBtnTextActive]}>{t('course.detail.oneWay')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.courseTypeBtn, editCourseType === 'loop' && styles.courseTypeBtnActive]}
+                    onPress={() => setEditCourseType('loop')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.courseTypeBtnText, editCourseType === 'loop' && styles.courseTypeBtnTextActive]}>{t('course.detail.roundTrip')}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {editCourseType === 'loop' && (
+                  <View style={styles.lapCountRow}>
+                    <Text style={styles.fieldLabel}>{t('course.detail.lapCount')}</Text>
+                    <View style={styles.lapCountControls}>
+                      <TouchableOpacity
+                        style={styles.lapCountBtn}
+                        onPress={() => setEditLapCount(Math.max(1, editLapCount - 1))}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="remove" size={18} color={colors.text} />
+                      </TouchableOpacity>
+                      <Text style={styles.lapCountValue}>{editLapCount}</Text>
+                      <TouchableOpacity
+                        style={styles.lapCountBtn}
+                        onPress={() => setEditLapCount(Math.min(10, editLapCount + 1))}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="add" size={18} color={colors.text} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </>
+            )}
+
+            <View style={styles.publicRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>{t('course.detail.publicLabel')}</Text>
+                <Text style={styles.publicHint}>{t('course.detail.publicHint')}</Text>
+              </View>
+              <Switch
+                value={editPublic}
+                onValueChange={setEditPublic}
+                trackColor={{ false: colors.surfaceLight, true: colors.primary }}
+              />
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
       {/* Bottom CTA: Competition challenge */}
       <View style={styles.bottomCta}>
         {/* Show gap to 1st place if user has a record */}
         {stats && selectedCourseMyBest && (
           <View style={styles.challengeInfo}>
-            <Text style={styles.challengeLabel}>1위 기록</Text>
+            <Text style={styles.challengeLabel}>{t('course.detail.firstRecord')}</Text>
             <Text style={styles.challengeRecord}>
               {formatDuration(stats.best_duration_seconds)}
             </Text>
             <Text style={styles.challengeGap}>
-              격차 {formatDuration(selectedCourseMyBest.duration_seconds - stats.best_duration_seconds)}
+              {t('course.detail.gap', { gap: formatDuration(selectedCourseMyBest.duration_seconds - stats.best_duration_seconds) })}
             </Text>
           </View>
         )}
@@ -445,13 +609,13 @@ export default function CourseDetailScreen() {
           activeOpacity={0.8}
         >
           <Ionicons
-            name={isFromWorld ? 'play' : 'globe-outline'}
+            name="globe-outline"
             size={20}
             color={colors.white}
             style={{ marginRight: SPACING.sm }}
           />
           <Text style={styles.ctaButtonText}>
-            {isFromWorld ? '도전하기' : '월드에서 보기'}
+            {t('course.detail.viewInWorld')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -472,22 +636,19 @@ const RankingRow = React.memo(function RankingRow({ entry, isMe = false }: { ent
 
   return (
     <View style={[styles.rankingRow, isMe && styles.rankingRowMe]}>
-      {/* Rank badge: gold/silver/bronze circles for top3 */}
-      <View
-        style={[
-          styles.rankBadge,
-          { backgroundColor: rankColor },
-        ]}
-      >
-        <Text
-          style={[
-            styles.rankNumber,
-            isTop3 ? styles.rankNumberTop3 : styles.rankNumberDefault,
-          ]}
-        >
-          {entry.rank}
-        </Text>
-      </View>
+      {/* Rank number */}
+      <Text style={[styles.rankNum, { color: isTop3 ? rankColor : colors.textSecondary }]}>
+        {entry.rank}
+      </Text>
+
+      {/* Avatar */}
+      {entry.user.avatar_url ? (
+        <Image source={{ uri: entry.user.avatar_url }} style={styles.rankAvatar} />
+      ) : (
+        <View style={[styles.rankAvatar, styles.rankAvatarPlaceholder]}>
+          <Ionicons name="person" size={14} color={colors.textTertiary} />
+        </View>
+      )}
 
       {/* Runner info */}
       <View style={styles.rankInfo}>
@@ -500,6 +661,9 @@ const RankingRow = React.memo(function RankingRow({ entry, isMe = false }: { ent
             {isMe ? '  (ME)' : ''}
           </Text>
         </TouchableOpacity>
+        {entry.user.crew_name ? (
+          <Text style={styles.rankCrewName}>{entry.user.crew_name}</Text>
+        ) : null}
       </View>
 
       {/* Pace + Duration */}
@@ -772,22 +936,23 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     marginHorizontal: -SPACING.sm,
   },
-  rankBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  rankNum: {
+    width: 24,
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '800',
+    textAlign: 'center' as const,
+    fontVariant: ['tabular-nums' as const],
+  },
+  rankAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    marginRight: SPACING.sm,
+  },
+  rankAvatarPlaceholder: {
+    backgroundColor: c.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  rankNumber: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '800',
-  },
-  rankNumberTop3: {
-    color: c.white,
-  },
-  rankNumberDefault: {
-    color: c.textSecondary,
   },
   rankInfo: {
     flex: 1,
@@ -800,6 +965,12 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   rankNicknameMe: {
     fontWeight: '800',
     color: c.primary,
+  },
+  rankCrewName: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '500',
+    color: c.textSecondary,
+    marginTop: 1,
   },
   rankStats: {
     alignItems: 'flex-end',
@@ -863,5 +1034,151 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '800',
     color: c.white,
     letterSpacing: 0.5,
+  },
+
+  // -- Owner actions --
+  ownerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.lg,
+    marginTop: SPACING.xs,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+  },
+  editButtonText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: c.primary,
+  },
+
+  // -- Edit modal --
+  modalContainer: {
+    flex: 1,
+    backgroundColor: c.card,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: c.divider,
+  },
+  modalCancel: {
+    fontSize: FONT_SIZES.md,
+    color: c.textSecondary,
+    fontWeight: '600',
+  },
+  modalTitle: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '800',
+    color: c.text,
+  },
+  modalSave: {
+    fontSize: FONT_SIZES.md,
+    color: c.primary,
+    fontWeight: '700',
+  },
+  modalBody: {
+    padding: SPACING.xl,
+  },
+  fieldLabel: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    color: c.text,
+    marginBottom: SPACING.sm,
+    marginTop: SPACING.md,
+  },
+  fieldInput: {
+    backgroundColor: c.surface,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md + 2,
+    fontSize: FONT_SIZES.md,
+    color: c.text,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  fieldTextArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+    paddingTop: SPACING.md,
+  },
+  charCount: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textTertiary,
+    textAlign: 'right',
+    marginTop: SPACING.xs,
+  },
+  courseTypeRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  courseTypeBtn: {
+    flex: 1,
+    paddingVertical: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+    alignItems: 'center',
+  },
+  courseTypeBtnActive: {
+    backgroundColor: c.primary,
+    borderColor: c.primary,
+  },
+  courseTypeBtnText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: c.textSecondary,
+  },
+  courseTypeBtnTextActive: {
+    color: c.white,
+  },
+  lapCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: SPACING.md,
+  },
+  lapCountControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  lapCountBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lapCountValue: {
+    fontSize: FONT_SIZES.xl,
+    fontWeight: '800',
+    color: c.text,
+    minWidth: 28,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+  publicRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: SPACING.lg,
+    paddingBottom: SPACING.xxl,
+  },
+  publicHint: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textTertiary,
+    marginTop: 2,
   },
 });

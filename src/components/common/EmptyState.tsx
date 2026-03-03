@@ -1,22 +1,31 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import { FONT_SIZES, SPACING } from '../../utils/constants';
 
 interface EmptyStateProps {
   icon?: string;
+  ionicon?: keyof typeof Ionicons.glyphMap;
+  iconColor?: string;
   title: string;
   description?: string;
 }
 
-export default function EmptyState({ icon, title, description }: EmptyStateProps) {
+export default function EmptyState({ icon, ionicon, iconColor, title, description }: EmptyStateProps) {
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
     <View style={styles.container}>
-      {icon && <Text style={styles.icon}>{icon}</Text>}
+      {ionicon ? (
+        <View style={[styles.iconCircle, { backgroundColor: (iconColor ?? colors.primary) + '18' }]}>
+          <Ionicons name={ionicon} size={32} color={iconColor ?? colors.primary} />
+        </View>
+      ) : icon ? (
+        <Text style={styles.icon}>{icon}</Text>
+      ) : null}
       <Text style={styles.title}>{title}</Text>
       {description && <Text style={styles.description}>{description}</Text>}
     </View>
@@ -34,6 +43,14 @@ const createStyles = (c: ThemeColors) =>
     },
     icon: {
       fontSize: 48,
+      marginBottom: SPACING.sm,
+    },
+    iconCircle: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
       marginBottom: SPACING.sm,
     },
     title: {

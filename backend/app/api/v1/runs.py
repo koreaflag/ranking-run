@@ -1,13 +1,17 @@
 """Run endpoints: sessions, chunks, completion, recovery, and record detail."""
 
+import json
 from uuid import UUID
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, BackgroundTasks, Depends, status
+from geoalchemy2.functions import ST_AsGeoJSON
+from sqlalchemy import select
 
 from app.core.container import Container
 from app.core.deps import CurrentUser, DbSession
 from app.core.exceptions import NotFoundError
+from app.models.run_record import RunRecord
 from app.schemas.run import (
     BatchChunkUploadRequest,
     BatchChunkUploadResponse,
@@ -256,9 +260,22 @@ async def get_run_record_detail(
     run_service: RunService = Depends(Provide[Container.run_service]),
 ) -> RunRecordDetail:
     """Get a detailed run record."""
-    record = await run_service.get_run_record(db, run_id, current_user.id)
-    if record is None:
+    # Query with ST_AsGeoJSON to convert PostGIS geography → GeoJSON string
+    result = await db.execute(
+        select(
+            RunRecord,
+            ST_AsGeoJSON(RunRecord.route_geometry).label("route_geojson"),
+        ).where(
+            RunRecord.id == run_id,
+            RunRecord.user_id == current_user.id,
+        )
+    )
+    row = result.first()
+    if row is None:
         raise NotFoundError(code="NOT_FOUND", message="Run record not found")
+
+    record = row[0]
+    route_geojson_str = row[1]
 
     course_info = None
     if record.course is not None:
@@ -276,8 +293,11 @@ async def get_run_record_detail(
         )
 
     route_geo = None
-    if record.route_geometry is not None:
-        route_geo = record.route_geometry
+    if route_geojson_str:
+        try:
+            route_geo = json.loads(route_geojson_str)
+        except (json.JSONDecodeError, TypeError):
+            route_geo = None
 
     splits = None
     if record.splits:

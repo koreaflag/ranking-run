@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { DIFFICULTY_COLORS, DIFFICULTY_LABELS, type DifficultyLevel } from '../../utils/constants';
+import { DIFFICULTY_COLORS, getDifficultyLabel, type DifficultyLevel } from '../../utils/constants';
 
 interface DifficultyBadgeProps {
   difficulty: DifficultyLevel;
@@ -9,7 +9,7 @@ interface DifficultyBadgeProps {
 
 export default function DifficultyBadge({ difficulty, size = 'sm' }: DifficultyBadgeProps) {
   const color = DIFFICULTY_COLORS[difficulty];
-  const label = DIFFICULTY_LABELS[difficulty];
+  const label = getDifficultyLabel(difficulty);
   const isMd = size === 'md';
 
   return (

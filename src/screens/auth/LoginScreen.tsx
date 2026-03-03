@@ -10,22 +10,27 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useTranslation } from 'react-i18next';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { Ionicons } from '@expo/vector-icons';
+import type { AuthStackParamList } from '../../types/navigation';
 import { useAuthStore } from '../../stores/authStore';
 import { useTheme } from '../../hooks/useTheme';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import type { ThemeColors } from '../../utils/constants';
 import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 
-// Configure Google Sign In — replace with your iOS client ID
 GoogleSignin.configure({
-  iosClientId: 'YOUR_GOOGLE_IOS_CLIENT_ID',
+  iosClientId: '61103557165-n17ms089q66usovminu6atdoruj0udq6.apps.googleusercontent.com',
 });
 
 export default function LoginScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
+  const { t } = useTranslation();
   const { login, devLogin, isLoading, error } = useAuthStore();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -55,10 +60,13 @@ export default function LoginScreen() {
         throw new Error('No identity token');
       }
 
-      await login('apple', credential.identityToken, rawNonce);
+      const isNew = await login('apple', credential.identityToken, rawNonce);
+      if (isNew) {
+        navigation.replace('Consent');
+      }
     } catch (e: any) {
       if (e.code === 'ERR_REQUEST_CANCELED') return; // user cancelled
-      Alert.alert('앗...!', 'Apple 로그인에 실패했습니다. 다시 시도해 주세요.');
+      Alert.alert(t('common.error'), t('auth.login.appleError'));
     } finally {
       setLoadingProvider(null);
     }
@@ -70,6 +78,7 @@ export default function LoginScreen() {
       setLoadingProvider('google');
 
       await GoogleSignin.hasPlayServices();
+      await GoogleSignin.signOut().catch(() => {});
       const userInfo = await GoogleSignin.signIn();
 
       const idToken = userInfo.data?.idToken;
@@ -77,11 +86,14 @@ export default function LoginScreen() {
         throw new Error('No ID token from Google');
       }
 
-      await login('google', idToken);
+      const isNew = await login('google', idToken);
+      if (isNew) {
+        navigation.replace('Consent');
+      }
     } catch (e: any) {
       // statusCodes.SIGN_IN_CANCELLED = '12501'
       if (e.code === '12501' || e.code === 'SIGN_IN_CANCELLED') return;
-      Alert.alert('앗...!', 'Google 로그인에 실패했습니다. 다시 시도해 주세요.');
+      Alert.alert(t('common.error'), t('auth.login.googleError'));
     } finally {
       setLoadingProvider(null);
     }
@@ -92,8 +104,9 @@ export default function LoginScreen() {
     try {
       setLoadingProvider('dev');
       await devLogin('dev_runner', 'dev@runcrew.test');
+      // Dev login skips consent for convenience
     } catch {
-      Alert.alert('앗...!', error ?? '다시 시도해 주세요.');
+      Alert.alert(t('common.error'), error ?? t('common.errorRetry'));
     } finally {
       setLoadingProvider(null);
     }
@@ -110,12 +123,11 @@ export default function LoginScreen() {
           {/* Hero Section */}
           <View style={styles.heroSection}>
             <View style={styles.logoContainer}>
-              <Text style={styles.logoText}>Run</Text>
-              <Text style={styles.logoText}>Crew</Text>
+              <Text style={styles.logoText}>RUNVS</Text>
             </View>
 
             <Text style={styles.tagline}>
-              나만의 코스를 달리고{'\n'}전국의 러너들과 겨뤄보세요
+              {t('auth.login.tagline')}
             </Text>
 
             <View style={styles.accentLine} />
@@ -137,7 +149,7 @@ export default function LoginScreen() {
                   <>
                     <Ionicons name="logo-apple" size={20} color="#FFF" />
                     <Text style={[styles.socialButtonText, styles.appleText]}>
-                      Apple로 시작하기
+                      {t('auth.login.appleButton')}
                     </Text>
                   </>
                 )}
@@ -157,7 +169,7 @@ export default function LoginScreen() {
                 <>
                   <Ionicons name="logo-google" size={20} color="#333" />
                   <Text style={[styles.socialButtonText, styles.googleText]}>
-                    Google로 시작하기
+                    {t('auth.login.googleButton')}
                   </Text>
                 </>
               )}
@@ -172,13 +184,13 @@ export default function LoginScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={styles.devButtonText}>
-                  {loadingProvider === 'dev' ? '접속 중...' : 'DEV LOGIN'}
+                  {loadingProvider === 'dev' ? t('auth.login.connecting') : 'DEV LOGIN'}
                 </Text>
               </TouchableOpacity>
             )}
 
             <Text style={styles.footerNote}>
-              로그인 시 이용약관 및 개인정보 처리방침에 동의합니다
+              {t('auth.login.footer')}
             </Text>
           </View>
         </View>

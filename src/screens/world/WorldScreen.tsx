@@ -6,24 +6,50 @@ import {
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
+  Alert,
+  Platform,
+  NativeModules,
+  Animated,
+  LayoutAnimation,
+  Image,
+  InteractionManager,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCourseStore } from '../../stores/courseStore';
+import { useRunningStore } from '../../stores/runningStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { courseService } from '../../services/courseService';
+import { rankingService } from '../../services/rankingService';
+import { runService } from '../../services/runService';
 import RouteMapView from '../../components/map/RouteMapView';
 import type { RouteMapViewHandle, CourseMarkerData, Region } from '../../components/map/RouteMapView';
 import type { WorldStackParamList } from '../../types/navigation';
-import type { GeoJSONLineString } from '../../types/api';
+import type { GeoJSONLineString, CourseCheckpoint, RankingEntry } from '../../types/api';
+import type { CheckpointMarkerData } from '../../components/map/RouteMapView';
+import { RunStartOverlay, RunGoalSheet, RunSettingsSheet } from '../../components/running';
+import type { RunGoal } from '../../components/running/RunGoalSheet';
 
+// Running hooks
+import { useGPSTracker } from '../../hooks/useGPSTracker';
+import { useRunTimer } from '../../hooks/useRunTimer';
+import { useWatchCompanion } from '../../hooks/useWatchCompanion';
+import { useCourseNavigation } from '../../hooks/useCourseNavigation';
+import { useCheckpointTracker } from '../../hooks/useCheckpointTracker';
+
+import * as Location from 'expo-location';
 import { useTheme } from '../../hooks/useTheme';
-import { useSettingsStore } from '../../stores/settingsStore';
 import type { ThemeColors } from '../../utils/constants';
-import { formatDistance } from '../../utils/format';
+import { formatDistance, metersToKm, formatDuration, formatPace } from '../../utils/format';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 import { useCompassHeading } from '../../hooks/useCompassHeading';
+import { haversineDistance, bearing as geoBearing } from '../../utils/geo';
+import { savePendingRunRecord, removePendingRunRecord } from '../../services/pendingSyncService';
 import api from '../../services/api';
+import { useTranslation } from 'react-i18next';
+import { MAPBOX_ACCESS_TOKEN } from '../../config/env';
 
 type WorldNav = NativeStackNavigationProp<WorldStackParamList, 'World'>;
 
@@ -115,7 +141,7 @@ function calcBearing(a: LatLng, b: LatLng): number {
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
-/** Compute center + zoom from a set of points */
+/** Compute center from a set of points */
 function computeCenter(points: LatLng[]): LatLng {
   let sumLat = 0;
   let sumLng = 0;
@@ -127,15 +153,71 @@ function computeCenter(points: LatLng[]): LatLng {
 }
 
 // ============================================================
+// Goal helpers
+// ============================================================
+
+function formatGoalLabel(goal: RunGoal, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (!goal.type || goal.value === null) return t('world.goalSetting');
+  switch (goal.type) {
+    case 'distance':
+      return t('world.distanceGoalLabel', { value: (goal.value / 1000).toFixed(1) });
+    case 'time': {
+      const mins = Math.floor(goal.value / 60);
+      if (mins >= 60) {
+        const hours = Math.floor(mins / 60);
+        const remainder = mins % 60;
+        return remainder > 0
+          ? t('world.timeGoalLabelHM', { hours, minutes: remainder })
+          : t('world.timeGoalLabelH', { hours });
+      }
+      return t('world.timeGoalLabelM', { minutes: mins });
+    }
+    case 'pace':
+      return t('world.paceGoalLabel', { pace: `${Math.floor(goal.value / 60)}'${String(Math.floor(goal.value % 60)).padStart(2, '0')}"` });
+    default:
+      return t('world.goalSetting');
+  }
+}
+
+function getGoalProgress(
+  goal: { type: 'distance' | 'time' | 'pace' | null; value: number | null },
+  distanceMeters: number,
+  durationSeconds: number,
+  avgPace: number,
+): { percent: number; label: string; reached: boolean } | null {
+  if (!goal.type || goal.value === null || goal.value <= 0) return null;
+
+  switch (goal.type) {
+    case 'distance': {
+      const pct = Math.min(100, (distanceMeters / goal.value) * 100);
+      const targetKm = (goal.value / 1000).toFixed(1);
+      return { percent: pct, label: `${metersToKm(distanceMeters)} / ${targetKm} km`, reached: pct >= 100 };
+    }
+    case 'time': {
+      const pct = Math.min(100, (durationSeconds / goal.value) * 100);
+      return { percent: pct, label: `${formatDuration(durationSeconds)} / ${formatDuration(goal.value)}`, reached: pct >= 100 };
+    }
+    case 'pace': {
+      if (avgPace <= 0 || distanceMeters < 100) return { percent: 0, label: `-- / ${formatPace(goal.value)}`, reached: false };
+      const pct = Math.min(100, (goal.value / avgPace) * 100);
+      return { percent: pct, label: `${formatPace(avgPace)} / ${formatPace(goal.value)}`, reached: avgPace <= goal.value };
+    }
+    default:
+      return null;
+  }
+}
+
+// ============================================================
 // WorldScreen
 // ============================================================
 
 export default function WorldScreen() {
   const navigation = useNavigation<WorldNav>();
   const colors = useTheme();
+  const { t } = useTranslation();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { mapMarkers, fetchMapMarkers, nearbyCourses, fetchNearbyCourses, pendingFocusCourseId } = useCourseStore();
-  const { map3DStyle, setMap3DStyle } = useSettingsStore();
+  const { mapMarkers, fetchMapMarkers, pendingFocusCourseId } = useCourseStore();
+  const { map3DStyle, countdownSeconds, hapticFeedback } = useSettingsStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<RouteMapViewHandle>(null);
   const [userRegion, setUserRegion] = useState<Region | null>(null);
@@ -145,32 +227,740 @@ export default function WorldScreen() {
 
   // Weather state
   const [weather, setWeather] = useState<WeatherData | null>(null);
-  // Heading — use shared compass hook for smooth rotation (avoids re-renders)
+  // Heading — use shared compass hook for smooth rotation
   const { heading: headingAnim } = useCompassHeading();
 
   // Selected marker state
   const [selectedMarker, setSelectedMarker] = useState<CourseMarkerData | null>(null);
+  const [hudRankings, setHudRankings] = useState<RankingEntry[]>([]);
+  const [hudRankingVisible, setHudRankingVisible] = useState(true);
+  const rankingAnim = useRef(new Animated.Value(1)).current;
+
+  // Run start controls
+  const [runGoal, setRunGoal] = useState<RunGoal>({ type: null, value: null });
+  const [goalSheetVisible, setGoalSheetVisible] = useState(false);
+  const [settingsSheetVisible, setSettingsSheetVisible] = useState(false);
 
   // 3D preview state
   const [previewRoute, setPreviewRoute] = useState<LatLng[]>([]);
+  const [previewCheckpoints, setPreviewCheckpoints] = useState<CheckpointMarkerData[]>([]);
   const [is3DMode, setIs3DMode] = useState(false);
   const animTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const markerPressedRef = useRef(false);
 
-  // Defer initial data fetch until user location is available (fallback to Seoul after 3s)
+  // ============================================================
+  // RUNNING STATE & HOOKS
+  // ============================================================
+
+  const {
+    phase,
+    distanceMeters,
+    durationSeconds,
+    avgPaceSecondsPerKm,
+    gpsStatus,
+    routePoints: runRoutePoints,
+    calories,
+    heartRate,
+    cadence,
+    elevationGainMeters,
+    watchConnected,
+    currentLocation,
+    isAutoPaused,
+    isApproachingStart,
+    isNearStart,
+    loopDetected,
+    distanceToStart,
+    courseId: runCourseId,
+    runGoal: storeRunGoal,
+    startSession,
+    updateSessionId,
+    pause: storePause,
+    resume: storeResume,
+    complete,
+    reset,
+    setPhase,
+    setRunGoal: setStoreRunGoal,
+  } = useRunningStore();
+
+  const isInRun = phase !== 'idle';  // includes completed to keep route visible
+
+  // GPS & timer hooks (always mounted, only active when phase is running/paused)
+  const { startTracking, stopTracking, pauseTracking, resumeTracking } = useGPSTracker();
+  useRunTimer();
+
+  // Countdown state
+  const [countdown, setCountdown] = useState<number | null>(null);
+
+  // Goal reached banner
+  const [goalReachedShown, setGoalReachedShown] = useState(false);
+
+  // Course running state
+  const [courseRoute, setCourseRoute] = useState<Array<{ latitude: number; longitude: number }> | null>(null);
+  const [courseCheckpoints, setCourseCheckpoints] = useState<CourseCheckpoint[] | null>(null);
+
+  // Course navigation & checkpoint tracking hooks
+  const courseNavigation = useCourseNavigation(
+    courseRoute,
+    currentLocation ? { latitude: currentLocation.latitude, longitude: currentLocation.longitude } : null,
+    currentLocation?.bearing ?? 0,
+  );
+  const {
+    checkpointPasses,
+    passedCount: cpPassedCount,
+    totalCount: cpTotalCount,
+    markerData: cpMarkerData,
+    justPassed: cpJustPassed,
+    competitionStartTime,
+    finishReached,
+    updateLocation: updateCheckpointLocation,
+    resetTracker,
+  } = useCheckpointTracker(courseCheckpoints);
+
+  // Panel height for map bottom inset
+  const [panelHeight, setPanelHeight] = useState(0);
+
+  // Screen lock
+  const [screenLocked, setScreenLocked] = useState(false);
+  const lockProgressAnim = useRef(new Animated.Value(0)).current;
+  const trackingStartedRef = useRef(false);
+
+  const handleLockPressIn = useCallback(() => {
+    lockProgressAnim.setValue(0);
+    Animated.timing(lockProgressAnim, {
+      toValue: 1,
+      duration: 800,
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (finished) {
+        setScreenLocked(false);
+        lockProgressAnim.setValue(0);
+      }
+    });
+  }, [lockProgressAnim]);
+
+  const handleLockPressOut = useCallback(() => {
+    lockProgressAnim.stopAnimation();
+    lockProgressAnim.setValue(0);
+  }, [lockProgressAnim]);
+
+  // Navigate-to-start state (shown when user is far from course start checkpoint)
+  const [navigatingToStart, setNavigatingToStart] = useState(false);
+  const [startCheckpoint, setStartCheckpoint] = useState<{ lat: number; lng: number } | null>(null);
+  const [distanceToStartCP, setDistanceToStartCP] = useState(0);
+  const [pendingCourseId, setPendingCourseId] = useState<string | null>(null);
+  const [readyToStart, setReadyToStart] = useState(false);
+  const [navRoute, setNavRoute] = useState<Array<{ latitude: number; longitude: number }>>([]);
+
+  // Result upload state (for completed phase)
+  const [resultUploading, setResultUploading] = useState(false);
+  const [resultRunRecordId, setResultRunRecordId] = useState<string | null>(null);
+  const [resultSavedLocally, setResultSavedLocally] = useState(false);
+
+  // Transition animations
+  const worldOverlayOpacity = useRef(new Animated.Value(1)).current;
+  const runPanelTranslateY = useRef(new Animated.Value(400)).current;
+  const countdownOpacity = useRef(new Animated.Value(0)).current;
+
+  // Animate world overlays out / running panel in based on phase
   useEffect(() => {
+    if (phase === 'idle') {
+      Animated.parallel([
+        Animated.timing(worldOverlayOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(runPanelTranslateY, { toValue: 400, duration: 250, useNativeDriver: true }),
+        Animated.timing(countdownOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+      ]).start();
+    } else if (phase === 'completed') {
+      // Keep panel visible — content morphs to result summary
+      Animated.parallel([
+        Animated.timing(countdownOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.spring(runPanelTranslateY, { toValue: 0, damping: 22, stiffness: 160, useNativeDriver: true }),
+      ]).start();
+    } else if (phase === 'countdown') {
+      Animated.parallel([
+        Animated.timing(worldOverlayOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+        Animated.timing(countdownOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+      ]).start();
+    } else if (phase === 'running' || phase === 'paused') {
+      Animated.parallel([
+        Animated.timing(worldOverlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.timing(countdownOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.spring(runPanelTranslateY, { toValue: 0, damping: 22, stiffness: 160, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [phase, worldOverlayOpacity, runPanelTranslateY, countdownOpacity]);
+
+  // Close result and return to world mode
+  const handleCloseResult = useCallback(() => {
+    setResultUploading(false);
+    setResultRunRecordId(null);
+    setResultSavedLocally(false);
+    setGoalReachedShown(false);
+    setCourseRoute(null);
+    setCourseCheckpoints(null);
+    resetTracker();
+    setPanelHeight(0);
+    // Clear navigate-to-start state
+    setNavigatingToStart(false);
+    setStartCheckpoint(null);
+    setPendingCourseId(null);
+    setReadyToStart(false);
+    setNavRoute([]);
+    trackingStartedRef.current = false;
+    // Clear 3D preview state so course focus is fully released
+    if (animTimerRef.current) {
+      clearInterval(animTimerRef.current);
+      animTimerRef.current = null;
+    }
+    setPreviewRoute([]);
+    setPreviewCheckpoints([]);
+    setIs3DMode(false);
+    setSelectedMarker(null);
+    // Stop following first so padding clears before reset
+    setFollowUser(false);
+    reset();
+    // After panel slide-out animation, re-center on full-screen map
+    setTimeout(() => {
+      if (myLocation) {
+        mapRef.current?.animateToRegion({
+          latitude: myLocation.latitude,
+          longitude: myLocation.longitude,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }, 600);
+      }
+      // Re-enable follow after camera has moved
+      setTimeout(() => setFollowUser(true), 700);
+    }, 400);
+  }, [reset, myLocation]);
+
+
+  // Feed GPS to checkpoint tracker during course running
+  useEffect(() => {
+    if (phase === 'running' && runCourseId && currentLocation) {
+      updateCheckpointLocation(currentLocation.latitude, currentLocation.longitude);
+    }
+  }, [phase, runCourseId, currentLocation, updateCheckpointLocation]);
+
+  // Competition start toast when start checkpoint (order=0) is passed
+  const [competitionStartShown, setCompetitionStartShown] = useState(false);
+  useEffect(() => {
+    if (competitionStartTime && !competitionStartShown && phase === 'running') {
+      setCompetitionStartShown(true);
+      if (hapticFeedback) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      setTimeout(() => setCompetitionStartShown(false), 3000);
+    }
+    if (phase === 'idle') {
+      setCompetitionStartShown(false);
+    }
+  }, [competitionStartTime, competitionStartShown, phase, hapticFeedback]);
+
+  // Track user location from store for custom map marker during running
+  useEffect(() => {
+    if (currentLocation && isInRun) {
+      setMyLocation({ latitude: currentLocation.latitude, longitude: currentLocation.longitude });
+    }
+  }, [currentLocation, isInRun]);
+
+  // Use GPS course heading when moving during running
+  const isMoving = isInRun && (currentLocation?.speed ?? 0) > 0.5;
+  const { heading: runHeadingValue } = useCompassHeading(100, isMoving ? (currentLocation?.bearing ?? null) : null);
+
+  // ============================================================
+  // RUNNING HANDLERS
+  // ============================================================
+
+  // Begin countdown + start running (extracted so it can be called after navigating to start)
+  const beginCountdownAndRun = useCallback(async (courseId?: string | null) => {
+    // Clear any 3D preview
+    if (selectedMarker) {
+      setSelectedMarker(null);
+      setIs3DMode(false);
+      setPreviewRoute([]);
+      setPreviewCheckpoints([]);
+    }
+
+    setPhase('countdown');
+    setCountdown(countdownSeconds);
+
+    // Notify native for Watch countdown sync
+    const countdownStartedAt = Date.now();
+    try {
+      if (Platform.OS === 'ios' && NativeModules.GPSTrackerModule?.notifyCountdownStart) {
+        NativeModules.GPSTrackerModule.notifyCountdownStart(countdownSeconds, countdownStartedAt).catch(() => {});
+      }
+    } catch {
+      // Safe to ignore
+    }
+
+    for (let i = countdownSeconds; i > 0; i--) {
+      setCountdown(i);
+      if (hapticFeedback) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    setCountdown(null);
+
+    // Start GPS tracking with local session ID
+    const localSessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    startSession(localSessionId, courseId ?? null);
+    if (!trackingStartedRef.current) {
+      await startTracking();
+    }
+    trackingStartedRef.current = true;
+
+    // Switch map to follow user
+    setFollowUser(true);
+
+    if (hapticFeedback) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+
+    // Register session on server in background
+    runService.createSession({
+      course_id: courseId ?? null,
+      started_at: new Date().toISOString(),
+      device_info: {
+        platform: Platform.OS as 'android' | 'ios',
+        os_version: Platform.Version.toString(),
+        device_model: 'Unknown',
+        app_version: '1.0.0',
+      },
+    }).then((response) => {
+      if (response?.session_id) {
+        updateSessionId(response.session_id);
+      }
+    }).catch(() => {});
+  }, [
+    countdownSeconds, hapticFeedback, selectedMarker,
+    setPhase, startSession, updateSessionId, startTracking,
+  ]);
+
+  const NAVIGATE_TO_START_THRESHOLD = 30; // meters — same as checkpoint pass radius
+
+  // Fetch walking directions from Mapbox Directions API
+  const fetchWalkingRoute = useCallback(async (
+    from: { latitude: number; longitude: number },
+    to: { latitude: number; longitude: number },
+  ) => {
+    try {
+      const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${from.longitude},${from.latitude};${to.longitude},${to.latitude}?geometries=geojson&overview=full&access_token=${MAPBOX_ACCESS_TOKEN}`;
+      const res = await fetch(url);
+      const json = await res.json();
+      const coords = json?.routes?.[0]?.geometry?.coordinates;
+      if (coords?.length) {
+        setNavRoute(coords.map((c: [number, number]) => ({ latitude: c[1], longitude: c[0] })));
+      }
+    } catch {
+      // Fallback: straight line (navRoute stays empty, previewPolyline will draw straight)
+    }
+  }, []);
+
+  const handleStartRun = useCallback(async (courseId?: string | null) => {
+    // Block start if Low Power Mode is enabled (GPS accuracy degrades significantly)
+    if (Platform.OS === 'ios') {
+      try {
+        const isLowPower = await NativeModules.GPSTrackerModule?.isLowPowerModeEnabled?.();
+        if (isLowPower) {
+          Alert.alert(
+            t('running.lowPowerTitle'),
+            t('running.lowPowerMessage'),
+            [{ text: t('common.confirm'), style: 'default' }],
+          );
+          return;
+        }
+      } catch {
+        // Unavailable — allow start
+      }
+    }
+
+    // Save goal to store
+    setStoreRunGoal(runGoal);
+    setGoalReachedShown(false);
+
+    // Load course route & checkpoints for course running navigation
+    if (courseId) {
+      try {
+        const detail = await courseService.getCourseDetail(courseId);
+        if (detail.route_geometry?.coordinates?.length) {
+          setCourseRoute(geoJsonToLatLng(detail.route_geometry));
+        }
+        const cps = (detail as any).checkpoints as CourseCheckpoint[] | null | undefined;
+        if (cps?.length) {
+          setCourseCheckpoints(cps);
+        }
+
+        // Always enter navigate-to-start mode for course runs
+        const startCp = cps?.find((cp) => cp.order === 0);
+        // Use checkpoint or fallback to first route coordinate
+        const startLat = startCp?.lat ?? detail.route_geometry?.coordinates?.[0]?.[1];
+        const startLng = startCp?.lng ?? detail.route_geometry?.coordinates?.[0]?.[0];
+        if (startLat != null && startLng != null) {
+          let initialDist = 999;
+          let userLat: number | null = null;
+          let userLng: number | null = null;
+          try {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status === 'granted') {
+              const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+              userLat = loc.coords.latitude;
+              userLng = loc.coords.longitude;
+              initialDist = haversineDistance(
+                { latitude: userLat, longitude: userLng },
+                { latitude: startLat, longitude: startLng },
+              );
+            }
+          } catch {
+            // Location unavailable — will show distance once GPS starts
+          }
+          setStartCheckpoint({ lat: startLat, lng: startLng });
+          setDistanceToStartCP(initialDist);
+          setPendingCourseId(courseId);
+          setReadyToStart(initialDist <= NAVIGATE_TO_START_THRESHOLD);
+          setNavigatingToStart(true);
+          resetTracker();
+          // Clear 3D preview, hide course route until arrival
+          if (selectedMarker) {
+            setSelectedMarker(null);
+            setIs3DMode(false);
+          }
+          setPreviewRoute([]);
+          setNavRoute([]);
+          // Show only start checkpoint marker during navigation
+          setPreviewCheckpoints([{ id: 0, order: 0, lat: startLat, lng: startLng }]);
+          // Follow user location while navigating to start
+          setFollowUser(true);
+          trackingStartedRef.current = true;
+          await startTracking();
+          // Fetch walking directions in background
+          if (initialDist > NAVIGATE_TO_START_THRESHOLD && userLat != null && userLng != null) {
+            fetchWalkingRoute(
+              { latitude: userLat, longitude: userLng },
+              { latitude: startLat, longitude: startLng },
+            );
+          }
+          return;
+        }
+      } catch {
+        // Course nav will be unavailable but run can still proceed
+      }
+    } else {
+      setCourseRoute(null);
+      setCourseCheckpoints(null);
+    }
+    resetTracker();
+
+    await beginCountdownAndRun(courseId);
+  }, [
+    runGoal, setStoreRunGoal, beginCountdownAndRun, startTracking,
+  ]);
+
+  const handleStartFreeRun = useCallback(() => {
+    handleStartRun(null);
+  }, [handleStartRun]);
+
+  // Cancel navigate-to-start mode
+  const handleCancelNavigating = useCallback(() => {
+    setNavigatingToStart(false);
+    setStartCheckpoint(null);
+    setPendingCourseId(null);
+    setReadyToStart(false);
+    stopTracking();
+    trackingStartedRef.current = false;
+    setCourseRoute(null);
+    setCourseCheckpoints(null);
+    setSelectedMarker(null);
+    setIs3DMode(false);
+    setPreviewRoute([]);
+    setPreviewCheckpoints([]);
+    setNavRoute([]);
+    // Reset watch to idle
+    if (Platform.OS === 'ios' && NativeModules.WatchBridgeModule) {
+      NativeModules.WatchBridgeModule.sendRunState({ phase: 'idle' }).catch(() => {});
+    }
+    // Stop follow first so camera animation isn't overridden
+    setFollowUser(false);
+    // Reset camera to top-down view
+    const target = myLocation ?? { latitude: 37.5665, longitude: 126.978 };
+    setTimeout(() => {
+      mapRef.current?.animateCamera(
+        { center: target, pitch: 0, heading: 0, zoom: 13 },
+        800,
+      );
+    }, 100);
+  }, [stopTracking, myLocation]);
+
+  // Watch GPS during navigate-to-start — enable "경쟁 시작하기" when close enough
+  useEffect(() => {
+    if (!navigatingToStart || !startCheckpoint || !currentLocation) return;
+    const dist = haversineDistance(
+      { latitude: currentLocation.latitude, longitude: currentLocation.longitude },
+      { latitude: startCheckpoint.lat, longitude: startCheckpoint.lng },
+    );
+    setDistanceToStartCP(dist);
+    const wasReady = readyToStart;
+    const nowReady = dist <= NAVIGATE_TO_START_THRESHOLD;
+    setReadyToStart(nowReady);
+    if (nowReady && !wasReady) {
+      // Arrived at start — show full course route & checkpoints
+      setNavRoute([]);
+      if (hapticFeedback) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      if (courseRoute) {
+        setPreviewRoute(courseRoute);
+      }
+      if (courseCheckpoints?.length) {
+        setPreviewCheckpoints(
+          courseCheckpoints.map((cp) => ({ id: cp.id, order: cp.order, lat: cp.lat, lng: cp.lng })),
+        );
+      }
+    } else if (!nowReady && wasReady) {
+      // Moved away from start — hide course route, show only start marker
+      setPreviewRoute([]);
+      setPreviewCheckpoints([{ id: 0, order: 0, lat: startCheckpoint.lat, lng: startCheckpoint.lng }]);
+    }
+  }, [navigatingToStart, startCheckpoint, currentLocation, readyToStart, hapticFeedback, courseRoute, courseCheckpoints]);
+
+  // Sync navigate-to-start state to Apple Watch
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const { WatchBridgeModule } = NativeModules;
+    if (!WatchBridgeModule) return;
+    if (!navigatingToStart || !startCheckpoint) {
+      // Send idle when navigation cancelled
+      return;
+    }
+    const bearing = currentLocation
+      ? geoBearing(
+          { latitude: currentLocation.latitude, longitude: currentLocation.longitude },
+          { latitude: startCheckpoint.lat, longitude: startCheckpoint.lng },
+        )
+      : -1;
+    WatchBridgeModule.sendRunState({
+      phase: 'navigating',
+      navToStartBearing: bearing,
+      navToStartDistance: distanceToStartCP,
+      navToStartReady: readyToStart,
+    }).catch(() => {});
+  }, [navigatingToStart, startCheckpoint, currentLocation, distanceToStartCP, readyToStart]);
+
+  // Handle "경쟁 시작하기" button press
+  const handleStartCompetition = useCallback(() => {
+    if (!readyToStart) return;
+    setNavigatingToStart(false);
+    setStartCheckpoint(null);
+    setReadyToStart(false);
+    setNavRoute([]);
+    beginCountdownAndRun(pendingCourseId);
+  }, [readyToStart, pendingCourseId, beginCountdownAndRun]);
+
+  const handleStartCourseRun = useCallback(() => {
+    if (selectedMarker) {
+      handleStartRun(selectedMarker.id);
+    }
+  }, [selectedMarker, handleStartRun]);
+
+  const handlePause = useCallback(async () => {
+    storePause();
+    await pauseTracking();
+    if (hapticFeedback) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [storePause, pauseTracking, hapticFeedback]);
+
+  const handleResume = useCallback(async () => {
+    storeResume();
+    await resumeTracking();
+    if (hapticFeedback) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [storeResume, resumeTracking, hapticFeedback]);
+
+  // Complete run inline — no navigation, show result summary in-place
+  const finishRun = useCallback(async () => {
+    const store = useRunningStore.getState();
+    const sid = store.sessionId;
+    // Save checkpoint passes before completing
+    if (checkpointPasses.length > 0) {
+      useRunningStore.getState().setCheckpointPasses(checkpointPasses);
+    }
+    await stopTracking();
+    trackingStartedRef.current = false;
+    setScreenLocked(false);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    complete();
+
+    if (hapticFeedback) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+
+    // Fit map to completed route
+    if (store.routePoints.length >= 2) {
+      setTimeout(() => {
+        mapRef.current?.fitToCoordinates(store.routePoints, {
+          top: 120, right: 60, bottom: 380, left: 60,
+        }, true);
+      }, 400);
+    }
+
+    if (!sid) return;
+
+    // Build payload (same as RunResultScreen)
+    const runPayload = {
+      distance_meters: Math.round(store.distanceMeters),
+      duration_seconds: Math.round(store.durationSeconds),
+      total_elapsed_seconds: Math.round(store.durationSeconds),
+      avg_pace_seconds_per_km: Math.round(store.avgPaceSecondsPerKm),
+      best_pace_seconds_per_km: Math.round(
+        store.splits.length > 0
+          ? Math.min(...store.splits.map((s) => s.pace_seconds_per_km))
+          : store.avgPaceSecondsPerKm,
+      ),
+      avg_speed_ms: store.distanceMeters / (store.durationSeconds || 1),
+      max_speed_ms: 0,
+      calories: Math.round(store.calories),
+      finished_at: new Date().toISOString(),
+      route_geometry: {
+        type: 'LineString' as const,
+        coordinates: (store.routePoints.length >= 2
+          ? store.routePoints.map((p) => [p.longitude, p.latitude, 0])
+          : [[127.0, 37.5, 0], [127.0001, 37.5001, 0]]) as [number, number, number][],
+      },
+      elevation_gain_meters: Math.round(store.elevationGainMeters),
+      elevation_loss_meters: Math.round(store.elevationLossMeters),
+      elevation_profile: [] as number[],
+      splits: store.splits,
+      pause_intervals: [] as { paused_at: string; resumed_at: string }[],
+      filter_config: {
+        kalman_q: 3.0,
+        kalman_r_base: 10.0,
+        outlier_speed_threshold: 12.0,
+        outlier_accuracy_threshold: 50.0,
+      },
+      total_chunks: 0,
+      uploaded_chunk_sequences: [] as number[],
+      ...(store.checkpointPasses.length > 0 ? { checkpoint_passes: store.checkpointPasses } : {}),
+      ...(runCourseId && finishReached ? {
+        course_completion: {
+          is_completed: true,
+          max_deviation_meters: 0,
+          deviation_points: 0,
+          route_match_percent: 100,
+        },
+      } : {}),
+    };
+
+    // Save locally first
+    const pendingId = `local-run-${Date.now()}`;
+    setResultUploading(true);
+    try {
+      await savePendingRunRecord({
+        id: pendingId,
+        sessionId: sid,
+        payload: runPayload,
+        createdAt: new Date().toISOString(),
+      });
+      setResultSavedLocally(true);
+    } catch {
+      // Local save failed — continue with server attempt
+    }
+
+    // Upload to server
+    try {
+      const response = await runService.completeRun(sid, runPayload);
+      setResultRunRecordId(response?.run_record_id ?? null);
+      await removePendingRunRecord(pendingId).catch(() => {});
+    } catch {
+      // Server failed — local data is safe
+    } finally {
+      setResultUploading(false);
+    }
+  }, [stopTracking, complete, hapticFeedback]);
+
+  // Auto-finish when finish checkpoint (last) is reached
+  const finishTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (finishReached && phase === 'running' && runCourseId && !finishTriggeredRef.current) {
+      finishTriggeredRef.current = true;
+      finishRun();
+    }
+    if (phase === 'idle') {
+      finishTriggeredRef.current = false;
+    }
+  }, [finishReached, phase, runCourseId, finishRun]);
+
+  const handleStop = useCallback(() => {
+    Alert.alert('러닝 종료', '러닝을 종료하시겠습니까?', [
+      { text: '계속 달리기', style: 'cancel' },
+      {
+        text: '종료',
+        style: 'destructive',
+        onPress: finishRun,
+      },
+    ]);
+  }, [finishRun]);
+
+  // Watch stop (no confirmation)
+  const handleWatchStop = useCallback(async () => {
+    await finishRun();
+  }, [finishRun]);
+
+  // Watch companion
+  useWatchCompanion({
+    onPauseCommand: handlePause,
+    onResumeCommand: handleResume,
+    onStopCommand: handleWatchStop,
+  }, courseNavigation, {
+    passedCount: cpPassedCount,
+    totalCount: cpTotalCount,
+    justPassed: !!cpJustPassed,
+  });
+
+  // Cleanup on unmount
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  const stopTrackingRef = useRef(stopTracking);
+  stopTrackingRef.current = stopTracking;
+
+  useEffect(() => {
+    return () => {
+      if (phaseRef.current === 'running' || phaseRef.current === 'paused') {
+        stopTrackingRef.current();
+      }
+    };
+  }, []);
+
+  // Goal reached check
+  const goalProgress = useMemo(
+    () => getGoalProgress(storeRunGoal, distanceMeters, durationSeconds, avgPaceSecondsPerKm),
+    [storeRunGoal, distanceMeters, durationSeconds, avgPaceSecondsPerKm],
+  );
+
+  useEffect(() => {
+    if (goalProgress?.reached && !goalReachedShown && phase === 'running') {
+      setGoalReachedShown(true);
+      if (hapticFeedback) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    }
+  }, [goalProgress?.reached, goalReachedShown, phase, hapticFeedback]);
+
+  // ============================================================
+  // WORLD MAP HANDLERS
+  // ============================================================
+
+  useEffect(() => {
+    // Load all course markers globally on mount
+    fetchMapMarkers(-90, -180, 90, 180);
+
     const fallbackTimeout = setTimeout(() => {
       if (!hasInitializedRef.current) {
         hasInitializedRef.current = true;
         setFollowUser(false);
-        const { latitude, longitude, latitudeDelta, longitudeDelta } = SEOUL_REGION;
-        fetchMapMarkers(
-          latitude - latitudeDelta / 2,
-          longitude - longitudeDelta / 2,
-          latitude + latitudeDelta / 2,
-          longitude + longitudeDelta / 2,
-        );
-        fetchNearbyCourses(latitude, longitude);
       }
     }, 3000);
 
@@ -179,7 +969,7 @@ export default function WorldScreen() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (animTimerRef.current) clearInterval(animTimerRef.current);
     };
-  }, [fetchMapMarkers, fetchNearbyCourses]);
+  }, [fetchMapMarkers]);
 
   // Fetch weather data
   useEffect(() => {
@@ -190,7 +980,6 @@ export default function WorldScreen() {
         );
         setWeather(data);
       } catch {
-        // Show fallback weather data when backend is not connected
         setWeather({
           temp: 4,
           feels_like: 1,
@@ -209,19 +998,10 @@ export default function WorldScreen() {
   const handleRegionChange = useCallback(
     (region: Region) => {
       setUserRegion(region);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        const swLat = region.latitude - region.latitudeDelta / 2;
-        const swLng = region.longitude - region.longitudeDelta / 2;
-        const neLat = region.latitude + region.latitudeDelta / 2;
-        const neLng = region.longitude + region.longitudeDelta / 2;
-        fetchMapMarkers(swLat, swLng, neLat, neLng);
-      }, 500);
     },
-    [fetchMapMarkers],
+    [],
   );
 
-  // Cancel any running route animation
   const cancelRouteAnimation = useCallback(() => {
     if (animTimerRef.current) {
       clearInterval(animTimerRef.current);
@@ -229,46 +1009,32 @@ export default function WorldScreen() {
     }
   }, []);
 
-  // Animate route drawing progressively
   const animateRouteDraw = useCallback((fullRoute: LatLng[]) => {
     cancelRouteAnimation();
-    const total = fullRoute.length;
-    if (total < 2) {
-      setPreviewRoute(fullRoute);
-      return;
-    }
-
-    let idx = 0;
-    const step = Math.max(1, Math.ceil(total / 80)); // ~80 frames over ~1.3s
-    setPreviewRoute([fullRoute[0]]);
-
-    animTimerRef.current = setInterval(() => {
-      idx = Math.min(idx + step, total);
-      setPreviewRoute(fullRoute.slice(0, idx));
-      if (idx >= total) {
-        if (animTimerRef.current) clearInterval(animTimerRef.current);
-        animTimerRef.current = null;
-      }
-    }, 16);
+    setPreviewRoute(fullRoute);
   }, [cancelRouteAnimation]);
 
-  // Handle pendingFocusCourseId from store (e.g. CourseDetail → "월드에서 보기")
-  // We use a ref to avoid clearing the store value inside the effect (which would
-  // trigger a re-render and cancel the setTimeout via cleanup).
-  const focusHandledRef = useRef<string | null>(null);
+  // Handle pendingFocusCourseId
   useEffect(() => {
-    if (!pendingFocusCourseId || pendingFocusCourseId === focusHandledRef.current) return;
-    focusHandledRef.current = pendingFocusCourseId;
+    if (!pendingFocusCourseId) return;
     const targetId = pendingFocusCourseId;
 
-    // Delay to ensure map is fully rendered after tab switch
     const focusOnCourse = async () => {
       try {
-        const detail = await courseService.getCourseDetail(targetId);
+        const [detail, rankings] = await Promise.all([
+          courseService.getCourseDetail(targetId),
+          rankingService.getCourseRankings(targetId, 10).catch(() => [] as RankingEntry[]),
+        ]);
+        setHudRankings(rankings);
         if (!detail.route_geometry?.coordinates?.length) return;
 
         const routePoints = geoJsonToLatLng(detail.route_geometry);
         const center = computeCenter(routePoints);
+
+        const cps = (detail as any).checkpoints as CourseCheckpoint[] | null | undefined;
+        setPreviewCheckpoints(
+          cps?.map((cp) => ({ id: cp.id, order: cp.order, lat: cp.lat, lng: cp.lng })) ?? [],
+        );
 
         setSelectedMarker({
           id: detail.id,
@@ -283,6 +1049,21 @@ export default function WorldScreen() {
         } as CourseMarkerData);
         setIs3DMode(true);
 
+        // Wait until mapRef is ready (may be lazy-loaded)
+        const waitForMap = () =>
+          new Promise<void>((resolve) => {
+            if (mapRef.current) { resolve(); return; }
+            let tries = 0;
+            const interval = setInterval(() => {
+              tries++;
+              if (mapRef.current || tries > 20) {
+                clearInterval(interval);
+                resolve();
+              }
+            }, 100);
+          });
+        await waitForMap();
+
         mapRef.current?.fitToCoordinates(routePoints, {
           top: 160, right: 40, bottom: 140, left: 40,
         }, true);
@@ -295,27 +1076,25 @@ export default function WorldScreen() {
           animateRouteDraw(routePoints);
         }, 800);
 
-        const delta = 0.04;
-        fetchMapMarkers(
-          center.latitude - delta, center.longitude - delta,
-          center.latitude + delta, center.longitude + delta,
-        );
+        fetchMapMarkers(-90, -180, 90, 180);
       } catch {
         // Silent fail
       } finally {
-        // Clear store value after work is done
         useCourseStore.getState().setPendingFocusCourseId(null);
       }
     };
 
-    // Small delay for map readiness after tab switch
-    setTimeout(focusOnCourse, 500);
+    // Wait for tab transition animation to finish, then allow map to settle
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      setTimeout(focusOnCourse, 300);
+    });
+    return () => interaction.cancel();
   }, [pendingFocusCourseId, animateRouteDraw, fetchMapMarkers]);
 
-  // Reset map back to 2D overview
   const resetTo2D = useCallback(() => {
     cancelRouteAnimation();
     setPreviewRoute([]);
+    setPreviewCheckpoints([]);
     setIs3DMode(false);
 
     const target = userRegion ?? SEOUL_REGION;
@@ -330,23 +1109,25 @@ export default function WorldScreen() {
       const marker = mapMarkers.find((m) => m.id === courseId) ?? null;
       if (!marker) return;
 
-      // Guard: prevent map onPress from immediately clearing the selection
       markerPressedRef.current = true;
       setTimeout(() => { markerPressedRef.current = false; }, 300);
 
-      // Cancel previous animation
       cancelRouteAnimation();
       setPreviewRoute([]);
+      setPreviewCheckpoints([]);
+      setHudRankings([]);
+      setFollowUser(false);
       setSelectedMarker(marker);
-
-      // Show HUD immediately
       setIs3DMode(true);
 
-      // Fetch route geometry and fit entire course to screen
       try {
-        const detail = await courseService.getCourseDetail(courseId);
+        const [detail, rankings] = await Promise.all([
+          courseService.getCourseDetail(courseId),
+          rankingService.getCourseRankings(courseId, 10).catch(() => [] as RankingEntry[]),
+        ]);
+        setHudRankings(rankings);
+
         if (!detail.route_geometry?.coordinates?.length) {
-          // No route — just zoom to marker
           mapRef.current?.animateCamera(
             { center: { latitude: marker.start_lat, longitude: marker.start_lng }, pitch: 50, heading: 0, zoom: 15.5 },
             1200,
@@ -356,12 +1137,15 @@ export default function WorldScreen() {
 
         const routePoints = geoJsonToLatLng(detail.route_geometry);
 
-        // Fit entire route to screen with padding for HUD overlays
+        const cps = (detail as any).checkpoints as CourseCheckpoint[] | null | undefined;
+        setPreviewCheckpoints(
+          cps?.map((cp) => ({ id: cp.id, order: cp.order, lat: cp.lat, lng: cp.lng })) ?? [],
+        );
+
         mapRef.current?.fitToCoordinates(routePoints, {
           top: 160, right: 40, bottom: 140, left: 40,
         }, true);
 
-        // After fit, tilt to 3D and draw route (only change pitch/heading, keep zoom from fitToCoordinates)
         setTimeout(() => {
           const heading = routePoints.length >= 2
             ? calcBearing(routePoints[0], routePoints[Math.floor(routePoints.length / 2)])
@@ -373,7 +1157,6 @@ export default function WorldScreen() {
           animateRouteDraw(routePoints);
         }, 800);
       } catch {
-        // Route fetch failed — zoom to marker
         mapRef.current?.animateCamera(
           { center: { latitude: marker.start_lat, longitude: marker.start_lng }, pitch: 50, heading: 0, zoom: 15.5 },
           1200,
@@ -384,12 +1167,11 @@ export default function WorldScreen() {
   );
 
   const handleMapPress = useCallback(() => {
-    // Skip if a marker was just tapped (iOS fires both onMarkerPress + onPress)
     if (markerPressedRef.current) return;
-
     if (selectedMarker) {
       resetTo2D();
       setSelectedMarker(null);
+      setHudRankings([]);
     }
   }, [selectedMarker, resetTo2D]);
 
@@ -399,27 +1181,17 @@ export default function WorldScreen() {
     }
   }, [navigation, selectedMarker]);
 
-  const handleStartCourseRun = useCallback(() => {
-    if (selectedMarker) {
-      navigation.getParent()?.navigate('RunningTab', {
-        screen: 'RunningMain',
-        params: { courseId: selectedMarker.id },
-      });
-    }
-  }, [navigation, selectedMarker]);
-
-  const handleMyLocation = useCallback(() => {
+  const handleRecenter = useCallback(() => {
     const center = myLocation ?? { latitude: SEOUL_REGION.latitude, longitude: SEOUL_REGION.longitude };
+    const delta = isInRun ? 0.005 : 0.01;
     mapRef.current?.animateToRegion(
-      { ...center, latitudeDelta: 0.01, longitudeDelta: 0.01 },
+      { ...center, latitudeDelta: delta, longitudeDelta: delta },
       600,
     );
-  }, [myLocation]);
+    setFollowUser(false);
+    requestAnimationFrame(() => setFollowUser(true));
+  }, [myLocation, isInRun]);
 
-  // Nearest course shorthand
-  const nearest = nearbyCourses.length > 0 ? nearbyCourses[0] : null;
-
-  // Difficulty label helper
   const getDifficultyLabel = (d?: string | null) => {
     switch (d) {
       case 'easy': return 'Lv.1';
@@ -437,29 +1209,44 @@ export default function WorldScreen() {
     }
   };
 
+  // GPS status for running HUD
+  const gpsDisabled = gpsStatus === 'disabled';
+  const runGpsLabel = gpsDisabled ? '위치 권한 필요' : 'GPS 연결됨';
+  const runGpsColor = gpsDisabled ? colors.error : colors.success;
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle={colors.statusBar} />
 
-      {/* Full-screen map */}
+      {/* ===== FULL-SCREEN MAP (always visible) ===== */}
       <RouteMapView
         ref={mapRef}
-        markers={mapMarkers}
-        previewPolyline={previewRoute}
-        onMarkerPress={handleMarkerPress}
-        onMapPress={handleMapPress}
-        onRegionChange={handleRegionChange}
+        markers={isInRun || navigatingToStart ? [] : mapMarkers}
+        routePoints={isInRun && !runCourseId ? runRoutePoints : undefined}
+        previewPolyline={
+          isInRun
+            ? (courseRoute ?? undefined)
+            : navigatingToStart && !readyToStart
+              ? (navRoute.length > 0 ? navRoute : (currentLocation && startCheckpoint ? [
+                  { latitude: currentLocation.latitude, longitude: currentLocation.longitude },
+                  { latitude: startCheckpoint.lat, longitude: startCheckpoint.lng },
+                ] : undefined))
+              : previewRoute
+        }
+        checkpoints={isInRun ? (cpMarkerData.length > 0 ? cpMarkerData : undefined) : (previewCheckpoints.length > 0 ? previewCheckpoints : undefined)}
+        onMarkerPress={isInRun ? undefined : handleMarkerPress}
+        onMapPress={isInRun ? undefined : handleMapPress}
+        onRegionChange={isInRun ? undefined : handleRegionChange}
         onUserLocationChange={(coord) => {
           setMyLocation({ latitude: coord.latitude, longitude: coord.longitude });
           if (!hasInitializedRef.current) {
             hasInitializedRef.current = true;
             setFollowUser(false);
-            const delta = 0.08;
-            fetchMapMarkers(
-              coord.latitude - delta, coord.longitude - delta,
-              coord.latitude + delta, coord.longitude + delta,
-            );
-            fetchNearbyCourses(coord.latitude, coord.longitude);
+            fetchMapMarkers(-90, -180, 90, 180);
             mapRef.current?.animateToRegion({
               latitude: coord.latitude,
               longitude: coord.longitude,
@@ -469,186 +1256,611 @@ export default function WorldScreen() {
           }
         }}
         followsUserLocation={followUser}
-        showUserLocation={!myLocation}
+        followPadding={panelHeight > 0 ? { paddingBottom: panelHeight + 60 } : undefined}
+        showUserLocation={true}
+        hideRouteMarkers={isInRun}
         customUserLocation={myLocation ?? undefined}
-        customUserHeading={headingAnim}
+        customUserHeading={isInRun ? runHeadingValue : headingAnim}
         interactive
         pitchEnabled={map3DStyle || is3DMode}
         use3DStyle={map3DStyle}
         style={styles.map}
       />
 
-      {/* Top overlay (hidden when HUD is shown) */}
-      {!selectedMarker && (
-        <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
-          <View style={styles.topBar}>
-            {/* Weather widget */}
-            {weather && (
-              <View style={styles.weatherWidget}>
-                <Ionicons
-                  name={getWeatherIconName(weather.icon)}
-                  size={14}
-                  color={colors.textSecondary}
-                />
-                <Text style={styles.weatherTemp}>{Math.round(weather.temp)}°</Text>
-                <Text style={styles.weatherDesc}>{weather.description}</Text>
-                <View style={styles.weatherDivider} />
-                <Ionicons name="water" size={12} color={colors.textTertiary} />
-                <Text style={styles.weatherDetail}>{weather.humidity}%</Text>
-                {weather.aqi_label && (
-                    <>
-                        <View style={styles.weatherDivider} />
-                        <Ionicons name="leaf" size={12} color={getAqiColor(weather.aqi)} />
-                        <Text style={[styles.weatherDetail, { color: getAqiColor(weather.aqi) }]}>{weather.aqi_label}</Text>
-                    </>
+      {/* ===== WORLD MODE OVERLAYS (fade out during running) ===== */}
+      <Animated.View
+        style={[StyleSheet.absoluteFill, { opacity: worldOverlayOpacity }]}
+        pointerEvents={isInRun ? 'none' : 'box-none'}
+      >
+        {/* Top overlay */}
+        {!selectedMarker && (
+          <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
+            <View style={styles.topBar}>
+              {weather && (
+                <View style={styles.weatherWidget}>
+                  <Ionicons
+                    name={getWeatherIconName(weather.icon)}
+                    size={14}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={styles.weatherTemp}>{Math.round(weather.temp)}°</Text>
+                  <Text style={styles.weatherDesc}>{weather.description}</Text>
+                  <View style={styles.weatherDivider} />
+                  <Ionicons name="water" size={12} color={colors.textTertiary} />
+                  <Text style={styles.weatherDetail}>{weather.humidity}%</Text>
+                  {weather.aqi_label && (
+                      <>
+                          <View style={styles.weatherDivider} />
+                          <Ionicons name="leaf" size={12} color={getAqiColor(weather.aqi)} />
+                          <Text style={[styles.weatherDetail, { color: getAqiColor(weather.aqi) }]}>{weather.aqi_label}</Text>
+                      </>
+                  )}
+                </View>
+              )}
+            </View>
+          </SafeAreaView>
+        )}
+
+        {/* Right side: controls (no location button — unified outside overlay) */}
+
+        {/* ===== HUD overlay when marker selected ===== */}
+        {selectedMarker && (
+          <>
+            <SafeAreaView style={styles.hudTopOverlay} pointerEvents="box-none">
+              <View style={styles.hudTop}>
+                <TouchableOpacity
+                  style={styles.hudBackBtn}
+                  onPress={() => { resetTo2D(); setSelectedMarker(null); }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="chevron-back" size={20} color={COLORS.white} />
+                </TouchableOpacity>
+                <View style={styles.hudTitleArea}>
+                  <View style={styles.hudTitleRow}>
+                    {selectedMarker.difficulty && (
+                      <View style={[styles.hudDiffBadge, { backgroundColor: getDifficultyColor(selectedMarker.difficulty) }]}>
+                        <Text style={styles.hudDiffText}>{getDifficultyLabel(selectedMarker.difficulty)}</Text>
+                      </View>
+                    )}
+                    <Text style={styles.hudTitle} numberOfLines={1}>{selectedMarker.title}</Text>
+                  </View>
+                  <View style={styles.hudStats}>
+                    <View style={styles.hudStatItem}>
+                      <Ionicons name="navigate" size={12} color={COLORS.primary} />
+                      <Text style={styles.hudStatValue}>{formatDistance(selectedMarker.distance_meters)}</Text>
+                    </View>
+                    {(selectedMarker.elevation_gain_meters ?? 0) > 0 && (
+                      <View style={styles.hudStatItem}>
+                        <Ionicons name="trending-up" size={12} color={COLORS.success} />
+                        <Text style={styles.hudStatValue}>{selectedMarker.elevation_gain_meters}m</Text>
+                      </View>
+                    )}
+                    <View style={styles.hudStatItem}>
+                      <Ionicons name="people" size={12} color={COLORS.secondary} />
+                      <Text style={styles.hudStatValue}>{selectedMarker.total_runs}회</Text>
+                    </View>
+                    {selectedMarker.avg_rating != null && (
+                      <View style={styles.hudStatItem}>
+                        <Ionicons name="star" size={12} color={COLORS.warning} />
+                        <Text style={styles.hudStatValue}>{selectedMarker.avg_rating.toFixed(1)}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+            </SafeAreaView>
+
+            {hudRankings.length > 0 && (
+              <View style={styles.hudRankingOverlay} pointerEvents="box-none">
+                <View style={styles.hudRankingBox}>
+                  <TouchableOpacity
+                    style={styles.hudRankingHeader}
+                    onPress={() => {
+                      const next = !hudRankingVisible;
+                      setHudRankingVisible(next);
+                      Animated.timing(rankingAnim, {
+                        toValue: next ? 1 : 0,
+                        duration: 250,
+                        useNativeDriver: false,
+                      }).start();
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="trophy" size={12} color={colors.gold} />
+                    <Text style={styles.hudRankingTitle}>TOP {hudRankings.length}</Text>
+                    <Ionicons
+                      name={hudRankingVisible ? 'chevron-down' : 'chevron-up'}
+                      size={14}
+                      color="rgba(255,255,255,0.5)"
+                    />
+                  </TouchableOpacity>
+                  <Animated.View style={{
+                    opacity: rankingAnim,
+                    maxHeight: rankingAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 500] }),
+                    overflow: 'hidden' as const,
+                  }}>
+                    <View style={styles.hudRankingColHeader}>
+                      <Text style={[styles.hudRankColLabel, styles.colBadge]} />
+                      <Text style={[styles.hudRankColLabel, styles.colName]}>이름</Text>
+                      <Text style={[styles.hudRankColLabel, styles.colCrew]}>크루</Text>
+                      <Text style={[styles.hudRankColLabel, styles.colPace]}>페이스</Text>
+                      <Text style={[styles.hudRankColLabel, styles.colTime]}>시간</Text>
+                    </View>
+                    {hudRankings.map((entry) => {
+                      const RANK_COLORS = [colors.gold, colors.silver, colors.bronze];
+                      const rankColor = entry.rank <= 3 ? RANK_COLORS[entry.rank - 1] : 'rgba(255,255,255,0.35)';
+                      return (
+                        <View key={`${entry.rank}-${entry.user.id}`} style={styles.hudRankingRow}>
+                          <Text style={[styles.hudRankNum, styles.colBadge, { color: rankColor }]}>{entry.rank}</Text>
+                          {entry.user.avatar_url ? (
+                            <Image source={{ uri: entry.user.avatar_url }} style={styles.hudRankAvatar} />
+                          ) : (
+                            <View style={[styles.hudRankAvatar, styles.hudRankAvatarPlaceholder]}>
+                              <Ionicons name="person" size={10} color="rgba(255,255,255,0.4)" />
+                            </View>
+                          )}
+                          <Text style={[styles.hudRankNickname, styles.colName]} numberOfLines={1}>{entry.user.nickname}</Text>
+                          <Text style={[styles.hudRankCrew, styles.colCrew]} numberOfLines={1}>{entry.user.crew_name || '-'}</Text>
+                          <Text style={[styles.hudRankPace, styles.colPace]}>{formatPace(entry.best_pace_seconds_per_km)}</Text>
+                          <Text style={[styles.hudRankDuration, styles.colTime]}>{formatDuration(entry.best_duration_seconds)}</Text>
+                        </View>
+                      );
+                    })}
+                  </Animated.View>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.hudBottomOverlay} pointerEvents="box-none">
+              <View style={styles.hudActions}>
+                <TouchableOpacity style={styles.hudDetailBtn} onPress={handleGoDetail} activeOpacity={0.7}>
+                  <Ionicons name="information-circle" size={16} color={COLORS.black} />
+                  <Text style={styles.hudDetailText}>상세보기</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.hudRunBtn} onPress={handleStartCourseRun} activeOpacity={0.85}>
+                  <Ionicons name="navigate" size={16} color={COLORS.white} />
+                  <Text style={styles.hudRunText}>{t('world.goToStart')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
+
+      </Animated.View>
+
+      {/* Run Start Overlay (has its own animation via visible prop) */}
+      <RunStartOverlay
+        visible={phase === 'idle' && !selectedMarker && !is3DMode && !navigatingToStart}
+        onStart={handleStartFreeRun}
+        onGoalPress={() => setGoalSheetVisible(true)}
+        onSettingsPress={() => setSettingsSheetVisible(true)}
+        goalLabel={formatGoalLabel(runGoal, t)}
+      />
+
+      {/* ===== COUNTDOWN OVERLAY ===== */}
+      {phase === 'countdown' && (
+        <Animated.View style={[styles.countdownOverlay, { opacity: countdownOpacity }]} pointerEvents="none">
+          <View style={styles.countdownContent}>
+            <Text style={styles.countdownLabel}>준비하세요</Text>
+            <Text style={styles.countdownNumber}>{countdown ?? countdownSeconds}</Text>
+            <View style={styles.countdownBarTrack}>
+              <View
+                style={[
+                  styles.countdownBarFill,
+                  { width: `${((countdownSeconds - (countdown ?? countdownSeconds) + 1) / countdownSeconds) * 100}%` },
+                ]}
+              />
+            </View>
+          </View>
+        </Animated.View>
+      )}
+
+      {/* ===== RUNNING / PAUSED / COMPLETED OVERLAYS ===== */}
+      {(phase === 'running' || phase === 'paused' || phase === 'completed') && (
+        <>
+          {/* Top status bar — only during active run */}
+          {(phase === 'running' || phase === 'paused') && (
+            <>
+              <SafeAreaView style={styles.runTopOverlay} pointerEvents="box-none">
+                <View style={styles.runTopBar}>
+                  <View style={styles.gpsChip}>
+                    <View style={[styles.gpsDot, { backgroundColor: runGpsColor }]} />
+                    <Text style={styles.gpsChipText}>{runGpsLabel}</Text>
+                  </View>
+                  <View style={styles.modeChip}>
+                    <Text style={styles.modeChipText}>{runCourseId ? '코스 러닝' : '자유 러닝'}</Text>
+                  </View>
+                  {watchConnected && (
+                    <View style={styles.watchChip}>
+                      <Ionicons name="watch-outline" size={12} color={colors.success} />
+                    </View>
+                  )}
+                </View>
+              </SafeAreaView>
+
+              {/* Banners */}
+              {phase === 'paused' && (
+                <View style={styles.pausedBanner}>
+                  <Ionicons name="pause" size={16} color={colors.background} />
+                  <Text style={styles.pausedText}>일시정지</Text>
+                </View>
+              )}
+              {isAutoPaused && phase === 'running' && (
+                <View style={styles.autoPausedBanner}>
+                  <Ionicons name="pause-circle-outline" size={16} color={colors.textSecondary} />
+                  <Text style={styles.autoPausedText}>자동 일시정지</Text>
+                </View>
+              )}
+              {competitionStartShown && (
+                <View style={styles.goalReachedBanner}>
+                  <Ionicons name="flag" size={16} color={COLORS.white} />
+                  <Text style={styles.goalReachedText}>경쟁 시작!</Text>
+                </View>
+              )}
+              {goalReachedShown && (
+                <View style={styles.goalReachedBanner}>
+                  <Ionicons name="trophy" size={16} color={COLORS.white} />
+                  <Text style={styles.goalReachedText}>목표 달성!</Text>
+                </View>
+              )}
+              {loopDetected && distanceMeters >= 300 && (
+                <View style={styles.loopBanner}>
+                  <Ionicons name="flag" size={16} color={COLORS.white} />
+                  <Text style={styles.loopBannerText}>Finish! Loop complete</Text>
+                </View>
+              )}
+              {isApproachingStart && !isNearStart && !loopDetected && distanceMeters >= 300 && (
+                <View style={styles.approachBanner}>
+                  <Ionicons name="navigate" size={16} color={colors.text} />
+                  <Text style={styles.approachBannerText}>
+                    Approaching start ~{Math.round(distanceToStart)}m
+                  </Text>
+                </View>
+              )}
+
+            </>
+          )}
+
+          {/* Bottom panel — single Animated.View, content swaps inside */}
+          <Animated.View
+            style={[styles.runPanel, { transform: [{ translateY: runPanelTranslateY }] }]}
+            onLayout={(e) => {
+              const h = e.nativeEvent.layout.height;
+              if (Math.abs(h - panelHeight) > 2) {
+                setPanelHeight(h);
+              }
+            }}
+          >
+            {/* Lock button — top-right corner of panel */}
+            {!navigatingToStart && (phase === 'running' || phase === 'paused') && (
+              <TouchableOpacity
+                style={styles.lockBtn}
+                onPress={() => setScreenLocked(true)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="lock-closed" size={16} color={colors.textTertiary} />
+              </TouchableOpacity>
+            )}
+
+            {/* Completed header */}
+            {!navigatingToStart && phase === 'completed' && (
+              <View style={styles.resultHeader}>
+                <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+                <Text style={styles.resultTitle}>러닝 완료!</Text>
+              </View>
+            )}
+
+            {/* Hero distance */}
+            {!navigatingToStart && (
+            <View style={styles.runHeroRow}>
+              <Text style={styles.runHeroValue}>{metersToKm(distanceMeters)}</Text>
+              <Text style={styles.runHeroUnit}>km</Text>
+            </View>
+            )}
+
+            {/* Course progress — only during course run */}
+            {phase !== 'completed' && courseNavigation && courseRoute && (
+              <View style={styles.goalProgressContainer}>
+                <View style={styles.goalProgressBarTrack}>
+                  <View
+                    style={[
+                      styles.goalProgressBarFill,
+                      {
+                        width: `${courseNavigation.progressPercent}%`,
+                        backgroundColor: colors.primary,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.goalProgressLabel}>
+                  코스 진행 · {metersToKm(courseNavigation.remainingDistanceMeters)} km 남음
+                </Text>
+                {/* Course nav chips — horizontal row below progress bar */}
+                <View style={styles.courseNavRow}>
+                  {courseNavigation.distanceToNextTurn >= 0 && courseNavigation.distanceToNextTurn <= 300 && (
+                    <View style={styles.navStripTurn}>
+                      <Ionicons
+                        name={courseNavigation.nextTurnDirection.includes('left') ? 'arrow-back' : courseNavigation.nextTurnDirection.includes('right') ? 'arrow-forward' : 'arrow-up'}
+                        size={12}
+                        color={COLORS.white}
+                      />
+                      <Text style={styles.navStripTurnText}>
+                        {Math.round(courseNavigation.distanceToNextTurn)}m {
+                          courseNavigation.nextTurnDirection.includes('left') ? '좌회전' :
+                          courseNavigation.nextTurnDirection.includes('right') ? '우회전' : '직진'
+                        }
+                      </Text>
+                    </View>
+                  )}
+                  {courseNavigation.isOffCourse && (
+                    <View style={styles.navStripOffCourse}>
+                      <Ionicons name="warning" size={12} color={COLORS.white} />
+                      <Text style={styles.navStripOffCourseText}>
+                        코스 이탈 {Math.round(courseNavigation.deviationMeters)}m
+                      </Text>
+                    </View>
+                  )}
+                  {cpJustPassed && (
+                    <View style={styles.navStripCheckpoint}>
+                      <Ionicons name="flag" size={12} color={COLORS.white} />
+                      <Text style={styles.navStripCheckpointText}>
+                        체크포인트 {cpJustPassed.order}/{cpJustPassed.total} 통과!
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Goal progress — only during active run */}
+            {phase !== 'completed' && !runCourseId && goalProgress && (
+              <View style={styles.goalProgressContainer}>
+                <View style={styles.goalProgressBarTrack}>
+                  <View
+                    style={[
+                      styles.goalProgressBarFill,
+                      {
+                        width: `${goalProgress.percent}%`,
+                        backgroundColor: goalProgress.reached ? colors.success : colors.primary,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.goalProgressLabel}>{goalProgress.label}</Text>
+              </View>
+            )}
+
+            {/* Metrics grid */}
+            <View style={styles.runMetricsGrid}>
+              <View style={styles.runMetricRow}>
+                <View style={styles.runMetricCell}>
+                  <Text style={styles.runMetricLabel}>시간</Text>
+                  <Text style={styles.runMetricValue}>{formatDuration(durationSeconds)}</Text>
+                </View>
+                <View style={styles.runMetricDivider} />
+                <View style={styles.runMetricCell}>
+                  <Text style={styles.runMetricLabel}>평균 페이스</Text>
+                  <Text style={styles.runMetricValue}>{formatPace(avgPaceSecondsPerKm)}</Text>
+                </View>
+                <View style={styles.runMetricDivider} />
+                <View style={styles.runMetricCell}>
+                  <Text style={styles.runMetricLabel}>칼로리</Text>
+                  <Text style={styles.runMetricValue}>{calories}</Text>
+                </View>
+              </View>
+              <View style={styles.runMetricRowDivider} />
+              <View style={styles.runMetricRow}>
+                <View style={styles.runMetricCell}>
+                  <Text style={styles.runMetricLabel}>심박수</Text>
+                  <Text style={[styles.runMetricValue, heartRate > 0 && { color: colors.error }]}>
+                    {heartRate > 0 ? Math.round(heartRate) : '--'}
+                  </Text>
+                </View>
+                <View style={styles.runMetricDivider} />
+                <View style={styles.runMetricCell}>
+                  <Text style={styles.runMetricLabel}>케이던스</Text>
+                  <Text style={styles.runMetricValue}>{cadence > 0 ? cadence : '--'}</Text>
+                </View>
+                <View style={styles.runMetricDivider} />
+                <View style={styles.runMetricCell}>
+                  <Text style={styles.runMetricLabel}>고도(m)</Text>
+                  <Text style={styles.runMetricValue}>
+                    {elevationGainMeters > 0 ? `+${Math.round(elevationGainMeters)}` : '--'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Controls — during active run */}
+            {(phase === 'running' || phase === 'paused') && (
+              <View style={styles.runControls}>
+                {phase === 'paused' ? (
+                  <>
+                    <TouchableOpacity style={styles.runResumeBtn} onPress={handleResume} activeOpacity={0.7}>
+                      <Ionicons name="play" size={28} color={colors.white} />
+                      <Text style={styles.runResumeBtnLabel}>재개</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.runStopBtn} onPress={handleStop} activeOpacity={0.7}>
+                      <Ionicons name="stop" size={28} color={colors.white} />
+                      <Text style={styles.runStopBtnLabel}>종료</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity style={styles.runPauseBtn} onPress={handlePause} activeOpacity={0.7}>
+                      <Ionicons name="pause" size={28} color={colors.text} />
+                      <Text style={styles.runPauseBtnLabel}>일시정지</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.runStopBtn} onPress={handleStop} activeOpacity={0.7}>
+                      <Ionicons name="stop" size={28} color={colors.white} />
+                      <Text style={styles.runStopBtnLabel}>종료</Text>
+                    </TouchableOpacity>
+                  </>
                 )}
               </View>
             )}
 
-            <View style={styles.markerCountBadge}>
-              <Ionicons name="flag" size={12} color={COLORS.white} />
-              <Text style={styles.markerCountText}>
-                {mapMarkers.length}
-              </Text>
-            </View>
-          </View>
-        </SafeAreaView>
-      )}
-
-      {/* Right side: controls */}
-      <View style={styles.rightControls} pointerEvents="box-none">
-        <TouchableOpacity
-          style={styles.myLocationButton}
-          onPress={handleMyLocation}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="locate" size={22} color={colors.text} />
-        </TouchableOpacity>
-      </View>
-
-      {/* ===== HUD overlay when marker selected ===== */}
-      {selectedMarker && (
-        <>
-          {/* Top HUD: course name + stats */}
-          <SafeAreaView style={styles.hudTopOverlay} pointerEvents="box-none">
-            <View style={styles.hudTop}>
-              <TouchableOpacity
-                style={styles.hudBackBtn}
-                onPress={() => { resetTo2D(); setSelectedMarker(null); }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="chevron-back" size={20} color={COLORS.white} />
-              </TouchableOpacity>
-
-              <View style={styles.hudTitleArea}>
-                <View style={styles.hudTitleRow}>
-                  {selectedMarker.difficulty && (
-                    <View style={[styles.hudDiffBadge, { backgroundColor: getDifficultyColor(selectedMarker.difficulty) }]}>
-                      <Text style={styles.hudDiffText}>
-                        {getDifficultyLabel(selectedMarker.difficulty)}
-                      </Text>
-                    </View>
-                  )}
-                  <Text style={styles.hudTitle} numberOfLines={1}>
-                    {selectedMarker.title}
-                  </Text>
-                </View>
-
-                <View style={styles.hudStats}>
-                  <View style={styles.hudStatItem}>
-                    <Ionicons name="navigate" size={12} color={COLORS.primary} />
-                    <Text style={styles.hudStatValue}>{formatDistance(selectedMarker.distance_meters)}</Text>
+            {/* Result actions — after completion */}
+            {phase === 'completed' && (
+              <>
+                {resultUploading && (
+                  <View style={styles.resultUploadStatus}>
+                    <Text style={styles.resultUploadText}>기록 업로드 중...</Text>
                   </View>
-                  {(selectedMarker.elevation_gain_meters ?? 0) > 0 && (
-                    <View style={styles.hudStatItem}>
-                      <Ionicons name="trending-up" size={12} color={COLORS.success} />
-                      <Text style={styles.hudStatValue}>{selectedMarker.elevation_gain_meters}m</Text>
-                    </View>
+                )}
+                <View style={styles.resultActions}>
+                  {!runCourseId && (
+                    <TouchableOpacity
+                      style={styles.resultCourseBtn}
+                      onPress={() => {
+                        if (distanceMeters < 500) {
+                          Alert.alert('알림', '500m 이상 달려야 코스 등록이 가능합니다.');
+                          return;
+                        }
+                        if (!resultRunRecordId) {
+                          Alert.alert('알림', resultSavedLocally
+                            ? '서버 업로드가 완료되지 않았습니다. 잠시 후 다시 시도해주세요.'
+                            : '기록 업로드 중입니다. 잠시만 기다려주세요.');
+                          return;
+                        }
+                        navigation.getParent()?.navigate('CourseTab', {
+                          screen: 'CourseCreate',
+                          params: {
+                            runRecordId: resultRunRecordId,
+                            routePoints: runRoutePoints,
+                            distanceMeters: Math.round(distanceMeters),
+                            durationSeconds: Math.round(durationSeconds),
+                            elevationGainMeters: Math.round(elevationGainMeters),
+                            isLoop: loopDetected,
+                          },
+                        });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="flag" size={18} color={colors.primary} />
+                      <Text style={styles.resultCourseBtnText}>코스 등록</Text>
+                    </TouchableOpacity>
                   )}
-                  <View style={styles.hudStatItem}>
-                    <Ionicons name="people" size={12} color={COLORS.secondary} />
-                    <Text style={styles.hudStatValue}>{selectedMarker.total_runs}회</Text>
-                  </View>
-                  {selectedMarker.avg_rating != null && (
-                    <View style={styles.hudStatItem}>
-                      <Ionicons name="star" size={12} color={COLORS.warning} />
-                      <Text style={styles.hudStatValue}>{selectedMarker.avg_rating.toFixed(1)}</Text>
-                    </View>
-                  )}
+                  <TouchableOpacity style={styles.resultCloseBtn} onPress={handleCloseResult} activeOpacity={0.7}>
+                    <Text style={styles.resultCloseBtnText}>닫기</Text>
+                  </TouchableOpacity>
                 </View>
-              </View>
-            </View>
-          </SafeAreaView>
-
-          {/* Bottom HUD: action buttons */}
-          <View style={styles.hudBottomOverlay} pointerEvents="box-none">
-            <View style={styles.hudActions}>
-              <TouchableOpacity
-                style={styles.hudDetailBtn}
-                onPress={handleGoDetail}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="information-circle" size={16} color={COLORS.black} />
-                <Text style={styles.hudDetailText}>상세보기</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.hudRunBtn}
-                onPress={handleStartCourseRun}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="play" size={16} color={COLORS.white} />
-                <Text style={styles.hudRunText}>도전하기</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+              </>
+            )}
+          </Animated.View>
         </>
       )}
 
-      {/* Bottom overlay (nearest course, shown when no marker selected) */}
-      <View style={styles.bottomOverlay} pointerEvents="box-none">
-        {!selectedMarker && nearest ? (
-          <TouchableOpacity
-            style={styles.nearestCard}
-            onPress={() => handleMarkerPress(nearest.id)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.nearestTopRow}>
-              <View style={styles.nearestBadge}>
-                <Text style={styles.nearestBadgeText}>가장 가까운 코스</Text>
-              </View>
-              {(nearest.active_runners ?? 0) > 0 && (
-                <View style={styles.liveIndicator}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.liveText}>
-                    {nearest.active_runners}명 도전중
-                  </Text>
+      {/* ===== Navigate-to-start floating card ===== */}
+      {navigatingToStart && startCheckpoint && (
+        <View style={styles.navFloatingCard}>
+          <View style={styles.navFloatingTop}>
+            <Ionicons
+              name="flag"
+              size={20}
+              color={readyToStart ? colors.success : colors.primary}
+            />
+            <Text style={styles.navFloatingTitle}>
+              {readyToStart ? t('world.arrivedAtStart') : t('world.navigateToStart')}
+            </Text>
+          </View>
+
+          {!readyToStart && (
+            <View style={styles.navFloatingBody}>
+              {currentLocation && (
+                <View style={{
+                  transform: [{
+                    rotate: `${((geoBearing(
+                      { latitude: currentLocation.latitude, longitude: currentLocation.longitude },
+                      { latitude: startCheckpoint.lat, longitude: startCheckpoint.lng },
+                    ) - (headingAnim ?? 0)) + 360) % 360}deg`,
+                  }],
+                }}>
+                  <Ionicons name="navigate" size={28} color={colors.primary} />
                 </View>
               )}
-            </View>
-            <Text style={styles.nearestTitle} numberOfLines={1}>
-              {nearest.title}
-            </Text>
-            <View style={styles.nearestStats}>
-              <Text style={styles.nearestDistance}>
-                {formatDistance(nearest.distance_meters)}
+              <Text style={styles.navFloatingDistance}>
+                {formatDistance(distanceToStartCP)}
               </Text>
-              <View style={styles.nearestDot} />
-              <Text style={styles.nearestRuns}>
-                {nearest.total_runs}회 도전
-              </Text>
-              {nearest.avg_rating != null && (
-                <>
-                  <View style={styles.nearestDot} />
-                  <Ionicons name="star" size={11} color={COLORS.warning} />
-                  <Text style={styles.nearestRating}>
-                    {nearest.avg_rating.toFixed(1)}
-                  </Text>
-                </>
-              )}
             </View>
-          </TouchableOpacity>
-        ) : null}
+          )}
+
+          <View style={styles.navFloatingActions}>
+            <TouchableOpacity
+              style={[
+                styles.navFloatingStartBtn,
+                { backgroundColor: readyToStart ? colors.primary : colors.border },
+              ]}
+              onPress={handleStartCompetition}
+              disabled={!readyToStart}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="play" size={16} color={readyToStart ? COLORS.white : colors.textTertiary} />
+              <Text style={[
+                styles.navFloatingStartText,
+                { color: readyToStart ? COLORS.white : colors.textTertiary },
+              ]}>
+                {t('world.startCompetition')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.navFloatingCancelBtn}
+              onPress={handleCancelNavigating}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* ===== Screen lock overlay (transparent — blocks touches only) ===== */}
+      {screenLocked && (
+        <View style={styles.lockOverlay}>
+          {/* Unlock button — long-press to unlock */}
+          <View style={styles.lockUnlockArea}>
+            <TouchableOpacity
+              style={styles.lockUnlockBtn}
+              onPressIn={handleLockPressIn}
+              onPressOut={handleLockPressOut}
+              activeOpacity={0.8}
+            >
+              <Animated.View
+                style={[
+                  styles.lockUnlockProgress,
+                  {
+                    width: lockProgressAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0%', '100%'],
+                    }),
+                  },
+                ]}
+              />
+              <Ionicons name="lock-closed" size={14} color="rgba(255,255,255,0.9)" />
+              <Text style={styles.lockUnlockText}>길게 눌러 잠금 해제</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* ===== Unified recenter button (always visible) ===== */}
+      <View style={styles.recenterContainer} pointerEvents="box-none">
+        <TouchableOpacity style={styles.recenterBtn} onPress={handleRecenter} activeOpacity={0.7}>
+          <Ionicons name="locate" size={20} color={colors.text} />
+        </TouchableOpacity>
       </View>
+
+      {/* ===== SHEETS (always available) ===== */}
+      <RunGoalSheet
+        visible={goalSheetVisible}
+        onClose={() => setGoalSheetVisible(false)}
+        goal={runGoal}
+        onGoalChange={setRunGoal}
+      />
+      <RunSettingsSheet
+        visible={settingsSheetVisible}
+        onClose={() => setSettingsSheetVisible(false)}
+      />
     </View>
   );
 }
@@ -682,22 +1894,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     paddingTop: SPACING.md,
     paddingBottom: SPACING.md,
   },
-  markerCountBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: COLORS.primary,
-    paddingVertical: 4,
-    paddingHorizontal: SPACING.sm,
-    borderRadius: BORDER_RADIUS.full,
-  },
-  markerCountText: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: '800',
-    color: COLORS.white,
-    fontVariant: ['tabular-nums'],
-  },
-
   // -- Weather widget --
   weatherWidget: {
     flexDirection: 'row',
@@ -798,6 +1994,101 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
 
+  // -- HUD overlay (ranking) --
+  hudRankingOverlay: {
+    position: 'absolute' as const,
+    bottom: 170,
+    left: 0,
+    right: 0,
+    paddingHorizontal: SPACING.lg,
+    zIndex: 50,
+  },
+  hudRankingBox: {
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.md,
+    gap: 6,
+  },
+  hudRankingHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    paddingBottom: 4,
+  },
+  hudRankingTitle: {
+    flex: 1,
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '800' as const,
+    color: 'rgba(255,255,255,0.6)',
+    letterSpacing: 1,
+  },
+  hudRankingColHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingBottom: 2,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 2,
+  },
+  hudRankColLabel: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: 'rgba(255,255,255,0.35)',
+    textAlign: 'center' as const,
+  },
+  // -- shared column widths --
+  colBadge: { width: 22 },
+  colName: { flex: 3 },
+  colCrew: { flex: 2, textAlign: 'center' as const },
+  colPace: { width: 48, textAlign: 'right' as const },
+  colTime: { width: 48, textAlign: 'right' as const },
+  // --
+  hudRankingRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingVertical: 2,
+  },
+  hudRankNum: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    textAlign: 'center' as const,
+    fontVariant: ['tabular-nums' as const],
+  },
+  hudRankAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+  },
+  hudRankAvatarPlaceholder: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  hudRankNickname: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600' as const,
+    color: COLORS.white,
+  },
+  hudRankCrew: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '500' as const,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  hudRankPace: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700' as const,
+    color: COLORS.primary,
+    fontVariant: ['tabular-nums' as const],
+  },
+  hudRankDuration: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '600' as const,
+    color: 'rgba(255,255,255,0.6)',
+    fontVariant: ['tabular-nums' as const],
+  },
+
   // -- HUD overlay (bottom: actions) --
   hudBottomOverlay: {
     position: 'absolute',
@@ -842,107 +2133,625 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: COLORS.white,
   },
 
-  // -- Right controls (my location) --
-  rightControls: {
-    position: 'absolute',
-    bottom: 25,
-    right: SPACING.xxl,
-    gap: SPACING.sm,
+  // -- Right controls --
+  // (rightControls / myLocationButton removed — unified into recenterContainer)
+
+  // -- Nearest course pill --
+
+  // ============================================================
+  // COUNTDOWN OVERLAY
+  // ============================================================
+  countdownOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    zIndex: 100,
   },
-  myLocationButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  countdownContent: {
+    alignItems: 'center',
+    gap: SPACING.xl,
+  },
+  countdownLabel: {
+    fontSize: FONT_SIZES.xxl,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  countdownNumber: {
+    fontSize: 160,
+    fontWeight: '900',
+    color: COLORS.white,
+    fontVariant: ['tabular-nums'],
+    lineHeight: 180,
+  },
+  countdownBarTrack: {
+    width: 220,
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginTop: SPACING.lg,
+  },
+  countdownBarFill: {
+    height: '100%',
+    backgroundColor: c.primary,
+    borderRadius: 2,
+  },
+
+  // ============================================================
+  // RUNNING HUD
+  // ============================================================
+  runTopOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 60,
+  },
+  runTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.sm,
+  },
+  gpsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: c.card,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: BORDER_RADIUS.full,
+    ...SHADOWS.sm,
+  },
+  gpsDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  gpsChipText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '600',
+    color: c.textSecondary,
+  },
+  modeChip: {
+    backgroundColor: c.card,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: BORDER_RADIUS.full,
+    ...SHADOWS.sm,
+  },
+  modeChipText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '600',
+    color: c.textSecondary,
+  },
+  watchChip: {
+    padding: SPACING.xs + 2,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: c.card,
+    ...SHADOWS.sm,
+  },
+
+  // Re-center button
+  recenterContainer: {
+    position: 'absolute',
+    top: 160,
+    right: SPACING.xl,
+    zIndex: 60,
+  },
+  recenterBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center',
     ...SHADOWS.md,
   },
-  // -- Bottom overlay --
-  bottomOverlay: {
-    position: 'absolute',
-    bottom: 100,
-    left: 0,
-    right: 0,
-    paddingHorizontal: SPACING.xxl,
-    gap: SPACING.md,
-    alignItems: 'flex-end',
-  },
 
-  // Nearest course card
-  nearestCard: {
-    alignSelf: 'stretch',
-    backgroundColor: c.card,
-    borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.xl,
-    gap: SPACING.sm,
-    ...SHADOWS.md,
-  },
-  nearestTopRow: {
+  // Banners
+  pausedBanner: {
+    position: 'absolute',
+    top: 110,
+    left: SPACING.xl,
+    right: 80,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    backgroundColor: c.warning,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.sm,
+    zIndex: 60,
   },
-  nearestBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: COLORS.primary,
-    paddingVertical: 3,
-    paddingHorizontal: SPACING.sm,
+  pausedText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: c.background,
+  },
+  autoPausedBanner: {
+    position: 'absolute',
+    top: 110,
+    left: SPACING.xl,
+    right: 80,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    backgroundColor: c.card,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.sm,
+    borderWidth: 1,
+    borderColor: c.divider,
+    zIndex: 60,
+    ...SHADOWS.sm,
+  },
+  autoPausedText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: c.textSecondary,
+  },
+  goalReachedBanner: {
+    position: 'absolute',
+    top: 150,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: c.success,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xl,
     borderRadius: BORDER_RADIUS.full,
+    zIndex: 60,
+    ...SHADOWS.md,
   },
-  nearestBadgeText: {
+  goalReachedText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '800',
+    color: COLORS.white,
+  },
+  loopBanner: {
+    position: 'absolute',
+    top: 150,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: c.success,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: BORDER_RADIUS.full,
+    zIndex: 60,
+  },
+  loopBannerText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  approachBanner: {
+    position: 'absolute',
+    top: 150,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: c.card,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: BORDER_RADIUS.full,
+    borderWidth: 1,
+    borderColor: c.primary,
+    zIndex: 60,
+  },
+  approachBannerText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: c.text,
+    fontVariant: ['tabular-nums'] as const,
+  },
+
+  // Course nav row — horizontal chips below progress bar in panel
+  courseNavRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  navStripOffCourse: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: c.error,
+    paddingVertical: 6,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+  },
+  navStripOffCourseText: {
     fontSize: FONT_SIZES.xs,
     fontWeight: '700',
     color: COLORS.white,
   },
-  liveIndicator: {
+  navStripTurn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
+    backgroundColor: c.primary,
+    paddingVertical: 6,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
   },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: COLORS.accent,
+  navStripTurnText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '700',
+    color: COLORS.white,
   },
-  liveText: {
+  navStripProgress: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: c.card,
+    paddingVertical: 4,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.full,
+    ...SHADOWS.sm,
+  },
+  navStripProgressText: {
     fontSize: FONT_SIZES.xs,
     fontWeight: '600',
-    color: COLORS.accent,
+    color: c.textSecondary,
   },
-  nearestTitle: {
-    fontSize: FONT_SIZES.lg,
+  navStripCheckpoint: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: COLORS.success,
+    paddingVertical: 6,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+  },
+  navStripCheckpointText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+
+  // -- Bottom running panel --
+  runPanel: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: c.card,
+    borderTopLeftRadius: BORDER_RADIUS.xl,
+    borderTopRightRadius: BORDER_RADIUS.xl,
+    paddingTop: SPACING.lg,
+    paddingBottom: Platform.OS === 'ios' ? 24 : SPACING.lg,
+    paddingHorizontal: SPACING.xl,
+    ...SHADOWS.lg,
+    zIndex: 60,
+  },
+  runHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  runHeroValue: {
+    fontSize: 56,
+    fontWeight: '900',
+    color: c.text,
+    fontVariant: ['tabular-nums'],
+    lineHeight: 64,
+  },
+  runHeroUnit: {
+    fontSize: FONT_SIZES.xxl,
+    fontWeight: '700',
+    color: c.textSecondary,
+  },
+
+  // Goal progress
+  goalProgressContainer: {
+    marginTop: SPACING.sm,
+    gap: 4,
+  },
+  goalProgressBarTrack: {
+    height: 6,
+    backgroundColor: c.surfaceLight,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  goalProgressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  goalProgressLabel: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '600',
+    color: c.textSecondary,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
+
+  // Metrics grid
+  runMetricsGrid: {
+    backgroundColor: c.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xs,
+    marginTop: SPACING.md,
+  },
+  runMetricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+  },
+  runMetricRowDivider: {
+    height: 1,
+    backgroundColor: c.divider,
+    marginHorizontal: SPACING.md,
+  },
+  runMetricCell: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  runMetricLabel: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '500',
+    color: c.textSecondary,
+  },
+  runMetricValue: {
+    fontSize: 20,
     fontWeight: '800',
     color: c.text,
+    fontVariant: ['tabular-nums'],
   },
-  nearestStats: {
+  runMetricDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: c.divider,
+  },
+
+  // Controls
+  runControls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: SPACING.xxl,
+    marginTop: SPACING.lg,
+    minHeight: 90,
+  },
+  runPauseBtn: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: c.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  runPauseBtnLabel: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textSecondary,
+    fontWeight: '600',
+  },
+  runResumeBtn: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: c.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    shadowColor: c.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  runResumeBtnLabel: {
+    fontSize: FONT_SIZES.xs,
+    color: c.white,
+    fontWeight: '700',
+  },
+  runStopBtn: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: c.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    shadowColor: c.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  runStopBtnLabel: {
+    fontSize: FONT_SIZES.xs,
+    color: c.white,
+    fontWeight: '700',
+  },
+
+  // Screen lock
+  lockBtn: {
+    position: 'absolute',
+    top: SPACING.md,
+    right: SPACING.md,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: c.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  lockOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+    zIndex: 200,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  lockUnlockArea: {
+    marginBottom: 140,
+  },
+  lockUnlockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    overflow: 'hidden',
+  },
+  lockUnlockProgress: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: c.primary,
+    borderRadius: 22,
+  },
+  lockUnlockText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '600' as const,
+    color: 'rgba(255,255,255,0.9)',
+  },
+
+  // ============================================================
+  // RESULT SUMMARY (completed phase)
+  // ============================================================
+  resultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.xs,
+  },
+  resultTitle: {
+    fontSize: FONT_SIZES.xxl,
+    fontWeight: '900',
+    color: c.text,
+  },
+  resultUploadStatus: {
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+  },
+  resultUploadText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '500',
+    color: c.textTertiary,
+  },
+  resultActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    marginTop: SPACING.lg,
+    minHeight: 90,
+  },
+  resultCourseBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    paddingVertical: 14,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.primary,
+  },
+  resultCourseBtnText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: c.primary,
+  },
+  resultCloseBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: c.primary,
+  },
+  resultCloseBtnText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  // Navigate-to-start floating card
+  navFloatingCard: {
+    position: 'absolute',
+    bottom: 100,
+    left: SPACING.lg,
+    right: SPACING.lg,
+    backgroundColor: c.card,
+    borderRadius: BORDER_RADIUS.xl,
+    padding: SPACING.lg,
+    ...SHADOWS.lg,
+    zIndex: 70,
+  },
+  navFloatingTop: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
   },
-  nearestDistance: {
+  navFloatingTitle: {
     fontSize: FONT_SIZES.md,
     fontWeight: '700',
     color: c.text,
-    fontVariant: ['tabular-nums'],
+    flex: 1,
   },
-  nearestDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: c.textTertiary,
+  navFloatingBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.lg,
+    marginTop: SPACING.md,
+    paddingVertical: SPACING.sm,
   },
-  nearestRuns: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '500',
-    color: c.textTertiary,
+  navFloatingDistance: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: c.text,
+    fontVariant: ['tabular-nums'] as any,
   },
-  nearestRating: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: COLORS.warning,
-    marginLeft: 2,
+  navFloatingActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
   },
-
+  navFloatingStartBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+  },
+  navFloatingStartText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+  },
+  navFloatingCancelBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: c.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
+

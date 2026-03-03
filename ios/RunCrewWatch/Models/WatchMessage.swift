@@ -49,4 +49,19 @@ struct WatchMessageKeys {
     static let navIsOffCourse = "navIsOffCourse"
     static let navNextTurnDirection = "navNextTurnDirection"
     static let navDistanceToNextTurn = "navDistanceToNextTurn"
+    static let isAutoPaused = "isAutoPaused"
+
+    // Navigate to start
+    static let navToStartBearing = "navToStartBearing"
+    static let navToStartDistance = "navToStartDistance"
+    static let navToStartReady = "navToStartReady"
+
+    // Checkpoint progress
+    static let cpPassed = "cpPassed"
+    static let cpTotal = "cpTotal"
+    static let cpJustPassed = "cpJustPassed"
+
+    // Countdown sync
+    static let countdownStartedAt = "countdownStartedAt"
+    static let countdownTotal = "countdownTotal"
 }

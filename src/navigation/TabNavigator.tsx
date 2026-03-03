@@ -3,11 +3,12 @@ import { StyleSheet, View, Text, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
 import type { MainTabParamList } from '../types/navigation';
 import WorldStack from './WorldStack';
 import HomeStack from './HomeStack';
 import CourseStack from './CourseStack';
-import RunningStack from './RunningStack';
+import CommunityStack from './CommunityStack';
 import MyPageStack from './MyPageStack';
 import { COLORS, FONT_SIZES } from '../utils/constants';
 import { useTheme } from '../hooks/useTheme';
@@ -41,6 +42,7 @@ function TabIcon({ label, iconName, iconNameFocused, focused, colors }: TabIconP
           styles.tabLabel,
           { color: focused ? active : inactive },
         ]}
+        numberOfLines={1}
       >
         {label}
       </Text>
@@ -48,7 +50,7 @@ function TabIcon({ label, iconName, iconNameFocused, focused, colors }: TabIconP
   );
 }
 
-function WorldTabIcon({ focused, colors }: { focused: boolean; colors: ThemeColors }) {
+function WorldTabIcon({ focused, colors, label }: { focused: boolean; colors: ThemeColors; label: string }) {
   return (
     <View style={styles.worldTabWrapper}>
       <View
@@ -71,7 +73,7 @@ function WorldTabIcon({ focused, colors }: { focused: boolean; colors: ThemeColo
           { color: focused ? colors.text : colors.textTertiary },
         ]}
       >
-        월드
+        {label}
       </Text>
     </View>
   );
@@ -79,8 +81,9 @@ function WorldTabIcon({ focused, colors }: { focused: boolean; colors: ThemeColo
 
 export default function TabNavigator() {
   const colors = useTheme();
+  const { t } = useTranslation();
 
-  // Global: listen for Watch-initiated run start and navigate to RunningTab
+  // Global: listen for Watch-initiated run start and navigate to WorldTab
   useWatchStartListener();
   // Global: listen for standalone Watch run completion and sync to server
   useWatchRunSync();
@@ -116,7 +119,7 @@ export default function TabNavigator() {
         options={{
           tabBarIcon: ({ focused }) => (
             <TabIcon
-              label="홈"
+              label={t('tabs.home')}
               iconName="home-outline"
               iconNameFocused="home"
               focused={focused}
@@ -131,7 +134,7 @@ export default function TabNavigator() {
         options={{
           tabBarIcon: ({ focused }) => (
             <TabIcon
-              label="코스"
+              label={t('tabs.course')}
               iconName="map-outline"
               iconNameFocused="map"
               focused={focused}
@@ -144,18 +147,18 @@ export default function TabNavigator() {
         name="WorldTab"
         component={WorldStack}
         options={{
-          tabBarIcon: ({ focused }) => <WorldTabIcon focused={focused} colors={colors} />,
+          tabBarIcon: ({ focused }) => <WorldTabIcon focused={focused} colors={colors} label={t('tabs.world')} />,
         }}
       />
       <Tab.Screen
-        name="RunningTab"
-        component={RunningStack}
+        name="CommunityTab"
+        component={CommunityStack}
         options={{
           tabBarIcon: ({ focused }) => (
             <TabIcon
-              label="러닝"
-              iconName="footsteps-outline"
-              iconNameFocused="footsteps"
+              label={t('tabs.social')}
+              iconName="chatbubbles-outline"
+              iconNameFocused="chatbubbles"
               focused={focused}
               colors={colors}
             />
@@ -168,7 +171,7 @@ export default function TabNavigator() {
         options={{
           tabBarIcon: ({ focused }) => (
             <TabIcon
-              label="마이"
+              label={t('tabs.my')}
               iconName="person-outline"
               iconNameFocused="person"
               focused={focused}

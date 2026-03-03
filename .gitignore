@@ -51,3 +51,14 @@ backend/uploads/
 
 # uv
 backend/uv.lock
+
+# Build artifacts
+*.tar.gz
+RunCrew.app/
+ios/build2/
+
+# Android build
+android/app/build/
+
+# Proxy
+proxy.py

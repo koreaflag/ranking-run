@@ -10,6 +10,7 @@ class RankingUserInfo(BaseModel):
     id: str
     nickname: str | None
     avatar_url: str | None
+    crew_name: str | None = None
 
 
 class RankingEntry(BaseModel):

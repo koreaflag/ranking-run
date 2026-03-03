@@ -10,7 +10,10 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
+import type { MyPageStackParamList } from '../../types/navigation';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useTheme } from '../../hooks/useTheme';
@@ -20,24 +23,27 @@ import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 
 export default function SettingsScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<MyPageStackParamList>>();
   const colors = useTheme();
+  const { t } = useTranslation();
   const { logout } = useAuthStore();
   const {
     darkMode,
     setDarkMode,
     voiceGuidance,
     setVoiceGuidance,
+    autoPause,
+    setAutoPause,
     map3DStyle,
     setMap3DStyle,
   } = useSettingsStore();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const handleLogout = () => {
-    Alert.alert('로그아웃', '정말 로그아웃하시겠습니까?', [
-      { text: '취소', style: 'cancel' },
+    Alert.alert(t('settings.logout'), t('settings.logoutMsg'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: '로그아웃',
+        text: t('settings.logout'),
         style: 'destructive',
         onPress: () => logout(),
       },
@@ -46,12 +52,12 @@ export default function SettingsScreen() {
 
   const handleDeleteAccount = () => {
     Alert.alert(
-      '회원 탈퇴',
-      '탈퇴 시 모든 러닝 기록, 코스, 프로필 정보가\n영구적으로 삭제되며 복구할 수 없습니다.',
+      t('settings.deleteAccount'),
+      t('settings.deleteAccountMsg'),
       [
-        { text: '취소', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: '탈퇴',
+          text: t('settings.withdraw'),
           style: 'destructive',
           onPress: () => {
             // TODO: 실제 회원 탈퇴 API 연동
@@ -66,7 +72,7 @@ export default function SettingsScreen() {
     <BlurredBackground>
       <SafeAreaView style={styles.container}>
         <ScreenHeader
-          title="설정"
+          title={t('settings.title')}
           onBack={() => navigation.goBack()}
         />
         <ScrollView
@@ -74,9 +80,35 @@ export default function SettingsScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
+          {/* Running Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('settings.running')}</Text>
+            <View style={styles.card}>
+              <View style={styles.toggleRow}>
+                <View style={styles.toggleLeft}>
+                  <View style={styles.iconCircle}>
+                    <Ionicons name="pause-circle-outline" size={20} color={colors.primary} />
+                  </View>
+                  <View style={styles.toggleInfo}>
+                    <Text style={styles.toggleLabel}>{t('settings.autoPause')}</Text>
+                    <Text style={styles.toggleDescription}>
+                      {autoPause ? t('settings.autoPauseOnDesc') : t('settings.autoPauseOffDesc')}
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={autoPause}
+                  onValueChange={setAutoPause}
+                  trackColor={{ false: '#D1D5DB', true: '#FF7A33' }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+            </View>
+          </View>
+
           {/* Appearance Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>앱 설정</Text>
+            <Text style={styles.sectionTitle}>{t('settings.appSettings')}</Text>
             <View style={styles.card}>
               <View style={styles.toggleRow}>
                 <View style={styles.toggleLeft}>
@@ -84,9 +116,9 @@ export default function SettingsScreen() {
                     <Ionicons name="moon-outline" size={20} color={colors.primary} />
                   </View>
                   <View style={styles.toggleInfo}>
-                    <Text style={styles.toggleLabel}>다크 모드</Text>
+                    <Text style={styles.toggleLabel}>{t('settings.darkMode')}</Text>
                     <Text style={styles.toggleDescription}>
-                      {darkMode ? '어두운 테마 사용 중' : '밝은 테마 사용 중'}
+                      {darkMode ? t('settings.darkModeOnDesc') : t('settings.darkModeOffDesc')}
                     </Text>
                   </View>
                 </View>
@@ -106,9 +138,9 @@ export default function SettingsScreen() {
                     <Ionicons name="volume-high-outline" size={20} color={colors.primary} />
                   </View>
                   <View style={styles.toggleInfo}>
-                    <Text style={styles.toggleLabel}>음성 안내</Text>
+                    <Text style={styles.toggleLabel}>{t('settings.voiceGuidance')}</Text>
                     <Text style={styles.toggleDescription}>
-                      {voiceGuidance ? '코스 런닝 중 음성 안내 활성화' : '음성 안내 비활성화'}
+                      {voiceGuidance ? t('settings.voiceOnDesc') : t('settings.voiceOffDesc')}
                     </Text>
                   </View>
                 </View>
@@ -128,9 +160,9 @@ export default function SettingsScreen() {
                     <Ionicons name="map-outline" size={20} color={colors.primary} />
                   </View>
                   <View style={styles.toggleInfo}>
-                    <Text style={styles.toggleLabel}>3D 지도</Text>
+                    <Text style={styles.toggleLabel}>{t('settings.map3d')}</Text>
                     <Text style={styles.toggleDescription}>
-                      {map3DStyle ? '월드탭 3D 지도 사용 중' : '월드탭 2D 지도 사용 중'}
+                      {map3DStyle ? t('settings.map3dOnDesc') : t('settings.map3dOffDesc')}
                     </Text>
                   </View>
                 </View>
@@ -144,9 +176,45 @@ export default function SettingsScreen() {
             </View>
           </View>
 
+          {/* Legal Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('settings.legal')}</Text>
+            <View style={styles.card}>
+              <TouchableOpacity
+                style={styles.actionRow}
+                onPress={() => navigation.navigate('TermsOfService')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.toggleLeft}>
+                  <View style={styles.iconCircle}>
+                    <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+                  </View>
+                  <Text style={styles.actionLabel}>{t('settings.termsOfService')}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+              </TouchableOpacity>
+
+              <View style={styles.divider} />
+
+              <TouchableOpacity
+                style={styles.actionRow}
+                onPress={() => navigation.navigate('PrivacyPolicy')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.toggleLeft}>
+                  <View style={styles.iconCircle}>
+                    <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
+                  </View>
+                  <Text style={styles.actionLabel}>{t('settings.privacyPolicy')}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
           {/* Account Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>계정</Text>
+            <Text style={styles.sectionTitle}>{t('settings.account')}</Text>
             <View style={styles.card}>
               <TouchableOpacity
                 style={styles.actionRow}
@@ -157,7 +225,7 @@ export default function SettingsScreen() {
                   <View style={styles.iconCircle}>
                     <Ionicons name="log-out-outline" size={20} color={colors.textSecondary} />
                   </View>
-                  <Text style={styles.actionLabel}>로그아웃</Text>
+                  <Text style={styles.actionLabel}>{t('settings.logout')}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
               </TouchableOpacity>
@@ -173,7 +241,7 @@ export default function SettingsScreen() {
                   <View style={[styles.iconCircle, styles.dangerIconCircle]}>
                     <Ionicons name="person-remove-outline" size={20} color={colors.error} />
                   </View>
-                  <Text style={styles.dangerLabel}>회원 탈퇴</Text>
+                  <Text style={styles.dangerLabel}>{t('settings.deleteAccount')}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
               </TouchableOpacity>

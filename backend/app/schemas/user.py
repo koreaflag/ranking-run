@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 class UserResponse(BaseModel):
     """Full user profile response."""
     id: str
+    user_code: str
     email: str | None
     nickname: str | None
     avatar_url: str | None
@@ -18,6 +19,7 @@ class UserResponse(BaseModel):
     instagram_username: str | None = None
     activity_region: str | None = None
     country: str | None = None
+    crew_name: str | None = None
     total_distance_meters: int
     total_runs: int
     created_at: datetime
@@ -97,6 +99,7 @@ class PublicProfileResponse(BaseModel):
     bio: str | None = None
     instagram_username: str | None = None
     activity_region: str | None = None
+    crew_name: str | None = None
     total_distance_meters: int
     total_runs: int
     created_at: datetime
@@ -161,3 +164,17 @@ class WeeklyStats(BaseModel):
     run_count: int = 0
     avg_pace_seconds_per_km: int | None = None
     compared_to_last_week_percent: float = 0.0
+
+
+class ConsentRequest(BaseModel):
+    """User consent submission."""
+    terms: bool
+    privacy: bool
+    location: bool
+    contacts: bool = False
+    marketing: bool = False
+
+
+class ConsentResponse(BaseModel):
+    """Consent save result."""
+    status: str = "ok"

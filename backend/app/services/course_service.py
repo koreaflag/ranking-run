@@ -1,6 +1,7 @@
 """Course service: CRUD operations, spatial queries (PostGIS), and course management."""
 
 import logging
+import math
 from urllib.parse import quote
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundError, PermissionDeniedError
 from app.models.course import Course, CourseStats
+from app.models.like import CourseLike
 from app.models.review import Review
 from app.models.run_record import RunRecord
 from app.models.run_session import RunSession
@@ -22,6 +24,45 @@ from app.models.user import User
 from app.services.map_matching_service import MapMatchingService
 
 logger = logging.getLogger(__name__)
+
+
+def get_route_preview(course: "Course", max_points: int = 50) -> list[list[float]] | None:
+    """Return a simplified route preview as [[lng, lat], ...] for thumbnail map rendering.
+
+    Uses Douglas-Peucker simplification to reduce GPS noise while keeping shape.
+    """
+    if course.route_geometry is None:
+        return None
+
+    shapely_geom = to_shape(course.route_geometry)
+    coords = list(shapely_geom.coords)
+    if len(coords) < 2:
+        return None
+
+    # Remove consecutive near-duplicate points (GPS stutter)
+    deduped = [coords[0]]
+    for c in coords[1:]:
+        prev = deduped[-1]
+        if abs(c[0] - prev[0]) < 0.00001 and abs(c[1] - prev[1]) < 0.00001:
+            continue
+        deduped.append(c)
+    if len(deduped) < 2:
+        return None
+
+    # Douglas-Peucker simplification (~10m tolerance)
+    line = LineString([(c[0], c[1]) for c in deduped])
+    smoothed = line.simplify(0.0001, preserve_topology=True)
+    simplified = list(smoothed.coords)
+
+    # Further limit if still too many
+    if len(simplified) > max_points:
+        step = max(1, len(simplified) // max_points)
+        reduced = simplified[::step]
+        if reduced[-1] != simplified[-1]:
+            reduced.append(simplified[-1])
+        simplified = reduced
+
+    return [[round(c[0], 6), round(c[1], 6)] for c in simplified]
 
 
 def get_thumbnail_url_for_course(course: "Course") -> str | None:
@@ -48,9 +89,9 @@ def get_thumbnail_url_for_course(course: "Course") -> str | None:
 def generate_thumbnail_url(route_geometry: dict, access_token: str) -> str | None:
     """Generate a Mapbox Static Images URL from route geometry.
 
-    Simplifies the route to at most 50 coordinate pairs to stay within
-    URL length limits, then builds a Mapbox Static Images API URL with
-    the route drawn as a colored path overlay.
+    1. Removes consecutive duplicate coordinates (GPS stutter)
+    2. Applies Douglas-Peucker simplification (~10m tolerance) to smooth noise
+    3. Limits to 80 points max for URL length constraints
     """
     if not access_token or not route_geometry:
         return None
@@ -59,22 +100,135 @@ def generate_thumbnail_url(route_geometry: dict, access_token: str) -> str | Non
     if len(coords) < 2:
         return None
 
-    # Simplify to max 50 points for URL length limit
-    step = max(1, len(coords) // 50)
-    simplified = coords[::step]
-    if simplified[-1] != coords[-1]:
-        simplified.append(coords[-1])
+    # Step 1: Remove consecutive duplicate/near-duplicate points
+    deduped = [coords[0]]
+    for c in coords[1:]:
+        prev = deduped[-1]
+        # Skip if essentially the same point (< ~1m)
+        if abs(c[0] - prev[0]) < 0.00001 and abs(c[1] - prev[1]) < 0.00001:
+            continue
+        deduped.append(c)
+    if len(deduped) < 2:
+        return None
+
+    # Step 2: Shapely Douglas-Peucker to smooth GPS noise
+    line = LineString([(c[0], c[1]) for c in deduped])
+    # ~10m tolerance for clean thumbnail appearance
+    smoothed = line.simplify(0.0001, preserve_topology=True)
+    simplified_coords = list(smoothed.coords)
+
+    # Step 3: Limit to 80 points for URL length
+    if len(simplified_coords) > 80:
+        step = max(1, len(simplified_coords) // 80)
+        reduced = simplified_coords[::step]
+        if reduced[-1] != simplified_coords[-1]:
+            reduced.append(simplified_coords[-1])
+        simplified_coords = reduced
+
+    if len(simplified_coords) < 2:
+        return None
 
     # Build polyline string: lng,lat;lng,lat;...
-    polyline_str = ";".join(f"{c[0]:.5f},{c[1]:.5f}" for c in simplified)
+    polyline_str = ";".join(f"{c[0]:.6f},{c[1]:.6f}" for c in simplified_coords)
 
-    # URL-encode the path
-    path = f"path-4+FF6B35-0.8({quote(polyline_str)})"
+    # URL-encode the path — thin line for clean rendering
+    path = f"path-2+FF6B35-0.9({quote(polyline_str)})"
 
     return (
         f"https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/"
-        f"{path}/auto/400x200@2x?access_token={access_token}&padding=30"
+        f"{path}/auto/600x300@2x?access_token={access_token}&padding=50"
     )
+
+
+def _haversine(coord1: list, coord2: list) -> float:
+    """Calculate distance in meters between two [lng, lat] coordinates using haversine formula."""
+    R = 6371000
+    lat1, lat2 = math.radians(coord1[1]), math.radians(coord2[1])
+    dlat = lat2 - lat1
+    dlng = math.radians(coord2[0] - coord1[0])
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlng / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+def _interpolate_along_line(coords: list, target_distance: float) -> list[float]:
+    """Return [lng, lat] coordinate at target_distance meters along the route."""
+    accumulated = 0.0
+    for i in range(len(coords) - 1):
+        seg_dist = _haversine(coords[i], coords[i + 1])
+        if accumulated + seg_dist >= target_distance:
+            fraction = (target_distance - accumulated) / seg_dist if seg_dist > 0 else 0
+            lng = coords[i][0] + fraction * (coords[i + 1][0] - coords[i][0])
+            lat = coords[i][1] + fraction * (coords[i + 1][1] - coords[i][1])
+            return [lng, lat]
+        accumulated += seg_dist
+    return coords[-1][:2]
+
+
+def _generate_checkpoints(route_coords: list, interval_meters: int = 500) -> list[dict]:
+    """Generate checkpoints along a route at fixed interval.
+
+    route_coords: [[lng, lat], [lng, lat], ...] or [[lng, lat, alt], ...]
+    Returns empty list for routes shorter than 1km.
+    Last intermediate checkpoint must be at least 200m from the finish.
+
+    Always includes start (order=0) and finish (last order) checkpoints.
+    """
+    if len(route_coords) < 2:
+        return []
+
+    # Calculate total route distance
+    total_distance = 0.0
+    for i in range(len(route_coords) - 1):
+        total_distance += _haversine(route_coords[i], route_coords[i + 1])
+
+    if total_distance < 1000:
+        return []
+
+    checkpoints = []
+
+    # Start checkpoint (order=0)
+    first = route_coords[0]
+    checkpoints.append({
+        "id": 1,
+        "order": 0,
+        "lat": first[1],
+        "lng": first[0],
+        "distance_from_start_meters": 0,
+    })
+
+    # Intermediate checkpoints (order=1..N)
+    cp_id = 2
+    order = 1
+    target = interval_meters
+
+    while target < total_distance:
+        # Skip if too close to finish (< 200m)
+        if total_distance - target < 200:
+            break
+
+        point = _interpolate_along_line(route_coords, target)
+        checkpoints.append({
+            "id": cp_id,
+            "order": order,
+            "lat": point[1],
+            "lng": point[0],
+            "distance_from_start_meters": int(target),
+        })
+        cp_id += 1
+        order += 1
+        target += interval_meters
+
+    # Finish checkpoint (last order)
+    last = route_coords[-1]
+    checkpoints.append({
+        "id": cp_id,
+        "order": order,
+        "lat": last[1],
+        "lng": last[0],
+        "distance_from_start_meters": int(total_distance),
+    })
+
+    return checkpoints
 
 
 class CourseService:
@@ -104,7 +258,8 @@ class CourseService:
                 RunRecord.user_id == user_id,
             )
         )
-        if result.scalar_one_or_none() is None:
+        source_run = result.scalar_one_or_none()
+        if source_run is None:
             raise NotFoundError(
                 code="NOT_FOUND",
                 message="Run record not found or not owned by you",
@@ -183,6 +338,29 @@ class CourseService:
             course.thumbnail_url = thumbnail_url
             await db.flush()
 
+        # Generate checkpoints (500m interval, skip if < 1km)
+        if len(coordinates) >= 2:
+            checkpoints = _generate_checkpoints(matched_coordinates, 500)
+            course.checkpoints = checkpoints if checkpoints else None
+            course.checkpoint_interval_meters = 500
+            await db.flush()
+
+        # Link the original run record to the new course so the creator's
+        # time appears on the leaderboard.  The run that "defined" the course
+        # is, by definition, a complete traversal of the route.
+        source_run.course_id = course.id
+        source_run.course_completed = True
+        await db.flush()
+
+        # Seed the course stats with the creator's run
+        stats.total_runs = 1
+        stats.unique_runners = 1
+        stats.best_duration_seconds = source_run.duration_seconds
+        stats.best_pace_seconds_per_km = source_run.avg_pace_seconds_per_km
+        stats.avg_duration_seconds = source_run.duration_seconds
+        stats.avg_pace_seconds_per_km = source_run.avg_pace_seconds_per_km
+        await db.flush()
+
         return course
 
     async def get_course_by_id(self, db: AsyncSession, course_id: UUID) -> Course | None:
@@ -211,6 +389,15 @@ class CourseService:
 
         route_geojson = self._wkb_to_geojson(course.route_geometry)
 
+        # Lazy backfill: generate checkpoints for existing courses that don't have them
+        checkpoints = course.checkpoints
+        if checkpoints is None and route_geojson and route_geojson.get("coordinates"):
+            checkpoints = _generate_checkpoints(route_geojson["coordinates"])
+            if checkpoints:
+                course.checkpoints = checkpoints
+                course.checkpoint_interval_meters = 500
+                await db.flush()
+
         return {
             "id": str(course.id),
             "title": course.title,
@@ -224,6 +411,7 @@ class CourseService:
             "is_public": course.is_public,
             "created_at": course.created_at,
             "creator": creator_info,
+            "checkpoints": checkpoints,
         }
 
     @staticmethod
@@ -265,6 +453,7 @@ class CourseService:
         order: str = "desc",
         page: int = 0,
         per_page: int = 20,
+        user_id: "UUID | None" = None,
     ) -> tuple[list[dict], int]:
         """List public courses with filtering, spatial queries, and pagination."""
         filters = [Course.is_public == True]
@@ -289,13 +478,48 @@ class CourseService:
         total_result = await db.execute(count_q)
         total_count = total_result.scalar() or 0
 
+        # Scalar subqueries for enriched data
+        like_count_sub = (
+            select(func.count(CourseLike.id))
+            .where(CourseLike.course_id == Course.id)
+            .correlate(Course)
+            .scalar_subquery()
+            .label("like_count")
+        )
+
+        active_runners_sub = (
+            select(func.count(RunSession.id))
+            .where(
+                RunSession.course_id == Course.id,
+                RunSession.status == "active",
+            )
+            .correlate(Course)
+            .scalar_subquery()
+            .label("active_runners")
+        )
+
+        extra_columns = [like_count_sub, active_runners_sub]
+
+        if user_id is not None:
+            my_best_sub = (
+                select(func.min(RunRecord.duration_seconds))
+                .where(
+                    RunRecord.user_id == user_id,
+                    RunRecord.course_id == Course.id,
+                )
+                .correlate(Course)
+                .scalar_subquery()
+                .label("my_best_duration_seconds")
+            )
+            extra_columns.append(my_best_sub)
+
         if has_spatial:
             user_point = func.ST_MakePoint(near_lng, near_lat)
             user_geog = func.cast(user_point, text("geography"))
             distance_col = func.ST_Distance(Course.start_point, user_geog).label("distance_from_user")
-            query = select(Course, distance_col).where(and_(*filters))
+            query = select(Course, distance_col, *extra_columns).where(and_(*filters))
         else:
-            query = select(Course).where(and_(*filters))
+            query = select(Course, *extra_columns).where(and_(*filters))
 
         # When searching, sort by relevance first (exact > starts with > contains)
         if search:
@@ -333,12 +557,21 @@ class CourseService:
 
         courses_data = []
         for row in rows:
+            # Row layout: Course, [distance_from_user], like_count, active_runners, [my_best]
+            idx = 0
+            course = row[idx]; idx += 1
+
             if has_spatial:
-                course = row[0]
-                distance_from_user = row[1]
+                distance_from_user = row[idx]; idx += 1
             else:
-                course = row[0]
                 distance_from_user = None
+
+            like_count = row[idx] or 0; idx += 1
+            active_runners = row[idx] or 0; idx += 1
+
+            my_best = None
+            if user_id is not None:
+                my_best = row[idx]; idx += 1
 
             creator_info = {
                 "id": str(course.creator.id) if course.creator else "",
@@ -358,6 +591,7 @@ class CourseService:
                 "id": str(course.id),
                 "title": course.title,
                 "thumbnail_url": get_thumbnail_url_for_course(course),
+                "route_preview": get_route_preview(course),
                 "distance_meters": course.distance_meters,
                 "estimated_duration_seconds": course.estimated_duration_seconds,
                 "elevation_gain_meters": course.elevation_gain_meters,
@@ -365,6 +599,9 @@ class CourseService:
                 "stats": stats_info,
                 "created_at": course.created_at,
                 "distance_from_user_meters": distance_from_user,
+                "like_count": like_count,
+                "active_runners": active_runners,
+                "my_best_duration_seconds": my_best,
             })
 
         return courses_data, total_count
@@ -405,7 +642,8 @@ class CourseService:
             nearby.append({
                 "id": str(course.id),
                 "title": course.title,
-                "thumbnail_url": course.thumbnail_url,
+                "thumbnail_url": get_thumbnail_url_for_course(course),
+                "route_preview": get_route_preview(course),
                 "distance_meters": course.distance_meters,
                 "estimated_duration_seconds": course.estimated_duration_seconds,
                 "total_runs": course.stats.total_runs if course.stats else 0,
@@ -434,7 +672,16 @@ class CourseService:
 
         seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
 
-        query = text("""
+        # Skip spatial filter when requesting the entire world
+        is_global = sw_lat <= -89 and sw_lng <= -179 and ne_lat >= 89 and ne_lng >= 179
+
+        spatial_clause = "" if is_global else """
+              AND ST_Intersects(
+                  c.start_point,
+                  ST_MakeEnvelope(:sw_lng, :sw_lat, :ne_lng, :ne_lat, 4326)::geography
+              )"""
+
+        query = text(f"""
             SELECT
                 c.id,
                 c.title,
@@ -463,10 +710,7 @@ class CourseService:
             ) act ON act.course_id = c.id
             LEFT JOIN users u ON u.id = c.creator_id
             WHERE c.is_public = true
-              AND ST_Intersects(
-                  c.start_point,
-                  ST_MakeEnvelope(:sw_lng, :sw_lat, :ne_lng, :ne_lat, 4326)::geography
-              )
+              {spatial_clause}
             LIMIT :limit
         """)
 

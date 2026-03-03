@@ -10,41 +10,54 @@ import { Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 import type { CourseNavigation } from './useCourseNavigation';
 import type { RunningPhase } from '../stores/runningStore';
-import { directionToKorean } from '../utils/navigationHelpers';
+import { getDirectionLabel } from '../utils/navigationHelpers';
+import i18n from '../i18n';
 
 /** Minimum gap between consecutive announcements to avoid spam. */
 const MIN_ANNOUNCEMENT_GAP_MS = 5000;
 
-/** Cached best Korean voice identifier */
-let cachedKoreanVoice: string | null = null;
+/** Cached best voice identifier per language */
+let cachedVoice: string | null = null;
+let cachedVoiceLang: string | null = null;
 let voiceSearchDone = false;
 
-/** Find the best available Korean voice (premium > enhanced > default) */
-async function getBestKoreanVoice(): Promise<string | undefined> {
-  if (voiceSearchDone) return cachedKoreanVoice ?? undefined;
+/** Map i18n language code to BCP 47 locale for TTS */
+function getTTSLocale(): string {
+  const localeMap: Record<string, string> = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP' };
+  return localeMap[i18n.language] ?? 'en-US';
+}
+
+/** Find the best available voice for the current language (premium > enhanced > default) */
+async function getBestVoice(): Promise<string | undefined> {
+  const lang = i18n.language;
+  if (voiceSearchDone && cachedVoiceLang === lang) return cachedVoice ?? undefined;
   voiceSearchDone = true;
+  cachedVoiceLang = lang;
 
   try {
+    const ttsLocale = getTTSLocale();
+    const langPrefix = lang; // e.g., 'ko', 'en', 'ja'
     const voices = await Speech.getAvailableVoicesAsync();
-    const koreanVoices = voices.filter(
-      (v) => v.language === 'ko-KR' || v.language.startsWith('ko'),
+    const matchedVoices = voices.filter(
+      (v) => v.language === ttsLocale || v.language.startsWith(langPrefix),
     );
 
-    if (koreanVoices.length === 0) return undefined;
+    if (matchedVoices.length === 0) { cachedVoice = null; return undefined; }
 
     // iOS: prefer premium > enhanced > compact
     if (Platform.OS === 'ios') {
-      const premium = koreanVoices.find((v) => v.identifier.includes('.premium.'));
-      if (premium) { cachedKoreanVoice = premium.identifier; return premium.identifier; }
+      const premium = matchedVoices.find((v) => v.identifier.includes('.premium.'));
+      if (premium) { cachedVoice = premium.identifier; return premium.identifier; }
 
-      const enhanced = koreanVoices.find((v) => v.identifier.includes('.enhanced.'));
-      if (enhanced) { cachedKoreanVoice = enhanced.identifier; return enhanced.identifier; }
+      const enhanced = matchedVoices.find((v) => v.identifier.includes('.enhanced.'));
+      if (enhanced) { cachedVoice = enhanced.identifier; return enhanced.identifier; }
     }
 
-    // Fallback: first available Korean voice
-    cachedKoreanVoice = koreanVoices[0].identifier;
-    return cachedKoreanVoice;
+    // Fallback: first available voice for the language
+    cachedVoice = matchedVoices[0].identifier;
+    return cachedVoice;
   } catch {
+    cachedVoice = null;
     return undefined;
   }
 }
@@ -72,7 +85,7 @@ export function useVoiceGuidance({
 
   // Pre-fetch best voice on mount
   useEffect(() => {
-    getBestKoreanVoice().then((id) => { voiceIdRef.current = id; });
+    getBestVoice().then((id) => { voiceIdRef.current = id; });
   }, []);
 
   // Stop speech when disabled or not running
@@ -100,9 +113,9 @@ export function useVoiceGuidance({
 
     // Priority 1: Off-course transitions
     if (navigation.isOffCourse && !wasOffCourseRef.current) {
-      announcement = '코스를 이탈했습니다. 코스로 돌아가세요';
+      announcement = i18n.t('voice.offCourse');
     } else if (!navigation.isOffCourse && wasOffCourseRef.current) {
-      announcement = '코스에 복귀했습니다';
+      announcement = i18n.t('voice.backOnCourse');
     }
     wasOffCourseRef.current = navigation.isOffCourse;
 
@@ -110,7 +123,7 @@ export function useVoiceGuidance({
     if (!announcement && navigation.distanceToNextTurn >= 0) {
       const dist = navigation.distanceToNextTurn;
       const turnIdx = navigation.currentTurnIndex + 1; // next turn
-      const dir = directionToKorean[navigation.nextTurnDirection];
+      const dir = getDirectionLabel(navigation.nextTurnDirection);
 
       // Reset threshold tracking when turn index changes
       if (turnIdx !== lastTurnIndexRef.current) {
@@ -119,13 +132,13 @@ export function useVoiceGuidance({
       }
 
       if (dist <= 20 && lastTurnThresholdRef.current < 20) {
-        announcement = `${dir}하세요`;
+        announcement = i18n.t('voice.turnNow', { direction: dir });
         lastTurnThresholdRef.current = 20;
       } else if (dist <= 100 && dist > 20 && lastTurnThresholdRef.current < 100) {
-        announcement = `100미터 앞에서 ${dir}`;
+        announcement = i18n.t('voice.turnIn100m', { direction: dir });
         lastTurnThresholdRef.current = 100;
       } else if (dist <= 200 && dist > 100 && lastTurnThresholdRef.current < 200) {
-        announcement = `200미터 앞에서 ${dir}`;
+        announcement = i18n.t('voice.turnIn200m', { direction: dir });
         lastTurnThresholdRef.current = 200;
       }
     }
@@ -134,7 +147,7 @@ export function useVoiceGuidance({
     if (!announcement) {
       const currentKm = Math.floor(distanceMeters / 1000);
       if (currentKm > lastMilestoneKmRef.current && currentKm > 0) {
-        announcement = `${currentKm}킬로미터 완료`;
+        announcement = i18n.t('voice.kmCompleted', { km: currentKm });
         lastMilestoneKmRef.current = currentKm;
       }
     }
@@ -142,7 +155,7 @@ export function useVoiceGuidance({
     if (announcement) {
       Speech.stop();
       Speech.speak(announcement, {
-        language: 'ko-KR',
+        language: getTTSLocale(),
         voice: voiceIdRef.current,
         rate: 1.0,
         pitch: 1.0,

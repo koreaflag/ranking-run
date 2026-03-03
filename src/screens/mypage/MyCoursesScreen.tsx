@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useCourseStore } from '../../stores/courseStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -47,6 +48,7 @@ function MyCourseCard({
   onDetail: (courseId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -84,7 +86,7 @@ function MyCourseCard({
                 course.is_public ? styles.badgePublicText : styles.badgePrivateText,
               ]}
             >
-              {course.is_public ? '공개' : '비공개'}
+              {course.is_public ? t('common.public') : t('common.private')}
             </Text>
           </View>
           <Ionicons
@@ -109,14 +111,14 @@ function MyCourseCard({
               <Text style={styles.statValue}>
                 {formatNumber(course.stats.total_runs)}
               </Text>
-              <Text style={styles.statLabel}>도전</Text>
+              <Text style={styles.statLabel}>{t('course.statChallenges')}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
                 {formatNumber(course.stats.unique_runners)}
               </Text>
-              <Text style={styles.statLabel}>러너</Text>
+              <Text style={styles.statLabel}>{t('course.statRunners')}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
@@ -125,7 +127,7 @@ function MyCourseCard({
                   ? formatPace(course.stats.avg_pace_seconds_per_km)
                   : '--'}
               </Text>
-              <Text style={styles.statLabel}>평균 페이스</Text>
+              <Text style={styles.statLabel}>{t('course.statAvgPace')}</Text>
             </View>
           </View>
 
@@ -137,7 +139,7 @@ function MyCourseCard({
               activeOpacity={0.7}
             >
               <Ionicons name="open-outline" size={14} color={colors.text} />
-              <Text style={styles.detailBtnText}>상세 보기</Text>
+              <Text style={styles.detailBtnText}>{t('common.seeMore')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.editBtn}
@@ -145,7 +147,7 @@ function MyCourseCard({
               activeOpacity={0.7}
             >
               <Ionicons name="pencil" size={14} color={colors.primary} />
-              <Text style={styles.editBtnText}>편집</Text>
+              <Text style={styles.editBtnText}>{t('common.edit')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -156,6 +158,7 @@ function MyCourseCard({
 
 export default function MyCoursesScreen() {
   const navigation = useNavigation<Nav>();
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { myCourses, isLoadingMyCourses, fetchMyCourses, updateMyCourse } = useCourseStore();
@@ -193,7 +196,7 @@ export default function MyCoursesScreen() {
   const handleSave = async () => {
     if (!editCourse) return;
     if (editTitle.trim().length < 1) {
-      Alert.alert('제목 확인', '코스 제목을 입력해 주세요.');
+      Alert.alert(t('course.detail.titleCheck'), t('course.detail.enterTitle'));
       return;
     }
     setIsSaving(true);
@@ -210,7 +213,7 @@ export default function MyCoursesScreen() {
       });
       setEditCourse(null);
     } catch {
-      Alert.alert('앗...!', '다시 시도해 주세요.');
+      Alert.alert(t('common.error'), t('common.errorRetry'));
     } finally {
       setIsSaving(false);
     }
@@ -232,7 +235,7 @@ export default function MyCoursesScreen() {
         >
           <Ionicons name="chevron-back" size={28} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>내 코스</Text>
+        <Text style={styles.headerTitle}>{t('courses.myCourses')}</Text>
         <View style={{ width: 28 }} />
       </View>
 
@@ -242,9 +245,9 @@ export default function MyCoursesScreen() {
         </View>
       ) : myCourses.length === 0 ? (
         <EmptyState
-          icon="🏁"
-          title="아직 만든 코스가 없습니다"
-          description="런닝 후 나만의 코스를 등록해 보세요!"
+          ionicon="flag-outline"
+          title={t('course.emptyMyCourses')}
+          description={t('course.emptyMyCoursesMsg')}
         />
       ) : (
         <FlatList
@@ -271,24 +274,24 @@ export default function MyCoursesScreen() {
             {/* Modal header */}
             <View style={styles.modalHeader}>
               <TouchableOpacity onPress={() => setEditCourse(null)}>
-                <Text style={styles.modalCancel}>취소</Text>
+                <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
               </TouchableOpacity>
-              <Text style={styles.modalTitle}>코스 편집</Text>
+              <Text style={styles.modalTitle}>{t('course.detail.editTitle')}</Text>
               <TouchableOpacity onPress={handleSave} disabled={isSaving}>
                 <Text style={[styles.modalSave, isSaving && { opacity: 0.4 }]}>
-                  저장
+                  {t('common.save')}
                 </Text>
               </TouchableOpacity>
             </View>
 
             {/* Title */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>제목</Text>
+              <Text style={styles.fieldLabel}>{t('course.detail.fieldTitle')}</Text>
               <TextInput
                 style={styles.fieldInput}
                 value={editTitle}
                 onChangeText={setEditTitle}
-                placeholder="코스 이름"
+                placeholder={t('course.detail.fieldTitlePlaceholder')}
                 placeholderTextColor={colors.textTertiary}
                 maxLength={50}
               />
@@ -296,12 +299,12 @@ export default function MyCoursesScreen() {
 
             {/* Description */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>설명</Text>
+              <Text style={styles.fieldLabel}>{t('course.detail.fieldDescription')}</Text>
               <TextInput
                 style={[styles.fieldInput, styles.fieldTextArea]}
                 value={editDescription}
                 onChangeText={setEditDescription}
-                placeholder="코스에 대한 간단한 설명"
+                placeholder={t('course.detail.fieldDescPlaceholder')}
                 placeholderTextColor={colors.textTertiary}
                 multiline
                 maxLength={200}
@@ -312,7 +315,7 @@ export default function MyCoursesScreen() {
             {/* Course type (loop courses only) */}
             {editCourse?.course_type === 'loop' && (
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>코스 유형</Text>
+                <Text style={styles.fieldLabel}>{t('course.detail.courseType')}</Text>
                 <View style={styles.courseTypeRow}>
                   <TouchableOpacity
                     style={[
@@ -333,7 +336,7 @@ export default function MyCoursesScreen() {
                         editCourseType === 'normal' && styles.courseTypeBtnTextActive,
                       ]}
                     >
-                      편도
+                      {t('course.detail.oneWay')}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -355,14 +358,14 @@ export default function MyCoursesScreen() {
                         editCourseType === 'loop' && styles.courseTypeBtnTextActive,
                       ]}
                     >
-                      왕복
+                      {t('course.detail.roundTrip')}
                     </Text>
                   </TouchableOpacity>
                 </View>
 
                 {editCourseType === 'loop' && (
                   <View style={styles.lapCountRow}>
-                    <Text style={styles.lapCountLabel}>랩 수</Text>
+                    <Text style={styles.lapCountLabel}>{t('course.detail.lapCount')}</Text>
                     <View style={styles.lapCountControls}>
                       <TouchableOpacity
                         style={[styles.lapCountBtn, editLapCount <= 1 && styles.lapCountBtnDisabled]}
@@ -389,9 +392,9 @@ export default function MyCoursesScreen() {
             {/* Public toggle */}
             <View style={styles.toggleRow}>
               <View>
-                <Text style={styles.toggleLabel}>공개</Text>
+                <Text style={styles.toggleLabel}>{t('course.detail.publicLabel')}</Text>
                 <Text style={styles.toggleDescription}>
-                  다른 러너가 이 코스에 도전할 수 있습니다
+                  {t('course.detail.publicHint')}
                 </Text>
               </View>
               <Switch

@@ -1,11 +1,9 @@
 import { useEffect } from 'react';
 import { NativeModules, NativeEventEmitter, Platform, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import type { NavigationProp } from '@react-navigation/native';
 import { runService } from '../services/runService';
 import { useRunningStore } from '../stores/runningStore';
 import { formatDistance, formatDuration } from '../utils/format';
-import type { MainTabParamList } from '../types/navigation';
+import i18n from '../i18n';
 
 const { WatchBridgeModule } = NativeModules;
 const STANDALONE_RUN_EVENT = 'Watch_onStandaloneRun';
@@ -37,8 +35,6 @@ interface WatchRunData {
  * Place in a component that's always mounted (e.g., TabNavigator).
  */
 export function useWatchRunSync() {
-  const navigation = useNavigation<NavigationProp<MainTabParamList>>();
-
   useEffect(() => {
     if (Platform.OS !== 'ios' || !WatchBridgeModule) return;
 
@@ -67,13 +63,14 @@ export function useWatchRunSync() {
         console.log('[WatchRunSync] Session created:', session.session_id);
 
         // 2. Build route geometry from watch GPS points
-        const coordinates = (data.routePoints || []).map((p) => [p.lng, p.lat, p.alt]);
+        const coordinates: [number, number, number][] = (data.routePoints || []).map((p) => [p.lng, p.lat, p.alt ?? 0] as [number, number, number]);
         const routeGeometry = {
           type: 'LineString' as const,
-          coordinates: coordinates.length >= 2 ? coordinates : [[0, 0], [0, 0]],
+          coordinates: coordinates.length >= 2 ? coordinates : [[0, 0, 0], [0, 0, 0]] as [number, number, number][],
         };
 
         // 3. Build raw GPS points for chunk upload
+        // Watch sends timestamps in seconds (timeIntervalSince1970), backend expects milliseconds int
         const rawPoints = (data.routePoints || []).map((p) => ({
           lat: p.lat,
           lng: p.lng,
@@ -81,7 +78,7 @@ export function useWatchRunSync() {
           speed: p.speed ?? 0,
           bearing: 0,
           accuracy: p.accuracy ?? 10,
-          timestamp: p.timestamp,
+          timestamp: Math.round(p.timestamp * 1000),
         }));
 
         // 4. Upload single chunk with all points
@@ -93,17 +90,17 @@ export function useWatchRunSync() {
             raw_gps_points: rawPoints,
             chunk_summary: {
               distance_meters: data.distanceMeters,
-              duration_seconds: data.durationSeconds,
-              avg_pace_seconds_per_km: data.avgPace,
+              duration_seconds: Math.round(data.durationSeconds),
+              avg_pace_seconds_per_km: Math.round(data.avgPace),
               elevation_change_meters: 0,
               point_count: rawPoints.length,
-              start_timestamp: data.startedAt,
-              end_timestamp: data.finishedAt,
+              start_timestamp: Math.round(data.startedAt * 1000),
+              end_timestamp: Math.round(data.finishedAt * 1000),
             },
             cumulative: {
               total_distance_meters: data.distanceMeters,
-              total_duration_seconds: data.durationSeconds,
-              avg_pace_seconds_per_km: data.avgPace,
+              total_duration_seconds: Math.round(data.durationSeconds),
+              avg_pace_seconds_per_km: Math.round(data.avgPace),
             },
             completed_splits: [],
             pause_intervals: [],
@@ -112,16 +109,18 @@ export function useWatchRunSync() {
         }
 
         // 5. Complete the run
-        const avgSpeedMs = data.durationSeconds > 0
-          ? data.distanceMeters / data.durationSeconds
+        const distanceInt = Math.round(data.distanceMeters);
+        const durationInt = Math.round(data.durationSeconds);
+        const avgSpeedMs = durationInt > 0
+          ? data.distanceMeters / durationInt
           : 0;
 
         await runService.completeRun(session.session_id, {
-          distance_meters: data.distanceMeters,
-          duration_seconds: data.durationSeconds,
-          total_elapsed_seconds: data.durationSeconds,
-          avg_pace_seconds_per_km: data.avgPace,
-          best_pace_seconds_per_km: data.avgPace,
+          distance_meters: distanceInt,
+          duration_seconds: durationInt,
+          total_elapsed_seconds: durationInt,
+          avg_pace_seconds_per_km: Math.round(data.avgPace),
+          best_pace_seconds_per_km: Math.round(data.avgPace),
           avg_speed_ms: avgSpeedMs,
           max_speed_ms: avgSpeedMs,
           calories: null,
@@ -149,13 +148,14 @@ export function useWatchRunSync() {
         if (phase === 'running' || phase === 'paused') {
           // User is mid-run on phone — just show alert, don't navigate
           Alert.alert(
-            'Apple Watch 러닝 저장 완료',
+            i18n.t('watch.runSaved'),
             `${formatDistance(data.distanceMeters)} · ${formatDuration(data.durationSeconds)}`,
           );
           return;
         }
 
-        // 7. Populate running store with watch data for RunResult display
+        // 7. Populate running store with watch data — WorldScreen inline panel
+        //    will display the completion summary automatically when phase='completed'
         const routePoints = (data.routePoints || []).map((p) => ({
           latitude: p.lat,
           longitude: p.lng,
@@ -178,20 +178,14 @@ export function useWatchRunSync() {
           cadence: 0,
           stopLocation: routePoints.length > 0 ? routePoints[routePoints.length - 1] : null,
         });
-
-        // 8. Navigate to RunResult screen
-        navigation.navigate('RunningTab', {
-          screen: 'RunResult',
-          params: { sessionId: session.session_id, alreadyCompleted: true },
-        } as any);
       } catch (error) {
         console.warn('[WatchRunSync] Failed to save watch run:', error);
-        Alert.alert('워치 러닝 저장 실패', '네트워크를 확인하고 다시 시도해 주세요.');
+        Alert.alert(i18n.t('common.errorTitle'), i18n.t('watch.checkNetwork'));
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, [navigation]);
+  }, []);
 }

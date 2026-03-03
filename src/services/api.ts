@@ -56,7 +56,7 @@ async function request<T = unknown>(
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
     const response = await fetch(url, {
@@ -102,10 +102,15 @@ async function request<T = unknown>(
         });
 
         if (!refreshResponse.ok) {
-          await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
-          await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
+          const errorData = await refreshResponse.json().catch(() => null);
+          // Only clear tokens on definitive auth failures (400/401/403)
+          // NOT on server errors (5xx) or network issues
+          if (refreshResponse.status >= 400 && refreshResponse.status < 500) {
+            await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
+            await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
+          }
           processQueue(new Error('Refresh failed'), null);
-          throw new ApiError(refreshResponse.status, await refreshResponse.json().catch(() => null));
+          throw new ApiError(refreshResponse.status, errorData);
         }
 
         const { access_token, refresh_token: newRefreshToken } = await refreshResponse.json();

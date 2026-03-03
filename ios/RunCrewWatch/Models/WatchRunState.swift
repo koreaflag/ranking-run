@@ -13,6 +13,7 @@ struct WatchRunState {
     var cadence: Int = 0              // steps per minute
     var gpsStatus: String = "searching"
     var isMoving: Bool = false
+    var isAutoPaused: Bool = false
     var lastMilestoneKm: Int = 0
     var lastMilestoneSplitPace: Int = 0
 
@@ -26,4 +27,18 @@ struct WatchRunState {
     var navIsOffCourse: Bool = false
     var navNextTurnDirection: String = ""      // "slight-left"/"left"/"sharp-left"/etc. 8-way
     var navDistanceToNextTurn: Double = -1     // meters to next turn, -1 = none
+
+    // Navigate to start
+    var navToStartBearing: Double = -1    // bearing to start point (0-360, -1=none)
+    var navToStartDistance: Double = -1   // meters to start point (-1=none)
+    var navToStartReady: Bool = false     // arrived at start point?
+
+    // Checkpoint progress
+    var cpPassed: Int = 0                 // checkpoints passed
+    var cpTotal: Int = 0                  // total checkpoints
+    var cpJustPassed: Bool = false        // just passed a checkpoint (for haptic)
+
+    // Countdown sync (from phone)
+    var countdownStartedAt: Double = 0    // ms since epoch (JS Date.now())
+    var countdownTotal: Int = 3           // total countdown seconds
 }

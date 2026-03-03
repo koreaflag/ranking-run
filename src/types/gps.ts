@@ -28,6 +28,8 @@ export interface LocationUpdateEvent {
   distanceFromStart: number;
   isMoving: boolean;
   cadence?: number; // steps per minute
+  elevationGain?: number; // cumulative meters (barometer)
+  elevationLoss?: number; // cumulative meters (barometer)
 }
 
 export interface GPSStatusChangeEvent {

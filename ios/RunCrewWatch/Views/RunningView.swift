@@ -9,11 +9,22 @@ struct RunningView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Duration — top
-            Text(viewModel.formattedDuration())
-                .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                .foregroundColor(.gray)
-                .padding(.top, 2)
-                .accessibilityLabel("시간 \(viewModel.formattedDuration())")
+            ZStack {
+                Text(viewModel.formattedDuration())
+                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                    .foregroundColor(viewModel.state.isAutoPaused ? appOrange : .gray)
+                    .accessibilityLabel("시간 \(viewModel.formattedDuration())")
+
+                if viewModel.state.isAutoPaused {
+                    HStack(spacing: 2) {
+                        Spacer()
+                        Image(systemName: "pause.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(appOrange.opacity(0.8))
+                    }
+                }
+            }
+            .padding(.top, 2)
 
             divider
 

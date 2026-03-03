@@ -2,6 +2,8 @@
 // App-wide Constants
 // ============================================================
 
+import i18n from '../i18n';
+
 // API base URL — centralized in src/config/env.ts, re-exported for convenience
 export { API_BASE_URL } from '../config/env';
 
@@ -124,14 +126,10 @@ export const ANIMATION = {
   spring: { damping: 15, stiffness: 150 },
 } as const;
 
-/** Difficulty label mapping (Korean) */
-export const DIFFICULTY_LABELS: Record<DifficultyLevel, string> = {
-  easy: '입문',
-  normal: '보통',
-  hard: '도전',
-  expert: '고급',
-  legend: '전설',
-} as const;
+/** Returns a translated difficulty label for the given level. */
+export function getDifficultyLabel(level: DifficultyLevel): string {
+  return i18n.t(`difficulty.${level}`);
+}
 
 // Shadows (warm, subtle, premium)
 export const SHADOWS = {

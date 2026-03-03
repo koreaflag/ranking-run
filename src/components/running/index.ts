@@ -1,3 +1,8 @@
 export { default as PaceDisplay } from './PaceDisplay';
 export { default as DistanceDisplay } from './DistanceDisplay';
 export { default as Timer } from './Timer';
+export { default as RunStartOverlay } from './RunStartOverlay';
+export { default as RunGoalSheet } from './RunGoalSheet';
+export type { RunGoal } from './RunGoalSheet';
+export { default as RunningHUD } from './RunningHUD';
+export { default as RunSettingsSheet } from './RunSettingsSheet';

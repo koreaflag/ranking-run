@@ -34,6 +34,7 @@ export interface AuthResponse {
   expires_in: number;
   user: {
     id: string;
+    user_code?: string;
     email: string;
     nickname?: string;
     provider?: AuthProvider;
@@ -55,6 +56,7 @@ export interface RefreshResponse {
 
 export interface UserProfile {
   id: string;
+  user_code: string;
   email: string;
   nickname: string;
   avatar_url: string | null;
@@ -65,6 +67,7 @@ export interface UserProfile {
   instagram_username: string | null;
   country: string | null;
   activity_region?: string;
+  crew_name?: string | null;
   total_distance_meters: number;
   total_runs: number;
   created_at: string;
@@ -133,6 +136,46 @@ export interface WeeklySummary {
   compared_to_last_week_percent: number;
 }
 
+// ---- Analytics ----
+
+export interface WeeklyStatItem {
+  week_start: string;
+  distance_meters: number;
+  run_count: number;
+  duration_seconds: number;
+  avg_pace: number | null;
+}
+
+export interface PaceTrendItem {
+  date: string;
+  avg_pace: number;
+  distance_meters: number;
+}
+
+export interface ActivityDay {
+  date: string;
+  distance_meters: number;
+  run_count: number;
+}
+
+export interface BestEffortItem {
+  distance_label: string;
+  target_meters: number;
+  best_time_seconds: number | null;
+  best_pace: number | null;
+  achieved_date: string | null;
+  run_id: string | null;
+}
+
+export interface AnalyticsData {
+  weekly_stats: WeeklyStatItem[];
+  pace_trend: PaceTrendItem[];
+  activity_calendar: ActivityDay[];
+  best_efforts: BestEffortItem[];
+  weekly_goal_km: number;
+  weekly_current_km: number;
+}
+
 // ---- Courses ----
 
 export interface CourseCreator {
@@ -151,12 +194,15 @@ export interface CourseListItem {
   id: string;
   title: string;
   thumbnail_url: string | null;
+  route_preview: number[][] | null;
   distance_meters: number;
   estimated_duration_seconds: number;
   elevation_gain_meters: number;
   creator: CourseCreator;
   stats: CourseStats;
   like_count?: number;
+  my_best_duration_seconds?: number | null;
+  active_runners?: number;
   created_at: string;
   distance_from_user_meters?: number;
 }
@@ -182,6 +228,7 @@ export interface NearbyCourse {
   id: string;
   title: string;
   thumbnail_url: string | null;
+  route_preview: number[][] | null;
   distance_meters: number;
   estimated_duration_seconds: number;
   total_runs: number;
@@ -215,6 +262,14 @@ export interface GeoJSONLineString {
   coordinates: [number, number, number][]; // [lng, lat, alt]
 }
 
+export interface CourseCheckpoint {
+  id: number;
+  order: number;
+  lat: number;
+  lng: number;
+  distance_from_start_meters: number;
+}
+
 export interface CourseDetail {
   id: string;
   title: string;
@@ -228,6 +283,7 @@ export interface CourseDetail {
   is_public: boolean;
   created_at: string;
   creator: CourseCreator;
+  checkpoints?: CourseCheckpoint[] | null;
 }
 
 export interface CourseDetailStats {
@@ -286,6 +342,7 @@ export interface RankingUser {
   id: string;
   nickname: string;
   avatar_url: string | null;
+  crew_name?: string | null;
 }
 
 export interface RankingEntry {
@@ -411,6 +468,12 @@ export interface FilterConfig {
   outlier_accuracy_threshold: number;
 }
 
+export interface CheckpointPass {
+  checkpoint_id: number;
+  timestamp: number;
+  distance_from_checkpoint: number;
+}
+
 export interface CompleteRunRequest {
   distance_meters: number;
   duration_seconds: number;
@@ -431,6 +494,7 @@ export interface CompleteRunRequest {
   filter_config: FilterConfig;
   total_chunks: number;
   uploaded_chunk_sequences: number[];
+  checkpoint_passes?: CheckpointPass[];
 }
 
 export interface RunCompleteResponse {
@@ -479,6 +543,7 @@ export interface RunHistoryItem {
     title: string;
   } | null;
   device_model?: string | null;
+  route_preview?: number[][] | null;
 }
 
 export type RunHistoryResponse = PaginatedResponse<RunHistoryItem>;
@@ -497,9 +562,9 @@ export interface RunRecordDetail {
   calories: number | null;
   elevation_gain_meters: number;
   elevation_loss_meters: number;
-  route_geometry: GeoJSONLineString;
-  elevation_profile: number[];
-  splits: Split[];
+  route_geometry: GeoJSONLineString | null;
+  elevation_profile: number[] | null;
+  splits: Split[] | null;
   started_at: string;
   finished_at: string;
   course: {
@@ -510,7 +575,7 @@ export interface RunRecordDetail {
   course_completion?: {
     is_completed: boolean;
     route_match_percent: number;
-    ranking_at_time: number;
+    ranking_at_time: number | null;
   };
 }
 
@@ -603,6 +668,7 @@ export interface PublicProfile {
   bio: string | null;
   instagram_username: string | null;
   activity_region?: string;
+  crew_name?: string | null;
   total_distance_meters: number;
   total_runs: number;
   created_at: string;
@@ -621,6 +687,17 @@ export interface SocialCounts {
     followers_count: number;
     following_count: number;
     total_likes_received: number;
+}
+
+// ---- Live Running Friends ----
+
+export interface FriendRunning {
+  user_id: string;
+  nickname: string;
+  avatar_url: string | null;
+  session_start: string;
+  course_title: string | null;
+  course_id: string | null;
 }
 
 // ---- Activity Feed ----
@@ -645,6 +722,249 @@ export interface ActivityFeedItem {
 
 export interface ActivityFeedResponse {
     data: ActivityFeedItem[];
+}
+
+// ---- Follow List ----
+
+export interface FollowUserInfo {
+  id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+}
+
+export interface FollowListItem {
+  id: string;
+  user: FollowUserInfo;
+  created_at: string;
+}
+
+export interface FollowListResponse {
+  data: FollowListItem[];
+  total_count: number;
+}
+
+// ---- Events ----
+
+export type EventType = 'challenge' | 'crew' | 'event';
+
+export interface EventItem {
+  id: string;
+  title: string;
+  description: string | null;
+  event_type: EventType;
+  course_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  target_distance_meters: number | null;
+  target_runs: number | null;
+  badge_color: string;
+  badge_icon: string;
+  participant_count: number;
+  is_participating: boolean;
+  is_active: boolean;
+  center_lat: number | null;
+  center_lng: number | null;
+  recurring_schedule: string | null;
+  meeting_point: string | null;
+  creator_nickname: string | null;
+  my_progress_distance_meters: number | null;
+  my_progress_runs: number | null;
+}
+
+export interface EventListResponse {
+  data: EventItem[];
+  total_count: number;
+}
+
+export interface EventParticipantInfo {
+  event_id: string;
+  user_id: string;
+  progress_distance_meters: number;
+  progress_runs: number;
+  completed: boolean;
+  joined_at: string;
+}
+
+// ---- Crew Chat ----
+
+export interface CrewMessageItem {
+  id: string;
+  event_id: string;
+  user_id: string | null;
+  nickname: string | null;
+  avatar_url: string | null;
+  content: string;
+  message_type: 'text' | 'system' | 'image';
+  created_at: string;
+}
+
+export interface CrewMessageListResponse {
+  data: CrewMessageItem[];
+  has_more: boolean;
+}
+
+export interface CrewUnreadItem {
+  event_id: string;
+  title: string;
+  unread_count: number;
+}
+
+export interface CrewAllUnreadResponse {
+  crews: CrewUnreadItem[];
+}
+
+// ---- Crews ----
+
+export interface CrewOwnerInfo {
+  id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+}
+
+export interface CrewItem {
+  id: string;
+  name: string;
+  description: string | null;
+  logo_url: string | null;
+  cover_image_url: string | null;
+  region: string | null;
+  owner: CrewOwnerInfo;
+  member_count: number;
+  max_members: number | null;
+  is_public: boolean;
+  badge_color: string;
+  badge_icon: string;
+  recurring_schedule: string | null;
+  meeting_point: string | null;
+  requires_approval: boolean;
+  is_member: boolean;
+  my_role: string | null;
+  join_request_status: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CrewListResponse {
+  data: CrewItem[];
+  total_count: number;
+}
+
+export interface CrewMemberItem {
+  user_id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  role: string;
+  joined_at: string;
+}
+
+export interface CrewMemberListResponse {
+  data: CrewMemberItem[];
+  total_count: number;
+}
+
+export interface CrewCreateRequest {
+  name: string;
+  description?: string;
+  logo_url?: string;
+  cover_image_url?: string;
+  region?: string;
+  max_members?: number;
+  is_public?: boolean;
+  badge_color?: string;
+  badge_icon?: string;
+  recurring_schedule?: string;
+  meeting_point?: string;
+  requires_approval?: boolean;
+}
+
+// ---- Crew Join Requests ----
+
+export interface CrewJoinRequestUser {
+  id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+}
+
+export interface CrewJoinRequestItem {
+  id: string;
+  user: CrewJoinRequestUser;
+  message: string | null;
+  status: string;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export interface CrewJoinRequestListResponse {
+  data: CrewJoinRequestItem[];
+  total_count: number;
+}
+
+export interface MyJoinRequestStatus {
+  status: string | null;
+  request_id: string | null;
+}
+
+// ---- Announcements ----
+
+export interface AnnouncementItem {
+  id: string;
+  title: string;
+  content: string | null;
+  image_url: string | null;
+  link_type: string;
+  link_value: string | null;
+  priority: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  created_at: string;
+}
+
+export interface AnnouncementListResponse {
+  data: AnnouncementItem[];
+}
+
+// ---- Community Board ----
+
+export interface PostAuthor {
+  id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  crew_name?: string | null;
+}
+
+export type CommunityPostType = 'general' | 'crew_promo' | 'question';
+
+export interface CommunityPostItem {
+  id: string;
+  title: string;
+  content: string;
+  post_type: CommunityPostType;
+  event_id: string | null;
+  event_title: string | null;
+  crew_id: string | null;
+  image_url: string | null;
+  like_count: number;
+  comment_count: number;
+  is_liked: boolean;
+  author: PostAuthor;
+  created_at: string;
+}
+
+export interface CommunityPostListResponse {
+  data: CommunityPostItem[];
+  total_count: number;
+}
+
+export interface CommunityCommentItem {
+  id: string;
+  content: string;
+  author: PostAuthor;
+  created_at: string;
+}
+
+export interface CommunityCommentListResponse {
+  data: CommunityCommentItem[];
+  total_count: number;
 }
 
 // ---- Uploads ----
@@ -752,4 +1072,71 @@ export interface StravaSyncResponse {
   import_id: string;
   status: string;
   message: string;
+}
+
+// ---- User Code Search ----
+
+export interface UserSearchByCodeResult {
+  id: string;
+  user_code: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  total_distance_meters: number;
+  total_runs: number;
+  is_following: boolean;
+}
+
+// ---- Friend Request System ----
+
+export interface FriendRequestUserInfo {
+  id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+}
+
+export interface FriendRequestItem {
+  id: string;
+  requester: FriendRequestUserInfo;
+  recipient: FriendRequestUserInfo;
+  status: string;
+  created_at: string;
+}
+
+export interface FriendRequestListResponse {
+  data: FriendRequestItem[];
+  total_count: number;
+}
+
+export interface FriendItem {
+  id: string;
+  user: FriendRequestUserInfo;
+  since: string;
+}
+
+export interface FriendListResponse {
+  data: FriendItem[];
+  total_count: number;
+}
+
+export interface FriendshipStatusResponse {
+  is_friend: boolean;
+  request_status: 'pending_sent' | 'pending_received' | 'accepted' | null;
+  friends_count: number;
+}
+
+// ---- Contact-based Friend Recommendation ----
+
+export interface ContactMatchUser {
+  id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  total_distance_meters: number;
+  total_runs: number;
+}
+
+export interface MatchContactsResponse {
+  matches: ContactMatchUser[];
+  total_count: number;
 }

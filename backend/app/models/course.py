@@ -65,6 +65,8 @@ class Course(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     difficulty: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
     course_type: Mapped[str | None] = mapped_column(String(10), nullable=True, default=None)
     lap_count: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    checkpoints: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    checkpoint_interval_meters: Mapped[int | None] = mapped_column(Integer, nullable=True, default=500)
 
     # Relationships
     creator: Mapped["User"] = relationship("User", lazy="joined")

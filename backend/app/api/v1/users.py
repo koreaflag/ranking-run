@@ -1,10 +1,14 @@
 """User endpoints: profile, stats, run history, and courses."""
 
+from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, Query, status
+import json
+
+from geoalchemy2.functions import ST_AsGeoJSON
 from sqlalchemy import desc, func, select
 
 from app.core.container import Container
@@ -17,8 +21,13 @@ from app.models.run_record import RunRecord
 from app.models.run_session import RunSession
 from app.models.user import User
 from app.schemas.course import CourseStatsInfo, MyCourseItem
-from app.schemas.run import RunCourseInfo, RunHistoryItem, RunHistoryResponse
+from app.schemas.run import (
+    RunCourseInfo, RunHistoryItem, RunHistoryResponse,
+    AnalyticsResponse, WeeklyStatItem, PaceTrendItem, ActivityDay, BestEffortItem,
+)
 from app.schemas.user import (
+    ConsentRequest,
+    ConsentResponse,
     ProfileResponse,
     ProfileSetupRequest,
     ProfileUpdateRequest,
@@ -38,11 +47,44 @@ from app.services.stats_service import StatsService
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+@router.get("/search/code", response_model=PublicProfileResponse | None)
+@inject
+async def search_by_code(
+    code: str = Query(..., min_length=5, max_length=5),
+    current_user: CurrentUser = None,
+    db: DbSession = None,
+    follow_service: FollowService = Depends(Provide[Container.follow_service]),
+) -> PublicProfileResponse:
+    """Search for a user by their unique 5-digit code."""
+    result = await db.execute(select(User).where(User.user_code == code))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise NotFoundError(code="NOT_FOUND", message="해당 코드의 사용자를 찾을 수 없습니다")
+
+    follow_status = await follow_service.get_follow_status(db, current_user.id, user.id)
+
+    return PublicProfileResponse(
+        id=str(user.id),
+        nickname=user.nickname,
+        avatar_url=user.avatar_url,
+        bio=user.bio,
+        instagram_username=user.instagram_username,
+        activity_region=user.activity_region,
+        total_distance_meters=user.total_distance_meters,
+        total_runs=user.total_runs,
+        created_at=user.created_at,
+        followers_count=follow_status["followers_count"],
+        following_count=follow_status["following_count"],
+        is_following=follow_status["is_following"],
+    )
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_my_profile(current_user: CurrentUser) -> UserResponse:
     """Get the current user's profile."""
     return UserResponse(
         id=str(current_user.id),
+        user_code=current_user.user_code,
         email=current_user.email,
         nickname=current_user.nickname,
         avatar_url=current_user.avatar_url,
@@ -56,6 +98,26 @@ async def get_my_profile(current_user: CurrentUser) -> UserResponse:
         total_runs=current_user.total_runs,
         created_at=current_user.created_at,
     )
+
+
+@router.put("/me/consent", response_model=ConsentResponse)
+async def update_consent(
+    body: ConsentRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> ConsentResponse:
+    """Save user consent preferences (terms, privacy, location, contacts, marketing)."""
+    now = datetime.now(timezone.utc)
+    if body.terms:
+        current_user.consent_terms_at = now
+    if body.privacy:
+        current_user.consent_privacy_at = now
+    if body.location:
+        current_user.consent_location_at = now
+    current_user.consent_contacts_at = now if body.contacts else None
+    current_user.consent_marketing_at = now if body.marketing else None
+    await db.flush()
+    return ConsentResponse()
 
 
 @router.post("/me/profile", response_model=ProfileResponse, status_code=status.HTTP_201_CREATED)
@@ -179,7 +241,11 @@ async def get_my_runs(
         order_column = desc(order_column)
 
     result = await db.execute(
-        select(RunRecord, RunSession.device_info)
+        select(
+            RunRecord,
+            RunSession.device_info,
+            ST_AsGeoJSON(RunRecord.route_geometry).label("route_geojson"),
+        )
         .outerjoin(RunSession, RunRecord.session_id == RunSession.id)
         .where(RunRecord.user_id == current_user.id)
         .order_by(order_column)
@@ -189,7 +255,7 @@ async def get_my_runs(
     rows = result.all()
 
     data = []
-    for record, device_info in rows:
+    for record, device_info, route_geojson in rows:
         course_info = None
         if record.course is not None:
             course_info = RunCourseInfo(
@@ -199,6 +265,23 @@ async def get_my_runs(
         device_model = None
         if device_info and isinstance(device_info, dict):
             device_model = device_info.get("device_model")
+
+        # Build simplified route preview (every Nth point, max ~30 points)
+        route_preview = None
+        if route_geojson:
+            try:
+                geo = json.loads(route_geojson)
+                coords = geo.get("coordinates", [])
+                if len(coords) >= 2:
+                    step = max(1, len(coords) // 30)
+                    simplified = coords[::step]
+                    if coords[-1] != simplified[-1]:
+                        simplified.append(coords[-1])
+                    # [lng, lat] pairs only
+                    route_preview = [[round(c[0], 5), round(c[1], 5)] for c in simplified]
+            except (json.JSONDecodeError, KeyError, IndexError):
+                pass
+
         data.append(
             RunHistoryItem(
                 id=str(record.id),
@@ -210,11 +293,160 @@ async def get_my_runs(
                 finished_at=record.finished_at,
                 course=course_info,
                 device_model=device_model,
+                route_preview=route_preview,
             )
         )
 
     has_next = (page + 1) * actual_limit < total_count
     return RunHistoryResponse(data=data, total_count=total_count, has_next=has_next)
+
+
+@router.get("/me/analytics", response_model=AnalyticsResponse)
+async def get_analytics(
+    current_user: CurrentUser,
+    db: DbSession,
+) -> AnalyticsResponse:
+    """Aggregated analytics data for charts and graphs."""
+    from datetime import timedelta
+    now = datetime.now(timezone.utc)
+
+    # 1. Weekly stats (last 12 weeks)
+    twelve_weeks_ago = now - timedelta(weeks=12)
+    weekly_result = await db.execute(
+        select(
+            func.date_trunc('week', RunRecord.finished_at).label('week_start'),
+            func.sum(RunRecord.distance_meters).label('distance'),
+            func.count(RunRecord.id).label('cnt'),
+            func.sum(RunRecord.duration_seconds).label('duration'),
+            func.avg(RunRecord.avg_pace_seconds_per_km).label('avg_pace'),
+        )
+        .where(RunRecord.user_id == current_user.id, RunRecord.finished_at >= twelve_weeks_ago)
+        .group_by('week_start')
+        .order_by('week_start')
+    )
+    weekly_stats = [
+        WeeklyStatItem(
+            week_start=row.week_start.strftime('%Y-%m-%d'),
+            distance_meters=int(row.distance or 0),
+            run_count=int(row.cnt or 0),
+            duration_seconds=int(row.duration or 0),
+            avg_pace=int(row.avg_pace) if row.avg_pace else None,
+        )
+        for row in weekly_result.all()
+    ]
+
+    # 2. Pace trend (last 30 runs with pace data)
+    pace_result = await db.execute(
+        select(
+            RunRecord.finished_at,
+            RunRecord.avg_pace_seconds_per_km,
+            RunRecord.distance_meters,
+        )
+        .where(
+            RunRecord.user_id == current_user.id,
+            RunRecord.avg_pace_seconds_per_km.isnot(None),
+            RunRecord.avg_pace_seconds_per_km > 0,
+        )
+        .order_by(desc(RunRecord.finished_at))
+        .limit(30)
+    )
+    pace_rows = pace_result.all()
+    pace_trend = [
+        PaceTrendItem(
+            date=row.finished_at.isoformat(),
+            avg_pace=row.avg_pace_seconds_per_km,
+            distance_meters=row.distance_meters,
+        )
+        for row in reversed(pace_rows)  # oldest first for chart x-axis
+    ]
+
+    # 3. Activity calendar (last 90 days)
+    ninety_days_ago = now - timedelta(days=90)
+    cal_result = await db.execute(
+        select(
+            func.date(RunRecord.finished_at).label('run_date'),
+            func.sum(RunRecord.distance_meters).label('distance'),
+            func.count(RunRecord.id).label('cnt'),
+        )
+        .where(RunRecord.user_id == current_user.id, RunRecord.finished_at >= ninety_days_ago)
+        .group_by('run_date')
+        .order_by('run_date')
+    )
+    activity_calendar = [
+        ActivityDay(
+            date=str(row.run_date),
+            distance_meters=int(row.distance or 0),
+            run_count=int(row.cnt or 0),
+        )
+        for row in cal_result.all()
+    ]
+
+    # 4. Best efforts at standard distances
+    DISTANCES = [
+        ("1K", 1000),
+        ("3K", 3000),
+        ("5K", 5000),
+        ("10K", 10000),
+        ("Half", 21097),
+        ("Full", 42195),
+    ]
+    best_efforts = []
+    for label, target in DISTANCES:
+        effort_result = await db.execute(
+            select(
+                RunRecord.id,
+                RunRecord.finished_at,
+                RunRecord.avg_pace_seconds_per_km,
+                RunRecord.distance_meters,
+                RunRecord.duration_seconds,
+            )
+            .where(
+                RunRecord.user_id == current_user.id,
+                RunRecord.distance_meters >= target,
+                RunRecord.avg_pace_seconds_per_km.isnot(None),
+                RunRecord.avg_pace_seconds_per_km > 0,
+            )
+            .order_by(RunRecord.avg_pace_seconds_per_km.asc())
+            .limit(1)
+        )
+        row = effort_result.first()
+        if row:
+            estimated_time = int(target / 1000 * row.avg_pace_seconds_per_km)
+            best_efforts.append(BestEffortItem(
+                distance_label=label,
+                target_meters=target,
+                best_time_seconds=estimated_time,
+                best_pace=row.avg_pace_seconds_per_km,
+                achieved_date=row.finished_at.isoformat(),
+                run_id=str(row.id),
+            ))
+        else:
+            best_efforts.append(BestEffortItem(
+                distance_label=label,
+                target_meters=target,
+            ))
+
+    # 5. Weekly goal (this week's distance)
+    # Week starts Monday
+    today = now.date()
+    week_start = today - timedelta(days=today.weekday())
+    week_start_dt = datetime.combine(week_start, datetime.min.time()).replace(tzinfo=timezone.utc)
+    weekly_dist_result = await db.execute(
+        select(func.sum(RunRecord.distance_meters))
+        .where(RunRecord.user_id == current_user.id, RunRecord.finished_at >= week_start_dt)
+    )
+    weekly_current = weekly_dist_result.scalar() or 0
+    # Default goal: 20km (could be user-configurable later)
+    weekly_goal_km = 20.0
+
+    return AnalyticsResponse(
+        weekly_stats=weekly_stats,
+        pace_trend=pace_trend,
+        activity_calendar=activity_calendar,
+        best_efforts=best_efforts,
+        weekly_goal_km=weekly_goal_km,
+        weekly_current_km=round(weekly_current / 1000, 2),
+    )
 
 
 @router.get("/me/courses", response_model=list[MyCourseItem])

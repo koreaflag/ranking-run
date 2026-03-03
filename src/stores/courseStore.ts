@@ -15,6 +15,7 @@ import type {
 import { courseService } from '../services/courseService';
 import { rankingService } from '../services/rankingService';
 import { reviewService } from '../services/reviewService';
+import i18n from '../i18n';
 
 type ViewMode = 'list' | 'map';
 
@@ -22,6 +23,8 @@ interface CourseState {
   // List
   courses: CourseListItem[];
   nearbyCourses: NearbyCourse[];
+  popularCourses: CourseListItem[];
+  newCourses: CourseListItem[];
   isLoading: boolean;
   isLoadingMore: boolean;
   hasNext: boolean;
@@ -70,6 +73,8 @@ interface CourseState {
   fetchCourses: (params?: CourseListParams) => Promise<void>;
   fetchMoreCourses: () => Promise<void>;
   fetchNearbyCourses: (lat: number, lng: number) => Promise<void>;
+  fetchPopularCourses: () => Promise<void>;
+  fetchNewCourses: () => Promise<void>;
   fetchCourseDetail: (courseId: string) => Promise<void>;
   fetchMapMarkers: (
     swLat: number,
@@ -86,7 +91,7 @@ interface CourseState {
   fetchFavoriteCourses: () => Promise<void>;
   toggleFavorite: (courseId: string) => Promise<void>;
   fetchMyCourses: () => Promise<void>;
-  updateMyCourse: (courseId: string, data: { title?: string; description?: string; is_public?: boolean }) => Promise<void>;
+  updateMyCourse: (courseId: string, data: { title?: string; description?: string; is_public?: boolean; course_type?: 'normal' | 'loop'; lap_count?: number }) => Promise<void>;
   deleteMyCourse: (courseId: string) => Promise<void>;
   clearDetail: () => void;
   clearError: () => void;
@@ -95,6 +100,8 @@ interface CourseState {
 export const useCourseStore = create<CourseState>((set, get) => ({
   courses: [],
   nearbyCourses: [],
+  popularCourses: [],
+  newCourses: [],
   isLoading: false,
   isLoadingMore: false,
   hasNext: false,
@@ -154,7 +161,7 @@ export const useCourseStore = create<CourseState>((set, get) => ({
       });
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : '코스 목록을 불러올 수 없습니다.';
+        error instanceof Error ? error.message : i18n.t('courses.loadError');
       set({ isLoading: false, error: message });
     }
   },
@@ -191,6 +198,34 @@ export const useCourseStore = create<CourseState>((set, get) => ({
     }
   },
 
+  fetchPopularCourses: async () => {
+    try {
+      const response = await courseService.getCourses({
+        order_by: 'total_runs',
+        order: 'desc',
+        page: 0,
+        per_page: 5,
+      });
+      set({ popularCourses: response.data });
+    } catch {
+      // silently fail
+    }
+  },
+
+  fetchNewCourses: async () => {
+    try {
+      const response = await courseService.getCourses({
+        order_by: 'created_at',
+        order: 'desc',
+        page: 0,
+        per_page: 5,
+      });
+      set({ newCourses: response.data });
+    } catch {
+      // silently fail
+    }
+  },
+
   fetchCourseDetail: async (courseId) => {
     set({ isLoadingDetail: true });
     try {
@@ -218,7 +253,7 @@ export const useCourseStore = create<CourseState>((set, get) => ({
       });
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : '코스 정보를 불러올 수 없습니다.';
+        error instanceof Error ? error.message : i18n.t('courses.detailError');
       set({ isLoadingDetail: false, error: message });
     }
   },
@@ -311,7 +346,7 @@ export const useCourseStore = create<CourseState>((set, get) => ({
       }));
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : '답글 등록에 실패했습니다.';
+        error instanceof Error ? error.message : i18n.t('courses.replyError');
       set({ error: message });
       throw error;
     }
@@ -330,7 +365,7 @@ export const useCourseStore = create<CourseState>((set, get) => ({
       });
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : '리뷰를 삭제할 수 없습니다.';
+        error instanceof Error ? error.message : i18n.t('courses.deleteReviewError');
       set({ error: message });
     }
   },

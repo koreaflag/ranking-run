@@ -20,6 +20,20 @@
                ReferencedContainer = "container:RunCrew.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7910D078E6D3D3B4111A7372"
+               BuildableName = "RunCrew Watch App.app"
+               BlueprintName = "RunCrew Watch App"
+               ReferencedContainer = "container:RunCrew.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

@@ -1,9 +1,8 @@
-import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
-import { StyleSheet, View, Text, Platform } from 'react-native';
+import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo, useState } from 'react';
+import { StyleSheet, View, Text } from 'react-native';
 import Mapbox, { UserTrackingMode } from '@rnmapbox/maps';
 import { Ionicons } from '@expo/vector-icons';
-import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, DIFFICULTY_COLORS, DIFFICULTY_LABELS, type DifficultyLevel } from '../../utils/constants';
-import { formatDistance } from '../../utils/format';
+import { COLORS, DIFFICULTY_COLORS, type DifficultyLevel } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
 import { MAPBOX_DARK_STYLE, MAPBOX_LIGHT_STYLE } from '../../config/env';
 
@@ -67,6 +66,17 @@ export interface FriendMarkerData {
   longitude: number;
 }
 
+// ---- Checkpoint data ----
+
+export interface CheckpointMarkerData {
+  id: number;
+  order: number;
+  lat: number;
+  lng: number;
+  passed?: boolean;
+  isNext?: boolean;
+}
+
 // ---- Component props ----
 
 interface RouteMapViewProps {
@@ -74,6 +84,7 @@ interface RouteMapViewProps {
   markers?: CourseMarkerData[];
   eventMarkers?: EventMarkerData[];
   friendMarkers?: FriendMarkerData[];
+  checkpoints?: CheckpointMarkerData[];
   previewPolyline?: Array<{ latitude: number; longitude: number }>;
   onMarkerPress?: (courseId: string) => void;
   onEventMarkerPress?: (eventId: string) => void;
@@ -93,6 +104,8 @@ interface RouteMapViewProps {
   hideRouteMarkers?: boolean;
   /** false = use basic flat Mapbox styles (2D), true/undefined = use custom 3D styles */
   use3DStyle?: boolean;
+  /** Camera padding when following user — shifts center to account for overlapping UI */
+  followPadding?: { paddingTop?: number; paddingBottom?: number; paddingLeft?: number; paddingRight?: number };
 }
 
 export interface Camera {
@@ -113,13 +126,6 @@ export interface RouteMapViewHandle {
 }
 
 // ---- Helpers ----
-
-const getDifficultyColor = (difficulty?: string | null): string => {
-  if (difficulty && difficulty in DIFFICULTY_COLORS) {
-    return DIFFICULTY_COLORS[difficulty as DifficultyLevel];
-  }
-  return COLORS.primary;
-};
 
 /** Convert lat/lng points to GeoJSON LineString */
 function toLineGeoJSON(points: Array<{ latitude: number; longitude: number }>): GeoJSON.Feature<GeoJSON.LineString> {
@@ -168,6 +174,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   markers,
   eventMarkers,
   friendMarkers,
+  checkpoints,
   previewPolyline,
   onMarkerPress,
   onEventMarkerPress,
@@ -185,11 +192,13 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   customUserHeading,
   hideRouteMarkers = false,
   use3DStyle = true,
+  followPadding,
 }, ref) {
   const cameraRef = useRef<Mapbox.Camera>(null);
   const colors = useTheme();
   const isDark = colors.statusBar === 'light-content';
   const mapBearingRef = useRef(0);
+  const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM);
 
   // Determine mode
   const isRouteMode = routePoints.length > 0;
@@ -199,6 +208,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   // Imperative handle
   useImperativeHandle(ref, () => ({
     animateToRegion: (region: Region, duration = 500) => {
+      if (!isFinite(region.longitude) || !isFinite(region.latitude)) return;
       cameraRef.current?.setCamera({
         centerCoordinate: [region.longitude, region.latitude],
         zoomLevel: deltaToZoom(region.latitudeDelta),
@@ -278,6 +288,10 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
       const bearing = feature?.properties?.heading;
       if (bearing != null) mapBearingRef.current = bearing;
 
+      // Track zoom level for conditional marker rendering
+      const zoom = feature?.properties?.zoomLevel;
+      if (zoom != null) setCurrentZoom(zoom);
+
       if (!onRegionChange) return;
       const bounds = feature?.properties?.visibleBounds;
       if (!bounds || bounds.length < 2) return;
@@ -299,7 +313,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     (location: any) => {
       if (!onUserLocationChange) return;
       const coords = location?.coords;
-      if (!coords) return;
+      if (!coords || !isFinite(coords.latitude) || !isFinite(coords.longitude)) return;
       onUserLocationChange({
         latitude: coords.latitude,
         longitude: coords.longitude,
@@ -315,6 +329,14 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     isRouteMode && routePoints.length >= 2
       ? (endPointOverride ?? routePoints[routePoints.length - 1])
       : undefined;
+
+  // Detect round-trip: start ≈ end (within ~50m)
+  const isRoundTrip = useMemo(() => {
+    if (!startPoint || !endPoint) return false;
+    const dlat = startPoint.latitude - endPoint.latitude;
+    const dlng = startPoint.longitude - endPoint.longitude;
+    return Math.sqrt(dlat * dlat + dlng * dlng) < 0.0005; // ~50m
+  }, [startPoint, endPoint]);
 
   // Route GeoJSON
   const routeGeoJSON = useMemo(() => {
@@ -357,21 +379,20 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         {/* Camera */}
         <Mapbox.Camera
           ref={cameraRef}
+          key={followPadding ? `pad-${followPadding.paddingBottom ?? 0}` : 'default'}
           defaultSettings={cameraDefaults}
           followUserLocation={followsUserLocation}
           followUserMode={followsUserLocation ? UserTrackingMode.Follow : undefined}
+          followPadding={followPadding}
+          padding={followPadding ? {
+            paddingTop: followPadding.paddingTop ?? 0,
+            paddingBottom: followPadding.paddingBottom ?? 0,
+            paddingLeft: followPadding.paddingLeft ?? 0,
+            paddingRight: followPadding.paddingRight ?? 0,
+          } : undefined}
           animationMode="flyTo"
           animationDuration={0}
         />
-
-        {/* User location (default blue dot) */}
-        {(showUserLocation || onUserLocationChange) && (
-          <Mapbox.UserLocation
-            visible={showUserLocation && !customUserLocation}
-            animated
-            onUpdate={handleUserLocationUpdate}
-          />
-        )}
 
         {/* ---- Route display mode ---- */}
         {routeGeoJSON && (
@@ -379,84 +400,131 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             <Mapbox.LineLayer
               id="route-line"
               style={{
-                lineColor: COLORS.primary,
-                lineWidth: 4,
+                lineColor: '#FFC800',
+                lineWidth: 6,
                 lineCap: 'round',
                 lineJoin: 'round',
+                lineEmissiveStrength: 1,
               }}
             />
           </Mapbox.ShapeSource>
         )}
 
-        {startPoint && !hideRouteMarkers && (
+        {startPoint && !hideRouteMarkers && isRoundTrip && (
           <Mapbox.MarkerView
             coordinate={[startPoint.longitude, startPoint.latitude]}
-            anchor={{ x: 0.5, y: 1 }}
+            anchor={{ x: 0.5, y: 0.5 }}
           >
-            <View style={styles.labelMarkerWrapper}>
-              <View style={[styles.labelMarkerPin, { backgroundColor: COLORS.primary }]}>
-                <Text style={styles.labelMarkerText}>출발</Text>
-              </View>
-              <View style={[styles.labelMarkerTail, { borderTopColor: COLORS.primary }]} />
+            <View style={styles.routePointWrapper}>
+              <View style={[styles.routePointDot, styles.startDot]} />
+              <Text style={[styles.routePointLabel, styles.startLabel]}>START / FINISH</Text>
             </View>
           </Mapbox.MarkerView>
         )}
 
-        {endPoint && !hideRouteMarkers && (
+        {startPoint && !hideRouteMarkers && !isRoundTrip && (
+          <Mapbox.MarkerView
+            coordinate={[startPoint.longitude, startPoint.latitude]}
+            anchor={{ x: 0.5, y: 0.5 }}
+          >
+            <View style={styles.routePointWrapper}>
+              <View style={[styles.routePointDot, styles.startDot]} />
+              <Text style={[styles.routePointLabel, styles.startLabel]}>START</Text>
+            </View>
+          </Mapbox.MarkerView>
+        )}
+
+        {endPoint && !hideRouteMarkers && !isRoundTrip && (
           <Mapbox.MarkerView
             coordinate={[endPoint.longitude, endPoint.latitude]}
-            anchor={{ x: 0.5, y: 1 }}
+            anchor={{ x: 0.5, y: 0.5 }}
           >
-            <View style={[styles.labelMarkerWrapper, { marginLeft: 24 }]}>
-              <View style={[styles.labelMarkerPin, { backgroundColor: COLORS.accent }]}>
-                <Text style={[styles.labelMarkerText, { color: COLORS.black }]}>도착</Text>
-              </View>
-              <View style={[styles.labelMarkerTail, { borderTopColor: COLORS.accent }]} />
+            <View style={styles.routePointWrapper}>
+              <View style={[styles.routePointDot, styles.finishDot]} />
+              <Text style={[styles.routePointLabel, styles.finishLabel]}>FINISH</Text>
             </View>
           </Mapbox.MarkerView>
         )}
 
-        {/* ---- Open-world course markers mode ---- */}
-        {isMarkersMode &&
-          markers
-            .filter((m) => m.start_lat != null && m.start_lng != null)
-            .map((marker) => (
-            <Mapbox.MarkerView
-              key={marker.id}
-              coordinate={[marker.start_lng, marker.start_lat]}
-              anchor={{ x: 0.5, y: 1 }}
-            >
-              <View
-                style={styles.markerWrapper}
-                onStartShouldSetResponder={() => {
-                  onMarkerPress?.(marker.id);
-                  return true;
-                }}
+        {/* ---- Checkpoint markers (numbered circles along the route) ---- */}
+        {checkpoints && checkpoints.length > 0 && checkpoints.map((cp) => {
+            const bgColor = cp.passed ? '#34C759' : cp.isNext ? '#FFD700' : 'rgba(255,255,255,0.25)';
+            const borderColor = cp.passed ? '#34C759' : cp.isNext ? '#FFD700' : 'rgba(255,255,255,0.6)';
+            const textColor = cp.passed || cp.isNext ? '#000' : '#fff';
+            return (
+              <Mapbox.MarkerView
+                key={`cp-${cp.id}`}
+                coordinate={[cp.lng, cp.lat]}
+                anchor={{ x: 0.5, y: 0.5 }}
+                allowOverlap={true}
               >
-                {/* Top badge */}
-                {marker.user_rank === 1 ? (
-                  <View style={styles.crownBadge}>
-                    <Ionicons name="trophy" size={10} color={COLORS.gold} />
-                  </View>
-                ) : marker.is_new ? (
-                  <View style={styles.newBadge}>
-                    <Text style={styles.newBadgeText}>N</Text>
-                  </View>
-                ) : null}
-                {/* Pin body */}
-                <View style={[styles.markerPin, { backgroundColor: getDifficultyColor(marker.difficulty) }]}>
-                  <Ionicons name="footsteps" size={14} color={COLORS.white} />
-                  {marker.active_runners != null && marker.active_runners > 0 && (
-                    <View style={styles.runnerCountBadge}>
-                      <Text style={styles.runnerCountText}>{marker.active_runners}</Text>
-                    </View>
-                  )}
+                <View style={[styles.checkpointBadge, { backgroundColor: bgColor, borderColor }]}>
+                  <Text style={[styles.checkpointText, { color: textColor }]}>{cp.order}</Text>
                 </View>
-                {/* Pin tail */}
-                <View style={[styles.markerTail, { borderTopColor: getDifficultyColor(marker.difficulty) }]} />
-              </View>
-            </Mapbox.MarkerView>
-          ))}
+              </Mapbox.MarkerView>
+            );
+          })}
+
+        {/* ---- Open-world course markers (racing badge style) ---- */}
+        {isMarkersMode && markers
+          ?.filter((m) => m.start_lat != null && m.start_lng != null)
+          .map((m) => {
+            const diff = (m.difficulty ?? 'normal') as DifficultyLevel;
+            const badgeColor = DIFFICULTY_COLORS[diff] ?? DIFFICULTY_COLORS.normal;
+            const icon: keyof typeof Ionicons.glyphMap = 'flag';
+            return (
+              <Mapbox.MarkerView
+                key={`course-${m.id}`}
+                coordinate={[m.start_lng, m.start_lat]}
+                anchor={{ x: 0.5, y: 0.5 }}
+              >
+                <View
+                  style={styles.courseBadgeWrapper}
+                  onStartShouldSetResponder={() => {
+                    onMarkerPress?.(m.id);
+                    return true;
+                  }}
+                >
+                  <View style={[styles.courseBadge, { backgroundColor: badgeColor }]}>
+                    <Ionicons name={icon} size={14} color={COLORS.white} />
+                  </View>
+                </View>
+              </Mapbox.MarkerView>
+            );
+          })}
+
+        {/* User location — get coordinates only, NO visual puck */}
+        {(showUserLocation || onUserLocationChange) && (
+          <Mapbox.UserLocation
+            visible={false}
+            showsUserHeadingIndicator={false}
+            onUpdate={handleUserLocationUpdate}
+          />
+        )}
+
+        {/* Custom orange location dot + heading arrow via MarkerView (above all layers, always visible) */}
+        {customUserLocation && isFinite(customUserLocation.longitude) && isFinite(customUserLocation.latitude) && (
+          <Mapbox.MarkerView
+            coordinate={[customUserLocation.longitude, customUserLocation.latitude]}
+            anchor={{ x: 0.5, y: 0.5 }}
+            allowOverlap={true}
+            allowOverlapWithPuck={true}
+          >
+            <View
+              style={[
+                styles.userLocationWrapper,
+                customUserHeading != null
+                  ? { transform: [{ rotate: `${((customUserHeading - mapBearingRef.current) % 360 + 360) % 360}deg` }] }
+                  : undefined,
+              ]}
+            >
+              {customUserHeading != null && (
+                <View style={styles.headingChevron} />
+              )}
+              <View style={styles.userLocationInner} />
+            </View>
+          </Mapbox.MarkerView>
+        )}
 
         {/* ---- Event markers ---- */}
         {eventMarkers
@@ -513,27 +581,6 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
           </Mapbox.MarkerView>
         )}
 
-        {/* ---- Custom user location marker with heading ---- */}
-        {customUserLocation && (
-          <Mapbox.MarkerView
-            coordinate={[customUserLocation.longitude, customUserLocation.latitude]}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <View style={styles.customUserContainer}>
-              {customUserHeading != null && (
-                <View
-                  style={[
-                    styles.headingConeWrapper,
-                    { transform: [{ rotate: `${((customUserHeading - mapBearingRef.current) % 360 + 360) % 360}deg` }] },
-                  ]}
-                >
-                  <View style={styles.headingArrow} />
-                </View>
-              )}
-              <View style={styles.customUserDot} />
-            </View>
-          </Mapbox.MarkerView>
-        )}
 
         {/* ---- Preview polyline (3D course preview) ---- */}
         {previewGeoJSON && (
@@ -541,33 +588,53 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             <Mapbox.LineLayer
               id="preview-line"
               style={{
-                lineColor: COLORS.primary,
-                lineWidth: 5,
+                lineColor: '#FFC800',
+                lineWidth: 6,
                 lineCap: 'round',
                 lineJoin: 'round',
+                lineEmissiveStrength: 1,
               }}
             />
           </Mapbox.ShapeSource>
         )}
 
-        {previewPolyline && previewPolyline.length >= 1 && (
-          <Mapbox.MarkerView
-            coordinate={[previewPolyline[0].longitude, previewPolyline[0].latitude]}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <View style={styles.previewStartDot} />
-          </Mapbox.MarkerView>
-        )}
+        {previewPolyline && previewPolyline.length >= 2 && (() => {
+          const first = previewPolyline[0];
+          const last = previewPolyline[previewPolyline.length - 1];
+          const dlat = first.latitude - last.latitude;
+          const dlng = first.longitude - last.longitude;
+          const isLoop = Math.sqrt(dlat * dlat + dlng * dlng) < 0.0005;
+          return isLoop ? (
+            <Mapbox.MarkerView coordinate={[first.longitude, first.latitude]} anchor={{ x: 0.5, y: 0.5 }}>
+              <View style={styles.routePointWrapper}>
+                <View style={[styles.routePointDot, styles.startDot]} />
+                <Text style={[styles.routePointLabel, styles.startLabel]}>START / FINISH</Text>
+              </View>
+            </Mapbox.MarkerView>
+          ) : (
+            <>
+              <Mapbox.MarkerView coordinate={[first.longitude, first.latitude]} anchor={{ x: 0.5, y: 0.5 }}>
+                <View style={styles.routePointWrapper}>
+                  <View style={[styles.routePointDot, styles.startDot]} />
+                  <Text style={[styles.routePointLabel, styles.startLabel]}>START</Text>
+                </View>
+              </Mapbox.MarkerView>
+              <Mapbox.MarkerView coordinate={[last.longitude, last.latitude]} anchor={{ x: 0.5, y: 0.5 }}>
+                <View style={styles.routePointWrapper}>
+                  <View style={[styles.routePointDot, styles.finishDot]} />
+                  <Text style={[styles.routePointLabel, styles.finishLabel]}>FINISH</Text>
+                </View>
+              </Mapbox.MarkerView>
+            </>
+          );
+        })()}
 
-        {previewPolyline && previewPolyline.length > 1 && (
-          <Mapbox.MarkerView
-            coordinate={[
-              previewPolyline[previewPolyline.length - 1].longitude,
-              previewPolyline[previewPolyline.length - 1].latitude,
-            ]}
-            anchor={{ x: 0.5, y: 0.5 }}
-          >
-            <View style={styles.previewEndDot} />
+        {previewPolyline && previewPolyline.length === 1 && (
+          <Mapbox.MarkerView coordinate={[previewPolyline[0].longitude, previewPolyline[0].latitude]} anchor={{ x: 0.5, y: 0.5 }}>
+            <View style={styles.routePointWrapper}>
+              <View style={[styles.routePointDot, styles.startDot]} />
+              <Text style={[styles.routePointLabel, styles.startLabel]}>START</Text>
+            </View>
           </Mapbox.MarkerView>
         )}
       </Mapbox.MapView>
@@ -591,121 +658,40 @@ const styles = StyleSheet.create({
     minHeight: 200,
   },
 
-  // ---- Route start / end label markers ----
-  labelMarkerWrapper: {
+  // ---- Route START / FINISH markers ----
+  routePointWrapper: {
     alignItems: 'center',
   },
-  labelMarkerPin: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.9)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  labelMarkerText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: COLORS.white,
-    letterSpacing: 0.5,
-  },
-  labelMarkerTail: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 7,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    marginTop: -1,
-  },
-
-  // ---- Course marker (modern minimal pin) ----
-  markerWrapper: {
-    alignItems: 'center',
-  },
-
-  crownBadge: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: COLORS.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: -3,
-    zIndex: 2,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0,0,0,0.15)',
-  },
-
-  newBadge: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: COLORS.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: -3,
-    zIndex: 2,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0,0,0,0.15)',
-  },
-  newBadgeText: {
-    fontSize: 8,
-    fontWeight: '900',
-    color: COLORS.white,
-  },
-
-  markerPin: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2.5,
-    borderColor: 'rgba(255,255,255,0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-
-  markerTail: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 7,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    marginTop: -2,
-  },
-
-  runnerCountBadge: {
-    position: 'absolute',
-    top: -3,
-    right: -5,
-    minWidth: 14,
+  routePointDot: {
+    width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: COLORS.secondary,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 2,
-    zIndex: 3,
+    borderWidth: 3,
+    borderColor: COLORS.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
   },
-  runnerCountText: {
-    fontSize: 7,
-    fontWeight: '900',
-    color: COLORS.black,
+  startDot: {
+    backgroundColor: '#FFC800',
   },
+  finishDot: {
+    backgroundColor: '#FF3B30',
+  },
+  routePointLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginTop: 3,
+  },
+  startLabel: {
+    color: '#FFC800',
+  },
+  finishLabel: {
+    color: '#FF3B30',
+  },
+
 
   // ---- Event markers ----
   eventMarkerWrapper: {
@@ -763,90 +749,78 @@ const styles = StyleSheet.create({
     color: COLORS.black,
   },
 
-  // ---- Preview polyline start/end dots ----
-  previewStartDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: COLORS.primary,
-    borderWidth: 3,
-    borderColor: COLORS.white,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-  },
-  previewEndDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: COLORS.accent,
-    borderWidth: 3,
-    borderColor: COLORS.white,
-    shadowColor: COLORS.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-  },
 
-  // ---- Custom user location marker with heading ----
-  customUserContainer: {
-    width: 60,
-    height: 60,
+  // ---- User location marker + heading chevron ----
+  userLocationWrapper: {
     alignItems: 'center',
+    width: 30,
+    height: 30,
     justifyContent: 'center',
   },
-  headingConeWrapper: {
-    position: 'absolute',
-    width: 60,
-    height: 60,
-    alignItems: 'center',
-  },
-  headingArrow: {
+  headingChevron: {
     width: 0,
     height: 0,
-    borderLeftWidth: 7,
-    borderRightWidth: 7,
-    borderBottomWidth: 16,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderBottomWidth: 7,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderBottomColor: COLORS.primary,
-    opacity: 0.65,
-    marginTop: 7,
+    borderBottomColor: '#FF5F00',
+    position: 'absolute',
+    top: 0,
   },
-  customUserDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: COLORS.primary,
-    borderWidth: 2.5,
+  userLocationInner: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FF5F00',
+    borderWidth: 3,
     borderColor: COLORS.white,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
   },
-
-  // ---- User location fallback marker ----
   userLocationDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(0, 122, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  userLocationInner: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#007AFF',
-    borderWidth: 2.5,
-    borderColor: COLORS.white,
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
+
+  // ---- Checkpoint markers ----
+  checkpointBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+  },
+  checkpointText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+
+  // ---- Racing badge course markers ----
+  courseBadgeWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  courseBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.9)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    elevation: 4,
   },
 });

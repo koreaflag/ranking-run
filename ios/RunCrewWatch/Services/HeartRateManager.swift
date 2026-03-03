@@ -6,6 +6,10 @@ class HeartRateManager: NSObject, ObservableObject {
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
 
+    /// When true, this manager created its own session (legacy/standalone mode).
+    /// When false, an external session was provided (mirroring mode).
+    private var ownsSession = false
+
     var onHeartRateUpdate: ((Double) -> Void)?
 
     @Published var currentHeartRate: Double = 0
@@ -37,7 +41,27 @@ class HeartRateManager: NSObject, ObservableObject {
         }
     }
 
+    /// Attach to an external builder (from WorkoutMirroringManager).
+    /// HeartRateManager only collects heart rate data, does NOT own the session.
+    func attachToBuilder(_ externalBuilder: HKLiveWorkoutBuilder) {
+        // Don't create our own session — the mirroring manager owns it
+        builder = externalBuilder
+        builder?.delegate = self
+        ownsSession = false
+        isActive = true
+        print("[HeartRateManager] Attached to external builder (mirroring mode)")
+    }
+
+    /// Create and start a standalone workout session (legacy/standalone mode).
+    /// Only used when WorkoutMirroringManager is not available (watchOS < 10)
+    /// or in standalone mode.
     func startWorkoutSession() {
+        // If already attached to an external builder, skip session creation
+        guard builder == nil else {
+            print("[HeartRateManager] Already has builder — skipping session creation")
+            return
+        }
+
         let config = HKWorkoutConfiguration()
         config.activityType = .running
         config.locationType = .outdoor
@@ -53,6 +77,8 @@ class HeartRateManager: NSObject, ObservableObject {
                 workoutConfiguration: config
             )
 
+            ownsSession = true
+
             let startDate = Date()
             session?.startActivity(with: startDate)
             builder?.beginCollection(withStart: startDate) { [weak self] success, error in
@@ -66,19 +92,35 @@ class HeartRateManager: NSObject, ObservableObject {
     }
 
     func stopWorkoutSession() {
-        session?.end()
-        builder?.endCollection(withEnd: Date()) { [weak self] success, error in
-            self?.builder?.finishWorkout { workout, error in
-                DispatchQueue.main.async {
-                    self?.isActive = false
-                    self?.currentHeartRate = 0
+        if ownsSession {
+            session?.end()
+            builder?.endCollection(withEnd: Date()) { [weak self] success, error in
+                self?.builder?.finishWorkout { workout, error in
+                    DispatchQueue.main.async {
+                        self?.isActive = false
+                        self?.currentHeartRate = 0
+                        self?.session = nil
+                        self?.builder = nil
+                    }
                 }
             }
+        } else {
+            // External session — capture builder reference before clearing,
+            // then end collection asynchronously without risk of nil access
+            let externalBuilder = builder
+            isActive = false
+            currentHeartRate = 0
+            session = nil
+            builder = nil
+            externalBuilder?.endCollection(withEnd: Date()) { _, _ in
+                print("[HeartRateManager] External builder collection ended")
+            }
+            print("[HeartRateManager] Detached from external builder")
         }
     }
 }
 
-// MARK: - HKWorkoutSessionDelegate
+// MARK: - HKWorkoutSessionDelegate (only active in legacy/standalone mode)
 
 extension HeartRateManager: HKWorkoutSessionDelegate {
     func workoutSession(
@@ -87,7 +129,7 @@ extension HeartRateManager: HKWorkoutSessionDelegate {
         from fromState: HKWorkoutSessionState,
         date: Date
     ) {
-        // State tracking handled by isActive
+        // State tracking handled by isActive — mirroring manager handles phase changes
     }
 
     func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
@@ -98,7 +140,7 @@ extension HeartRateManager: HKWorkoutSessionDelegate {
     }
 }
 
-// MARK: - HKLiveWorkoutBuilderDelegate
+// MARK: - HKLiveWorkoutBuilderDelegate (heart rate collection)
 
 extension HeartRateManager: HKLiveWorkoutBuilderDelegate {
     func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {

@@ -10,6 +10,7 @@ import {
   Alert,
   Switch,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { courseService } from '../../services/courseService';
 import { useCourseStore } from '../../stores/courseStore';
@@ -28,6 +29,7 @@ type CreateRoute = RouteProp<CourseStackParamList, 'CourseCreate'>;
 const MIN_COURSE_DISTANCE_M = 500;
 
 export default function CourseCreateScreen() {
+  const { t } = useTranslation();
   const navigation = useNavigation();
   const route = useRoute<CreateRoute>();
   const {
@@ -51,11 +53,11 @@ export default function CourseCreateScreen() {
 
   const handleCreate = async () => {
     if (distanceMeters < MIN_COURSE_DISTANCE_M) {
-      Alert.alert('알림', '500m 이상의 기록만 코스로 등록할 수 있습니다.');
+      Alert.alert(t('common.notification'), t('course.create.minDistanceError'));
       return;
     }
     if (!title.trim()) {
-      Alert.alert('알림', '코스 이름을 입력해주세요.');
+      Alert.alert(t('common.notification'), t('course.create.courseNameRequired'));
       return;
     }
 
@@ -91,9 +93,9 @@ export default function CourseCreateScreen() {
 
     // 2) Navigate back immediately
     setIsSubmitting(false);
-    Alert.alert('코스 저장 완료', `"${title.trim()}" 코스가 저장되었습니다.`, [
+    Alert.alert(t('course.create.courseSaved'), t('course.create.courseSavedMsg', { title: title.trim() }), [
       {
-        text: '확인',
+        text: t('common.confirm'),
         onPress: () => {
           navigation.dispatch(
             CommonActions.reset({
@@ -137,7 +139,7 @@ export default function CourseCreateScreen() {
           >
             <Text style={styles.backButtonText}>{'<'}</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>코스 등록</Text>
+          <Text style={styles.headerTitle}>{t('course.create.title')}</Text>
           <View style={styles.headerSpacer} />
         </View>
 
@@ -150,19 +152,19 @@ export default function CourseCreateScreen() {
         <View style={styles.infoRow}>
           <View style={styles.infoItem}>
             <Text style={styles.infoValue}>{formatDistance(distanceMeters)}</Text>
-            <Text style={styles.infoLabel}>거리</Text>
+            <Text style={styles.infoLabel}>{t('course.detail.distance')}</Text>
           </View>
           <View style={styles.infoDivider} />
           <View style={styles.infoItem}>
             <Text style={styles.infoValue}>+{Math.round(elevationGainMeters)}m</Text>
-            <Text style={styles.infoLabel}>고도 상승</Text>
+            <Text style={styles.infoLabel}>{t('course.detail.elevationGain')}</Text>
           </View>
         </View>
 
         {/* Course Type (shown when loop detected) */}
         {isLoop && (
           <View style={styles.courseTypeSection}>
-            <Text style={styles.inputLabel}>코스 유형</Text>
+            <Text style={styles.inputLabel}>{t('course.create.courseType')}</Text>
             <View style={styles.courseTypeRow}>
               <TouchableOpacity
                 style={[
@@ -173,7 +175,7 @@ export default function CourseCreateScreen() {
                 activeOpacity={0.7}
               >
                 <Ionicons name="arrow-forward" size={16} color={courseType === 'normal' ? COLORS.white : colors.textSecondary} />
-                <Text style={[styles.courseTypeBtnText, courseType === 'normal' && styles.courseTypeBtnTextActive]}>편도</Text>
+                <Text style={[styles.courseTypeBtnText, courseType === 'normal' && styles.courseTypeBtnTextActive]}>{t('course.create.oneWay')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
@@ -184,13 +186,13 @@ export default function CourseCreateScreen() {
                 activeOpacity={0.7}
               >
                 <Ionicons name="repeat" size={16} color={courseType === 'loop' ? COLORS.white : colors.textSecondary} />
-                <Text style={[styles.courseTypeBtnText, courseType === 'loop' && styles.courseTypeBtnTextActive]}>왕복</Text>
+                <Text style={[styles.courseTypeBtnText, courseType === 'loop' && styles.courseTypeBtnTextActive]}>{t('course.create.roundTrip')}</Text>
               </TouchableOpacity>
             </View>
 
             {courseType === 'loop' && (
               <View style={styles.lapCountRow}>
-                <Text style={styles.lapCountLabel}>랩 수</Text>
+                <Text style={styles.lapCountLabel}>{t('course.create.lapCount')}</Text>
                 <View style={styles.lapCountControls}>
                   <TouchableOpacity
                     style={[styles.lapCountBtn, lapCount <= 1 && styles.lapCountBtnDisabled]}
@@ -216,10 +218,10 @@ export default function CourseCreateScreen() {
 
         {/* Title Input -- bottom border style */}
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>코스 이름 *</Text>
+          <Text style={styles.inputLabel}>{t('course.create.courseNameLabel')}</Text>
           <TextInput
             style={styles.textInput}
-            placeholder="예: 한강 반포대교 왕복"
+            placeholder={t('course.create.courseNameExample')}
             placeholderTextColor={colors.textTertiary}
             value={title}
             onChangeText={setTitle}
@@ -230,10 +232,10 @@ export default function CourseCreateScreen() {
 
         {/* Description Input -- bottom border style */}
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>설명</Text>
+          <Text style={styles.inputLabel}>{t('course.create.description')}</Text>
           <TextInput
             style={[styles.textInput, styles.textArea]}
-            placeholder="코스에 대한 설명을 입력해주세요"
+            placeholder={t('course.create.descriptionPlaceholder')}
             placeholderTextColor={colors.textTertiary}
             value={description}
             onChangeText={setDescription}
@@ -246,9 +248,9 @@ export default function CourseCreateScreen() {
         {/* Public Toggle */}
         <View style={styles.toggleRow}>
           <View style={styles.toggleInfo}>
-            <Text style={styles.toggleLabel}>공개 코스</Text>
+            <Text style={styles.toggleLabel}>{t('course.create.publicCourse')}</Text>
             <Text style={styles.toggleDescription}>
-              다른 러너들이 이 코스를 검색하고 달릴 수 있습니다
+              {t('course.create.publicHintLong')}
             </Text>
           </View>
           <Switch
@@ -275,7 +277,7 @@ export default function CourseCreateScreen() {
               isDisabled && styles.submitButtonTextDisabled,
             ]}
           >
-            {isSubmitting ? '등록 중...' : '코스 등록하기'}
+            {isSubmitting ? t('course.create.registering') : t('course.create.register')}
           </Text>
         </TouchableOpacity>
       </ScrollView>

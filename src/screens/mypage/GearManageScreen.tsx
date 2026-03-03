@@ -15,6 +15,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenHeader from '../../components/common/ScreenHeader';
 import { useTheme } from '../../hooks/useTheme';
@@ -24,7 +25,7 @@ import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constan
 import type { ThemeColors } from '../../utils/constants';
 import type { GearItem } from '../../types/api';
 
-const BRANDS = [
+const BRAND_NAMES = [
   'Nike',
   'Adidas',
   'New Balance',
@@ -39,13 +40,14 @@ const BRANDS = [
   'Reebok',
   'Salomon',
   'Altra',
-  '기타',
 ];
 
 export default function GearManageScreen() {
   const navigation = useNavigation();
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const BRANDS = useMemo(() => [...BRAND_NAMES, t('gear.other')], [t]);
 
   const [gearList, setGearList] = useState<GearItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -101,7 +103,7 @@ export default function GearManageScreen() {
 
   const handleSave = useCallback(async () => {
     if (!selectedBrand || !modelName.trim()) {
-      Alert.alert('입력 확인', '브랜드와 모델명을 모두 입력해 주세요.');
+      Alert.alert(t('gear.inputCheck'), t('gear.inputCheckMsg'));
       return;
     }
 
@@ -125,7 +127,7 @@ export default function GearManageScreen() {
       }
       handleCloseModal();
     } catch {
-      Alert.alert('오류', '기어 저장에 실패했습니다. 다시 시도해 주세요.');
+      Alert.alert(t('common.errorTitle'), t('gear.saveFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -134,19 +136,19 @@ export default function GearManageScreen() {
   const handleDelete = useCallback(
     (gear: GearItem) => {
       Alert.alert(
-        '기어 삭제',
-        `${gear.brand} ${gear.model_name}을(를) 삭제하시겠습니까?`,
+        t('gear.deleteTitle'),
+        t('gear.deleteMsg', { brand: gear.brand, model: gear.model_name }),
         [
-          { text: '취소', style: 'cancel' },
+          { text: t('common.cancel'), style: 'cancel' },
           {
-            text: '삭제',
+            text: t('common.delete'),
             style: 'destructive',
             onPress: async () => {
               try {
                 await gearService.deleteGear(gear.id);
                 setGearList((prev) => prev.filter((g) => g.id !== gear.id));
               } catch {
-                Alert.alert('오류', '기어 삭제에 실패했습니다.');
+                Alert.alert(t('common.errorTitle'), t('gear.deleteFailed'));
               }
             },
           },
@@ -168,7 +170,7 @@ export default function GearManageScreen() {
           })),
         );
       } catch {
-        Alert.alert('오류', '대표 기어 설정에 실패했습니다.');
+        Alert.alert(t('common.errorTitle'), t('gear.setPrimaryFailed'));
       }
     },
     [],
@@ -177,16 +179,16 @@ export default function GearManageScreen() {
   const handleLongPress = useCallback(
     (gear: GearItem) => {
       const options = [
-        { text: '수정', onPress: () => handleOpenEdit(gear) },
+        { text: t('gear.edit'), onPress: () => handleOpenEdit(gear) },
         ...(!gear.is_primary
-          ? [{ text: '대표 기어로 설정', onPress: () => handleSetPrimary(gear) }]
+          ? [{ text: t('gear.setPrimary'), onPress: () => handleSetPrimary(gear) }]
           : []),
         {
-          text: '삭제',
+          text: t('common.delete'),
           style: 'destructive' as const,
           onPress: () => handleDelete(gear),
         },
-        { text: '취소', style: 'cancel' as const },
+        { text: t('common.cancel'), style: 'cancel' as const },
       ];
       Alert.alert(
         `${gear.brand} ${gear.model_name}`,
@@ -212,7 +214,7 @@ export default function GearManageScreen() {
             <Text style={styles.gearBrand}>{item.brand}</Text>
             {item.is_primary && (
               <View style={styles.primaryBadge}>
-                <Text style={styles.primaryBadgeText}>대표</Text>
+                <Text style={styles.primaryBadgeText}>{t('gear.primary')}</Text>
               </View>
             )}
           </View>
@@ -239,9 +241,9 @@ export default function GearManageScreen() {
     () => (
       <View style={styles.emptyContainer}>
         <Ionicons name="footsteps-outline" size={48} color={colors.textTertiary} />
-        <Text style={styles.emptyTitle}>등록된 기어가 없습니다</Text>
+        <Text style={styles.emptyTitle}>{t('gear.emptyTitle')}</Text>
         <Text style={styles.emptyDescription}>
-          러닝화를 등록하고 거리를 함께 기록해 보세요
+          {t('gear.emptyDesc')}
         </Text>
       </View>
     ),
@@ -251,7 +253,7 @@ export default function GearManageScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScreenHeader
-        title="내 기어"
+        title={t('gear.title')}
         onBack={() => navigation.goBack()}
         rightAction={
           <TouchableOpacity onPress={handleOpenAdd} activeOpacity={0.7}>
@@ -294,7 +296,7 @@ export default function GearManageScreen() {
                 <Ionicons name="close" size={28} color={colors.text} />
               </TouchableOpacity>
               <Text style={styles.modalTitle}>
-                {editingGear ? '기어 수정' : '기어 추가'}
+                {editingGear ? t('gear.editGear') : t('gear.addGear')}
               </Text>
               <TouchableOpacity
                 onPress={handleSave}
@@ -310,7 +312,7 @@ export default function GearManageScreen() {
                       (!selectedBrand || !modelName.trim()) && styles.saveButtonDisabled,
                     ]}
                   >
-                    저장
+                    {t('common.save')}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -325,7 +327,7 @@ export default function GearManageScreen() {
               {/* Brand Selection */}
               {showBrandPicker ? (
                 <View style={styles.brandSection}>
-                  <Text style={styles.fieldLabel}>브랜드 선택</Text>
+                  <Text style={styles.fieldLabel}>{t('gear.brandSelect')}</Text>
                   <View style={styles.brandGrid}>
                     {BRANDS.map((brand) => {
                       const isSelected = selectedBrand === brand;
@@ -359,7 +361,7 @@ export default function GearManageScreen() {
                 <>
                   {/* Selected brand display */}
                   <View style={styles.fieldGroup}>
-                    <Text style={styles.fieldLabel}>브랜드</Text>
+                    <Text style={styles.fieldLabel}>{t('gear.brand')}</Text>
                     <TouchableOpacity
                       style={styles.selectedBrandRow}
                       onPress={() => setShowBrandPicker(true)}
@@ -376,7 +378,7 @@ export default function GearManageScreen() {
 
                   {/* Model name input */}
                   <View style={styles.fieldGroup}>
-                    <Text style={styles.fieldLabel}>모델명</Text>
+                    <Text style={styles.fieldLabel}>{t('gear.modelName')}</Text>
                     <TextInput
                       style={styles.textInput}
                       value={modelName}

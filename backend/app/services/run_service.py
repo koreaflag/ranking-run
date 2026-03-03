@@ -16,6 +16,35 @@ from app.models.run_session import RunSession
 from app.services.speed_anomaly_service import analyze_run
 
 
+def _validate_checkpoints(
+    course_checkpoints: list[dict],
+    checkpoint_passes: list[dict],
+) -> list[dict]:
+    """Validate checkpoint passage for a run.
+
+    Checks each course checkpoint against the client-reported passes:
+    - Matching checkpoint_id must exist in passes
+    - distance_from_checkpoint must be <= 50m to count as passed
+    """
+    results = []
+    for cp in course_checkpoints:
+        matching_pass = next(
+            (p for p in checkpoint_passes if p["checkpoint_id"] == cp["id"]),
+            None,
+        )
+        passed = (
+            matching_pass is not None
+            and matching_pass.get("distance_from_checkpoint", 999) <= 50
+        )
+        results.append({
+            "checkpoint_id": cp["id"],
+            "passed": passed,
+            "timestamp": matching_pass["timestamp"] if matching_pass else None,
+            "distance_meters": matching_pass.get("distance_from_checkpoint") if matching_pass else None,
+        })
+    return results
+
+
 class RunService:
     """Handles run sessions, GPS chunk uploads, completion, and crash recovery."""
 
@@ -194,6 +223,18 @@ class RunService:
         if anomaly.is_flagged:
             run_record.is_flagged = True
             run_record.flag_reason = anomaly.flag_reason
+
+        # Checkpoint validation
+        if session.course_id:
+            course_result = await db.execute(
+                select(Course).where(Course.id == session.course_id)
+            )
+            course = course_result.scalar_one_or_none()
+            checkpoint_passes = complete_data.get("checkpoint_passes")
+            if course and course.checkpoints and checkpoint_passes:
+                run_record.checkpoint_results = _validate_checkpoints(
+                    course.checkpoints, checkpoint_passes,
+                )
 
         db.add(run_record)
 

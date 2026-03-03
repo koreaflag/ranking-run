@@ -1,5 +1,7 @@
 import Foundation
 import CoreLocation
+import UIKit
+import AVFoundation
 
 /// CLLocationManager wrapper - handles all Core Location interactions
 class LocationEngine: NSObject, CLLocationManagerDelegate {
@@ -16,6 +18,10 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
     private var coldStartTimer: Timer?
     private var gpsLostTime: Date?
     private var baseAltitude: Double?
+
+    // Background execution
+    private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
+    private var silentAudioPlayer: AVAudioPlayer?
 
     // Callbacks
     var onLocationUpdate: (([String: Any]) -> Void)?
@@ -61,11 +67,15 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         print("[LocationEngine] Current auth status: \(status.rawValue)")
         switch status {
         case .notDetermined:
-            locationManager.requestWhenInUseAuthorization()
+            // Request Always permission for background GPS tracking during runs
+            locationManager.requestAlwaysAuthorization()
+        case .authorizedWhenInUse:
+            // Upgrade to Always if only WhenInUse was granted
+            locationManager.requestAlwaysAuthorization()
         case .denied, .restricted:
             print("[LocationEngine] Location denied - user should enable in Settings")
-        case .authorizedWhenInUse, .authorizedAlways:
-            print("[LocationEngine] Location already authorized")
+        case .authorizedAlways:
+            print("[LocationEngine] Location already authorized (Always)")
         @unknown default:
             break
         }
@@ -75,7 +85,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         let authStatus = locationManager.authorizationStatus
         switch authStatus {
         case .notDetermined:
-            locationManager.requestWhenInUseAuthorization()
+            locationManager.requestAlwaysAuthorization()
             return
         case .denied, .restricted:
             updateGPSStatus("disabled")
@@ -96,6 +106,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         baseAltitude = nil
 
         sensorFusion.startAll()
+        startBackgroundExecution()
 
         DispatchQueue.main.async { [weak self] in
             self?.locationManager.startUpdatingLocation()
@@ -112,6 +123,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         batteryOptimizer?.reset()
         coldStartTimer?.invalidate()
         coldStartTimer = nil
+        stopBackgroundExecution()
 
         DispatchQueue.main.async { [weak self] in
             self?.locationManager.stopUpdatingLocation()
@@ -361,7 +373,9 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             "timestamp": filteredLocation.timestamp,
             "distanceFromStart": filteredLocation.cumulativeDistance,
             "isMoving": stationaryDetector.isMoving,
-            "cadence": cadenceSPM
+            "cadence": cadenceSPM,
+            "elevationGain": sensorFusion.altimeterTracker.totalElevationGain,
+            "elevationLoss": sensorFusion.altimeterTracker.totalElevationLoss
         ]
         onLocationUpdate?(event)
 
@@ -402,5 +416,91 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             self.session.markLocked()
             self.updateGPSStatus("locked")
         }
+    }
+
+    // MARK: - Background Execution
+
+    /// Start background task + silent audio session to keep the app alive.
+    /// CLLocationManager with background mode handles GPS, but the audio session
+    /// prevents iOS from suspending the process entirely (same approach as Nike Run Club).
+    private func startBackgroundExecution() {
+        // 1. Begin a UIKit background task as safety net
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.backgroundTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(self.backgroundTaskId)
+            }
+            self.backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "GPSTracking") { [weak self] in
+                // Expiration handler — iOS is about to suspend, but location updates
+                // will continue thanks to background location mode + audio session
+                if let taskId = self?.backgroundTaskId {
+                    UIApplication.shared.endBackgroundTask(taskId)
+                }
+                self?.backgroundTaskId = .invalid
+            }
+        }
+
+        // 2. Start silent audio session to keep process alive
+        startSilentAudioSession()
+    }
+
+    private func stopBackgroundExecution() {
+        stopSilentAudioSession()
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if self.backgroundTaskId != .invalid {
+                UIApplication.shared.endBackgroundTask(self.backgroundTaskId)
+                self.backgroundTaskId = .invalid
+            }
+        }
+    }
+
+    private func startSilentAudioSession() {
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try audioSession.setActive(true)
+
+            // Play a silent audio file in a loop to keep the app alive
+            // Generate 1 second of silence programmatically
+            let sampleRate: Double = 44100
+            let duration: Double = 1.0
+            let numSamples = Int(sampleRate * duration)
+            let bytesPerSample = 2
+            let dataSize = numSamples * bytesPerSample
+
+            var wavData = Data()
+            // WAV header
+            wavData.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
+            let fileSize = UInt32(36 + dataSize)
+            wavData.append(contentsOf: withUnsafeBytes(of: fileSize.littleEndian) { Array($0) })
+            wavData.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
+            wavData.append(contentsOf: [0x66, 0x6D, 0x74, 0x20]) // "fmt "
+            wavData.append(contentsOf: withUnsafeBytes(of: UInt32(16).littleEndian) { Array($0) }) // chunk size
+            wavData.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) }) // PCM
+            wavData.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) }) // mono
+            wavData.append(contentsOf: withUnsafeBytes(of: UInt32(44100).littleEndian) { Array($0) }) // sample rate
+            wavData.append(contentsOf: withUnsafeBytes(of: UInt32(88200).littleEndian) { Array($0) }) // byte rate
+            wavData.append(contentsOf: withUnsafeBytes(of: UInt16(2).littleEndian) { Array($0) }) // block align
+            wavData.append(contentsOf: withUnsafeBytes(of: UInt16(16).littleEndian) { Array($0) }) // bits per sample
+            wavData.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
+            wavData.append(contentsOf: withUnsafeBytes(of: UInt32(dataSize).littleEndian) { Array($0) })
+            wavData.append(Data(count: dataSize)) // silence
+
+            silentAudioPlayer = try AVAudioPlayer(data: wavData)
+            silentAudioPlayer?.numberOfLoops = -1 // infinite loop
+            silentAudioPlayer?.volume = 0.0
+            silentAudioPlayer?.play()
+            NSLog("[LocationEngine] Silent audio session started for background GPS")
+        } catch {
+            NSLog("[LocationEngine] Failed to start silent audio session: \(error)")
+        }
+    }
+
+    private func stopSilentAudioSession() {
+        silentAudioPlayer?.stop()
+        silentAudioPlayer = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        NSLog("[LocationEngine] Silent audio session stopped")
     }
 }

@@ -1,315 +1,59 @@
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
+  RefreshControl,
   SafeAreaView,
-  TextInput,
-  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
+import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCourseStore } from '../../stores/courseStore';
 import EmptyState from '../../components/common/EmptyState';
 import DifficultyBadge from '../../components/course/DifficultyBadge';
+import CourseThumbnailMap from '../../components/course/CourseThumbnailMap';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import type { CourseStackParamList } from '../../types/navigation';
-import type { CourseListItem, MyCourse, NearbyCourse } from '../../types/api';
-import { formatDistance, formatPace, formatDuration, formatNumber } from '../../utils/format';
-import { formatDate } from '../../utils/format';
-import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS, type DifficultyLevel } from '../../utils/constants';
+import type { CourseListItem, NearbyCourse } from '../../types/api';
+import { formatDistance, formatNumber } from '../../utils/format';
+import {
+  FONT_SIZES,
+  SPACING,
+  BORDER_RADIUS,
+  SHADOWS,
+  type DifficultyLevel,
+} from '../../utils/constants';
+
+// ---- Types ----
 
 type CourseNav = NativeStackNavigationProp<CourseStackParamList, 'CourseList'>;
 
-type SortKey = 'recommended' | 'total_runs' | 'created_at' | 'distance_meters';
+// ---- Constants ----
 
-type SortOption = {
-  label: string;
-  key: SortKey;
-  orderBy?: 'total_runs' | 'created_at' | 'distance_meters';
-  order?: 'asc' | 'desc';
+const NEARBY_CARD_WIDTH = 160;
+const NEARBY_THUMB_HEIGHT = 100;
+const ROW_THUMB_SIZE = 72;
+const PREVIEW_LIMIT = 3;
+
+const DIFFICULTY_ACCENT_COLORS: Record<DifficultyLevel, string> = {
+  easy: '#34C759',
+  normal: '#007AFF',
+  hard: '#FF9500',
+  expert: '#FF3B30',
+  legend: '#A78BFA',
 };
 
-const SORT_OPTIONS: SortOption[] = [
-  { label: '추천', key: 'recommended' },
-  { label: '인기순', key: 'total_runs', orderBy: 'total_runs', order: 'desc' },
-  { label: '최신순', key: 'created_at', orderBy: 'created_at', order: 'desc' },
-  { label: '거리순', key: 'distance_meters', orderBy: 'distance_meters', order: 'asc' },
-];
+const DEFAULT_LAT = 37.5665;
+const DEFAULT_LNG = 126.978;
 
-type CourseTab = 'all' | 'mine';
+// ---- Utilities ----
 
-export default function CourseListScreen() {
-  const navigation = useNavigation<CourseNav>();
-  const colors = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
-  const [tab, setTab] = useState<CourseTab>('all');
-  const [activeSortKey, setActiveSortKey] = useState<SortKey>('recommended');
-  const [searchText, setSearchText] = useState('');
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const {
-    courses,
-    myCourses,
-    nearbyCourses,
-    isLoading,
-    isLoadingMore,
-    isLoadingMyCourses,
-    hasNext,
-    filters,
-    fetchCourses,
-    fetchMoreCourses,
-    fetchMyCourses,
-    fetchNearbyCourses,
-    setFilters,
-  } = useCourseStore();
-
-  useEffect(() => {
-    fetchCourses();
-    fetchNearbyCourses(37.5665, 126.978);
-  }, [fetchCourses, fetchNearbyCourses]);
-
-  useEffect(() => {
-    if (tab === 'mine') {
-      fetchMyCourses();
-    }
-  }, [tab, fetchMyCourses]);
-
-  const handleSortChange = useCallback(
-    (option: SortOption) => {
-      setActiveSortKey(option.key);
-      if (option.key === 'recommended') return; // Data already loaded
-      setFilters({ order_by: option.orderBy!, order: option.order! });
-      fetchCourses({
-        ...filters,
-        order_by: option.orderBy!,
-        order: option.order!,
-      });
-    },
-    [filters, setFilters, fetchCourses],
-  );
-
-  const handleCoursePress = useCallback(
-    (courseId: string) => {
-      navigation.navigate('CourseDetail', { courseId });
-    },
-    [navigation],
-  );
-
-  const handleEndReached = useCallback(() => {
-    if (hasNext && !isLoadingMore) {
-      fetchMoreCourses();
-    }
-  }, [hasNext, isLoadingMore, fetchMoreCourses]);
-
-  const handleSearchChange = useCallback(
-    (text: string) => {
-      setSearchText(text);
-      if (searchDebounceRef.current) {
-        clearTimeout(searchDebounceRef.current);
-      }
-      searchDebounceRef.current = setTimeout(() => {
-        const trimmed = text.trim();
-        const searchParam = trimmed.length > 0 ? trimmed : undefined;
-        setFilters({ ...filters, search: searchParam });
-        fetchCourses({ ...filters, search: searchParam });
-      }, 400);
-    },
-    [filters, setFilters, fetchCourses],
-  );
-
-  const handleClearSearch = useCallback(() => {
-    setSearchText('');
-    const { search: _, ...rest } = filters;
-    setFilters(rest);
-    fetchCourses(rest);
-  }, [filters, setFilters, fetchCourses]);
-
-  // Cleanup search debounce on unmount
-  useEffect(() => {
-    return () => {
-      if (searchDebounceRef.current) {
-        clearTimeout(searchDebounceRef.current);
-      }
-    };
-  }, []);
-
-  const renderCourseItem = useCallback(
-    ({ item }: { item: CourseListItem }) => (
-      <CourseListCard course={item} onPress={() => handleCoursePress(item.id)} />
-    ),
-    [handleCoursePress],
-  );
-
-  const renderFooter = () => {
-    if (!isLoadingMore) return null;
-    return (
-      <View style={styles.loadingFooter}>
-        <ActivityIndicator size="small" color={colors.text} />
-      </View>
-    );
-  };
-
-  const activeSort =
-    SORT_OPTIONS.find((opt) => opt.key === activeSortKey) ?? SORT_OPTIONS[0];
-
-  return (
-    <SafeAreaView style={styles.container}>
-      {/* Header + Tab */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>코스</Text>
-        <View style={styles.tabRow}>
-          <TouchableOpacity
-            style={[styles.tabBtn, tab === 'all' && styles.tabBtnActive]}
-            onPress={() => setTab('all')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabText, tab === 'all' && styles.tabTextActive]}>
-              전체
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabBtn, tab === 'mine' && styles.tabBtnActive]}
-            onPress={() => setTab('mine')}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.tabText, tab === 'mine' && styles.tabTextActive]}>
-              내 코스
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Search Bar (only for 'all' tab) */}
-      {tab === 'all' && (
-        <View style={styles.searchContainer}>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={18} color={colors.textTertiary} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="코스 이름으로 검색"
-              placeholderTextColor={colors.textTertiary}
-              value={searchText}
-              onChangeText={handleSearchChange}
-              returnKeyType="search"
-              autoCorrect={false}
-            />
-            {searchText.length > 0 && (
-              <TouchableOpacity onPress={handleClearSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* Sort Chips (only for 'all' tab) */}
-      {tab === 'all' && (
-        <View style={styles.toolbar}>
-          <View style={styles.sortRow}>
-            {SORT_OPTIONS.map((option) => {
-              const isActive = activeSort.key === option.key;
-              return (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.sortChip,
-                    isActive && styles.sortChipActive,
-                  ]}
-                  onPress={() => handleSortChange(option)}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      styles.sortChipText,
-                      isActive && styles.sortChipTextActive,
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
-
-      {/* Content */}
-      {tab === 'mine' ? (
-        isLoadingMyCourses ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : myCourses.length === 0 ? (
-          <EmptyState
-            icon="🏁"
-            title="아직 만든 코스가 없습니다"
-            description="런닝 후 나만의 코스를 등록해 보세요!"
-          />
-        ) : (
-          <FlatList
-            data={myCourses}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <MyCourseCard course={item} onPress={() => handleCoursePress(item.id)} />
-            )}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )
-      ) : activeSortKey === 'recommended' ? (
-        nearbyCourses.length === 0 ? (
-          <EmptyState
-            icon="🏁"
-            title="주변에 추천 코스가 없습니다"
-            description="코스를 만들어 공유해 보세요!"
-          />
-        ) : (
-          <FlatList
-            data={nearbyCourses}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <RecommendedCourseCard course={item} onPress={() => handleCoursePress(item.id)} />
-            )}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )
-      ) : isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.text} />
-          <Text style={styles.loadingText}>코스를 불러오는 중...</Text>
-        </View>
-      ) : courses.length === 0 ? (
-        <EmptyState
-          icon="🏁"
-          title="아직 등록된 코스가 없습니다"
-          description="첫 코스를 개척하세요!"
-        />
-      ) : (
-        <FlatList
-          data={courses}
-          keyExtractor={(item) => item.id}
-          renderItem={renderCourseItem}
-          contentContainerStyle={styles.listContent}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.3}
-          ListFooterComponent={renderFooter}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-    </SafeAreaView>
-  );
-}
-
-// ---- Sub-components ----
-
-/** Infer difficulty from distance + elevation */
 function inferDifficulty(distanceMeters: number, elevationGain: number): DifficultyLevel {
   const km = distanceMeters / 1000;
   if (km >= 15 || elevationGain >= 300) return 'expert';
@@ -318,7 +62,304 @@ function inferDifficulty(distanceMeters: number, elevationGain: number): Difficu
   return 'easy';
 }
 
-const CourseListCard = React.memo(function CourseListCard({
+// ---- Main Screen ----
+
+export default function CourseListScreen() {
+  const { t } = useTranslation();
+  const navigation = useNavigation<CourseNav>();
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [locationReady, setLocationReady] = useState(false);
+  const [userLat, setUserLat] = useState(DEFAULT_LAT);
+  const [userLng, setUserLng] = useState(DEFAULT_LNG);
+
+  const {
+    nearbyCourses,
+    popularCourses,
+    newCourses,
+    fetchNearbyCourses,
+    fetchPopularCourses,
+    fetchNewCourses,
+  } = useCourseStore();
+
+  const loadLocation = useCallback(async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        setUserLat(loc.coords.latitude);
+        setUserLng(loc.coords.longitude);
+        fetchNearbyCourses(loc.coords.latitude, loc.coords.longitude);
+      } else {
+        fetchNearbyCourses(DEFAULT_LAT, DEFAULT_LNG);
+      }
+    } catch {
+      fetchNearbyCourses(DEFAULT_LAT, DEFAULT_LNG);
+    } finally {
+      setLocationReady(true);
+    }
+  }, [fetchNearbyCourses]);
+
+  useEffect(() => {
+    fetchPopularCourses();
+    fetchNewCourses();
+    loadLocation();
+  }, [fetchPopularCourses, fetchNewCourses, loadLocation]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([
+      fetchPopularCourses(),
+      fetchNewCourses(),
+      fetchNearbyCourses(userLat, userLng),
+    ]);
+    setRefreshing(false);
+  }, [fetchPopularCourses, fetchNewCourses, fetchNearbyCourses, userLat, userLng]);
+
+  const handleCoursePress = useCallback(
+    (courseId: string) => {
+      navigation.navigate('CourseDetail', { courseId });
+    },
+    [navigation],
+  );
+
+  const allEmpty =
+    locationReady &&
+    nearbyCourses.length === 0 &&
+    popularCourses.length === 0 &&
+    newCourses.length === 0;
+
+  if (allEmpty) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>{t('course.discover')}</Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CourseSearch')}
+            style={styles.searchBtn}
+          >
+            <Ionicons name="search" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+        <EmptyState
+          ionicon="walk-outline"
+          title={t('course.emptyAll')}
+          description={t('course.emptyAllMsg')}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
+        }
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>{t('course.discover')}</Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CourseSearch')}
+            style={styles.searchBtn}
+          >
+            <Ionicons name="search" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Section 1: Nearby */}
+        <View style={styles.section}>
+          <SectionHeader title={t('course.nearbySection')} ionicon="location" iconColor="#FF3B30" />
+          {nearbyCourses.length === 0 ? (
+            <View style={styles.nearbyEmptyContainer}>
+              <Text style={styles.nearbyEmptyText}>{t('course.nearbyEmpty')}</Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.nearbyScrollContent}
+            >
+              {nearbyCourses.map((course) => (
+                <NearbyCard
+                  key={course.id}
+                  course={course}
+
+                  onPress={() => handleCoursePress(course.id)}
+                />
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* Section 2: Popular */}
+        {popularCourses.length > 0 && (
+          <View style={styles.section}>
+            <SectionHeader
+              title={t('course.popularSection')}
+              ionicon="flame"
+              iconColor="#FF9500"
+              onMore={() =>
+                navigation.navigate('CourseSearch', { initialSort: 'total_runs' })
+              }
+            />
+            <View style={styles.verticalList}>
+              {popularCourses.slice(0, PREVIEW_LIMIT).map((course) => (
+                <CourseRowCard
+                  key={course.id}
+                  course={course}
+
+                  onPress={() => handleCoursePress(course.id)}
+                />
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Section 3: New */}
+        {newCourses.length > 0 && (
+          <View style={styles.section}>
+            <SectionHeader
+              title={t('course.newSection')}
+              ionicon="sparkles"
+              iconColor="#34C759"
+              onMore={() =>
+                navigation.navigate('CourseSearch', { initialSort: 'created_at' })
+              }
+            />
+            <View style={styles.verticalList}>
+              {newCourses.slice(0, PREVIEW_LIMIT).map((course) => (
+                <CourseRowCard
+                  key={course.id}
+                  course={course}
+
+                  onPress={() => handleCoursePress(course.id)}
+                />
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Bottom padding */}
+        <View style={styles.bottomPadding} />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// ---- Section Header ----
+
+function SectionHeader({
+  title,
+  ionicon,
+  iconColor,
+  onMore,
+}: {
+  title: string;
+  ionicon?: keyof typeof Ionicons.glyphMap;
+  iconColor?: string;
+  onMore?: () => void;
+}) {
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { t } = useTranslation();
+
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionTitleRow}>
+        {ionicon && (
+          <View style={[styles.sectionIconBadge, { backgroundColor: (iconColor ?? colors.primary) + '18' }]}>
+            <Ionicons name={ionicon} size={14} color={iconColor ?? colors.primary} />
+          </View>
+        )}
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
+      {onMore && (
+        <TouchableOpacity
+          onPress={onMore}
+          style={styles.seeMoreHeaderBtn}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={styles.seeMoreHeaderText}>{t('course.seeMore')}</Text>
+          <Ionicons name="chevron-forward" size={13} color={colors.textTertiary} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+// ---- Nearby Card (Horizontal Scroll) ----
+
+const NearbyCard = React.memo(function NearbyCard({
+  course,
+  onPress,
+}: {
+  course: NearbyCourse;
+  onPress: () => void;
+}) {
+  const { t } = useTranslation();
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const difficulty = (course.difficulty as DifficultyLevel) || inferDifficulty(course.distance_meters, 0);
+  const accentColor = DIFFICULTY_ACCENT_COLORS[difficulty];
+
+  return (
+    <TouchableOpacity
+      style={styles.nearbyCard}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      {/* Thumbnail */}
+      <View style={styles.nearbyThumbContainer}>
+        {course.route_preview && course.route_preview.length >= 2 ? (
+          <CourseThumbnailMap
+            routePreview={course.route_preview}
+            width={NEARBY_CARD_WIDTH}
+            height={NEARBY_THUMB_HEIGHT}
+            borderRadius={0}
+          />
+        ) : (
+          <View style={[styles.nearbyThumb, styles.nearbyThumbPlaceholder]}>
+            <Ionicons name="map-outline" size={28} color={colors.textTertiary} />
+          </View>
+        )}
+      </View>
+
+      {/* Info */}
+      <View style={styles.nearbyInfo}>
+        <Text style={styles.nearbyTitle} numberOfLines={1}>
+          {course.title}
+        </Text>
+        <View style={styles.nearbyMetaRow}>
+          <Text style={styles.nearbyDistance}>
+            {formatDistance(course.distance_meters)}
+          </Text>
+          <View style={[styles.difficultyDot, { backgroundColor: accentColor }]} />
+        </View>
+        <Text style={styles.nearbyFromUser}>
+          {t('course.nearbyDistance', {
+            distance: formatDistance(course.distance_from_user_meters),
+          })}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+// ---- Course Row Card (Vertical List) ----
+
+const CourseRowCard = React.memo(function CourseRowCard({
   course,
   onPress,
 }: {
@@ -331,219 +372,45 @@ const CourseListCard = React.memo(function CourseListCard({
 
   return (
     <TouchableOpacity
-      style={styles.courseCard}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      {/* Top row: title + difficulty badge */}
-      <View style={styles.cardTopRow}>
-        <Text style={styles.cardTitle} numberOfLines={1}>
-          {course.title}
-        </Text>
-        <DifficultyBadge difficulty={difficulty} />
-      </View>
-
-      {/* Creator */}
-      <Text style={styles.creatorText}>
-        by {course.creator.nickname} · {formatDate(course.created_at)}
-      </Text>
-
-      {/* Distance + elevation row */}
-      <View style={styles.cardDistanceRow}>
-        <Text style={styles.cardDistance}>
-          {formatDistance(course.distance_meters)}
-        </Text>
-        {course.elevation_gain_meters > 0 && (
-          <Text style={styles.cardElevation}>
-            +{Math.round(course.elevation_gain_meters)}m
-          </Text>
-        )}
-      </View>
-
-      {/* Competition stats: likes + challengers + runners + avg pace */}
-      <View style={styles.cardStatsRow}>
-        <View style={styles.statItem}>
-          <View style={styles.statItemWithIcon}>
-            <Ionicons name="thumbs-up-outline" size={14} color={colors.textTertiary} />
-            <Text style={styles.statItemValue}>
-              {formatNumber(course.like_count ?? 0)}
-            </Text>
-          </View>
-          <Text style={styles.statItemLabel}>좋아요</Text>
-        </View>
-        <View style={styles.statItemDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statItemValue}>
-            {formatNumber(course.stats.total_runs)}
-          </Text>
-          <Text style={styles.statItemLabel}>도전</Text>
-        </View>
-        <View style={styles.statItemDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statItemValue}>
-            {formatNumber(course.stats.unique_runners)}
-          </Text>
-          <Text style={styles.statItemLabel}>러너</Text>
-        </View>
-        <View style={styles.statItemDivider} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statItemValue, { color: colors.secondary }]}>
-            {course.stats.avg_pace_seconds_per_km
-              ? formatPace(course.stats.avg_pace_seconds_per_km)
-              : '--'}
-          </Text>
-          <Text style={styles.statItemLabel}>평균 페이스</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-});
-
-const MyCourseCard = React.memo(function MyCourseCard({
-  course,
-  onPress,
-}: {
-  course: MyCourse;
-  onPress: () => void;
-}) {
-  const colors = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
-
-  return (
-    <TouchableOpacity
-      style={styles.courseCard}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <View style={styles.cardTopRow}>
-        <Text style={styles.cardTitle} numberOfLines={1}>
-          {course.title}
-        </Text>
-        <View
-          style={[
-            styles.myCourseBadge,
-            course.is_public ? styles.badgePublic : styles.badgePrivate,
-          ]}
-        >
-          <Text
-            style={[
-              styles.myCourseBadgeText,
-              course.is_public ? styles.badgePublicText : styles.badgePrivateText,
-            ]}
-          >
-            {course.is_public ? '공개' : '비공개'}
-          </Text>
-        </View>
-      </View>
-
-      <Text style={styles.myCourseDate}>
-        {formatDate(course.created_at)}
-      </Text>
-
-      <View style={styles.cardDistanceRow}>
-        <Text style={styles.cardDistance}>
-          {formatDistance(course.distance_meters)}
-        </Text>
-      </View>
-
-      <View style={styles.cardStatsRow}>
-        <View style={styles.statItem}>
-          <Text style={styles.statItemValue}>
-            {formatNumber(course.stats.total_runs)}
-          </Text>
-          <Text style={styles.statItemLabel}>도전</Text>
-        </View>
-        <View style={styles.statItemDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statItemValue}>
-            {formatNumber(course.stats.unique_runners)}
-          </Text>
-          <Text style={styles.statItemLabel}>러너</Text>
-        </View>
-        <View style={styles.statItemDivider} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statItemValue, { color: colors.secondary }]}>
-            {course.stats.avg_pace_seconds_per_km
-              ? formatPace(course.stats.avg_pace_seconds_per_km)
-              : '--'}
-          </Text>
-          <Text style={styles.statItemLabel}>평균 페이스</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-});
-
-const RecommendedCourseCard = React.memo(function RecommendedCourseCard({
-  course,
-  onPress,
-}: {
-  course: NearbyCourse;
-  onPress: () => void;
-}) {
-  const colors = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
-  return (
-    <TouchableOpacity
-      style={styles.courseCard}
+      style={styles.rowCard}
       onPress={onPress}
       activeOpacity={0.7}
     >
       {/* Thumbnail */}
-      {course.thumbnail_url ? (
-        <Image
-          source={{ uri: course.thumbnail_url }}
-          style={styles.recommendedThumbnail}
+      {course.route_preview && course.route_preview.length >= 2 ? (
+        <CourseThumbnailMap
+          routePreview={course.route_preview}
+          width={ROW_THUMB_SIZE}
+          height={ROW_THUMB_SIZE}
+          borderRadius={BORDER_RADIUS.sm}
         />
-      ) : null}
-      <View style={styles.cardTopRow}>
-        <Text style={styles.cardTitle} numberOfLines={1}>
-          {course.title}
-        </Text>
-        {course.difficulty && (
-          <DifficultyBadge difficulty={course.difficulty as DifficultyLevel} />
-        )}
-      </View>
-
-      {/* Creator */}
-      <Text style={styles.creatorText}>
-        by {course.creator_nickname}
-      </Text>
-
-      {/* Distance */}
-      <View style={styles.cardDistanceRow}>
-        <Text style={styles.cardDistance}>
-          {formatDistance(course.distance_meters)}
-        </Text>
-      </View>
-
-      {/* Stats */}
-      <View style={styles.cardStatsRow}>
-        <View style={styles.statItem}>
-          <View style={styles.statItemWithIcon}>
-            <Ionicons name="thumbs-up-outline" size={14} color={colors.textTertiary} />
-            <Text style={styles.statItemValue}>
-              {formatNumber(course.like_count ?? 0)}
-            </Text>
-          </View>
-          <Text style={styles.statItemLabel}>좋아요</Text>
+      ) : (
+        <View style={[styles.rowThumb, styles.rowThumbPlaceholder]}>
+          <Ionicons name="map-outline" size={24} color={colors.textTertiary} />
         </View>
-        <View style={styles.statItemDivider} />
-        <View style={styles.statItem}>
-          <Text style={styles.statItemValue}>
-            {formatNumber(course.total_runs)}
+      )}
+
+      {/* Content */}
+      <View style={styles.rowContent}>
+        <View style={styles.rowTopLine}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {course.title}
           </Text>
-          <Text style={styles.statItemLabel}>도전</Text>
+          <DifficultyBadge difficulty={difficulty} />
         </View>
-        <View style={styles.statItemDivider} />
-        <View style={styles.statItem}>
-          <View style={styles.statItemWithIcon}>
-            <Ionicons name="navigate-outline" size={14} color={colors.textTertiary} />
-            <Text style={styles.statItemValue}>
-              {formatDistance(course.distance_from_user_meters)}
-            </Text>
-          </View>
-          <Text style={styles.statItemLabel}>내 위치에서</Text>
+        <View style={styles.rowBottomLine}>
+          <Text style={styles.rowMeta}>
+            {formatDistance(course.distance_meters)}
+          </Text>
+          <Text style={styles.rowMetaDivider}>{'·'}</Text>
+          <Ionicons
+            name="people-outline"
+            size={12}
+            color={colors.textTertiary}
+          />
+          <Text style={styles.rowMeta}>
+            {formatNumber(course.stats.total_runs)}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -552,235 +419,241 @@ const RecommendedCourseCard = React.memo(function RecommendedCourseCard({
 
 // ---- Styles ----
 
-const createStyles = (c: ThemeColors) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: c.background,
-  },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.background,
+    },
+    scrollContent: {
+      flexGrow: 1,
+    },
 
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xxl,
-    paddingTop: SPACING.huge,
-    paddingBottom: SPACING.lg,
-  },
-  headerTitle: {
-    fontSize: 34,
-    fontWeight: '900',
-    color: c.text,
-    letterSpacing: -1,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    backgroundColor: c.surface,
-    borderRadius: BORDER_RADIUS.full,
-    padding: 2,
-  },
-  tabBtn: {
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: BORDER_RADIUS.full,
-  },
-  tabBtnActive: {
-    backgroundColor: c.card,
-    ...SHADOWS.sm,
-  },
-  tabText: {
-    fontSize: FONT_SIZES.sm,
-    color: c.textTertiary,
-    fontWeight: '600',
-  },
-  tabTextActive: {
-    color: c.text,
-    fontWeight: '700',
-  },
+    // -- Header --
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: SPACING.xxl,
+      paddingTop: SPACING.lg,
+      paddingBottom: SPACING.md,
+    },
+    headerTitle: {
+      fontSize: 34,
+      fontWeight: '900',
+      color: c.text,
+      letterSpacing: -1,
+    },
+    searchBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: BORDER_RADIUS.full,
+      backgroundColor: c.surface,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
 
-  // -- Search Bar --
-  searchContainer: {
-    paddingHorizontal: SPACING.xxl,
-    paddingBottom: SPACING.md,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: c.surface,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    gap: SPACING.sm,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: FONT_SIZES.md,
-    color: c.text,
-    padding: 0,
-  },
+    // -- Section --
+    section: {
+      marginTop: SPACING.xl,
+    },
+    sectionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: SPACING.xxl,
+      marginBottom: SPACING.md,
+    },
+    sectionTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.sm,
+    },
+    sectionIconBadge: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sectionTitle: {
+      fontSize: FONT_SIZES.lg,
+      fontWeight: '800',
+      color: c.text,
+      letterSpacing: -0.3,
+    },
+    seeMoreHeaderBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 2,
+    },
+    seeMoreHeaderText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '600',
+      color: c.textTertiary,
+    },
 
-  // -- Toolbar: sort chips + view toggle --
-  toolbar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xxl,
-    paddingBottom: SPACING.lg,
-  },
-  sortRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-  },
-  sortChip: {
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: BORDER_RADIUS.full,
-    backgroundColor: c.background,
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  sortChipActive: {
-    backgroundColor: c.primary,
-    borderColor: c.primary,
-  },
-  sortChipText: {
-    fontSize: FONT_SIZES.sm,
-    color: c.textSecondary,
-    fontWeight: '600',
-  },
-  sortChipTextActive: {
-    color: c.white,
-    fontWeight: '700',
-  },
+    // -- Nearby horizontal scroll --
+    nearbyScrollContent: {
+      paddingHorizontal: SPACING.xxl,
+      gap: SPACING.md,
+    },
+    nearbyEmptyContainer: {
+      paddingHorizontal: SPACING.xxl,
+      paddingVertical: SPACING.xl,
+    },
+    nearbyEmptyText: {
+      fontSize: FONT_SIZES.sm,
+      color: c.textTertiary,
+      fontWeight: '500',
+    },
 
-  // -- List --
-  listContent: {
-    paddingHorizontal: SPACING.xxl,
-    paddingBottom: SPACING.xxxl,
-    gap: SPACING.md,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: SPACING.md,
-  },
-  loadingText: {
-    fontSize: FONT_SIZES.md,
-    color: c.textSecondary,
-  },
-  loadingFooter: {
-    paddingVertical: SPACING.xl,
-    alignItems: 'center',
-  },
+    // -- Nearby Card --
+    nearbyCard: {
+      width: NEARBY_CARD_WIDTH,
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: c.border,
+      ...SHADOWS.sm,
+    },
+    nearbyThumbContainer: {
+      position: 'relative',
+    },
+    nearbyThumb: {
+      width: NEARBY_CARD_WIDTH,
+      height: NEARBY_THUMB_HEIGHT,
+      resizeMode: 'cover',
+    },
+    nearbyThumbPlaceholder: {
+      backgroundColor: c.surface,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    nearbyThumbOverlay: {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height: 36,
+      backgroundColor: 'rgba(0, 0, 0, 0.15)',
+    },
+    nearbyInfo: {
+      padding: SPACING.sm,
+      paddingTop: SPACING.sm + 2,
+      gap: 3,
+    },
+    nearbyTitle: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.text,
+    },
+    nearbyMetaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+    },
+    nearbyDistance: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '600',
+      color: c.text,
+      fontVariant: ['tabular-nums'],
+    },
+    difficultyDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    nearbyFromUser: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '500',
+      color: c.textTertiary,
+    },
 
-  courseCard: {
-    backgroundColor: c.card,
-    borderRadius: BORDER_RADIUS.lg,
-    padding: SPACING.xl,
-    gap: SPACING.md,
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cardTitle: {
-    flex: 1,
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '700',
-    color: c.text,
-    marginRight: SPACING.sm,
-  },
-  creatorText: {
-    fontSize: FONT_SIZES.xs,
-    color: c.textTertiary,
-    fontWeight: '500',
-  },
-  cardDistanceRow: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    alignItems: 'baseline',
-  },
-  cardDistance: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: c.text,
-    fontVariant: ['tabular-nums'],
-    letterSpacing: -1,
-  },
-  cardElevation: {
-    fontSize: FONT_SIZES.sm,
-    color: c.textTertiary,
-    fontWeight: '500',
-  },
-  cardStatsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: c.divider,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
-  statItemWithIcon: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  statItemDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: c.divider,
-  },
-  statItemValue: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '700',
-    color: c.text,
-    fontVariant: ['tabular-nums'],
-  },
-  statItemLabel: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: '500',
-    color: c.textTertiary,
-  },
+    // -- Vertical list --
+    verticalList: {
+      paddingHorizontal: SPACING.xxl,
+      gap: SPACING.sm,
+    },
 
-  // -- My Course Card extras --
-  myCourseBadge: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
-    borderRadius: BORDER_RADIUS.full,
-  },
-  badgePublic: {
-    backgroundColor: c.success + '18',
-  },
-  badgePrivate: {
-    backgroundColor: c.textTertiary + '18',
-  },
-  myCourseBadgeText: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: '600',
-  },
-  badgePublicText: {
-    color: c.success,
-  },
-  badgePrivateText: {
-    color: c.textTertiary,
-  },
-  myCourseDate: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '500',
-    color: c.textTertiary,
-  },
+    // -- Row Card --
+    rowCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.md,
+      padding: SPACING.md,
+      gap: SPACING.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      ...SHADOWS.sm,
+    },
+    rowThumb: {
+      width: ROW_THUMB_SIZE,
+      height: ROW_THUMB_SIZE,
+      borderRadius: BORDER_RADIUS.sm,
+      resizeMode: 'cover',
+    },
+    rowThumbPlaceholder: {
+      backgroundColor: c.surface,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    rowContent: {
+      flex: 1,
+      justifyContent: 'center',
+      gap: SPACING.xs,
+    },
+    rowTopLine: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: SPACING.sm,
+    },
+    rowTitle: {
+      flex: 1,
+      fontSize: FONT_SIZES.md,
+      fontWeight: '700',
+      color: c.text,
+    },
+    rowBottomLine: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    rowMeta: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '500',
+      color: c.textSecondary,
+      fontVariant: ['tabular-nums'],
+    },
+    rowMetaDivider: {
+      fontSize: FONT_SIZES.sm,
+      color: c.textTertiary,
+      marginHorizontal: 2,
+    },
 
-  // -- Recommended card thumbnail --
-  recommendedThumbnail: {
-    height: 120,
-    borderRadius: BORDER_RADIUS.md,
-    resizeMode: 'cover',
-  },
-});
+    // -- See More Button --
+    seeMoreBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: SPACING.md,
+      marginHorizontal: SPACING.xxl,
+      paddingVertical: SPACING.md,
+      borderRadius: BORDER_RADIUS.md,
+      backgroundColor: c.surface,
+      gap: 4,
+    },
+    seeMoreText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.primary,
+    },
+
+    // -- Bottom padding --
+    bottomPadding: {
+      height: SPACING.xxxl + SPACING.xl,
+    },
+  });

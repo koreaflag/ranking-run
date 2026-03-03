@@ -32,15 +32,27 @@
 	<string>RUNVS uses your location to track distance, pace, and route during standalone runs on Apple Watch.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>RUNVS uses your location to track distance, pace, and route during standalone runs on Apple Watch.</string>
-	<key>WKBackgroundModes</key>
-	<array>
-		<string>workout-processing</string>
-		<string>self-care</string>
-		<string>location</string>
-	</array>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>
 	<string>app.runcrew</string>
+	<key>WKBackgroundModes</key>
+	<array>
+		<string>workout-processing</string>
+	</array>
+	<key>CLKComplicationPrincipalClass</key>
+	<string>$(PRODUCT_MODULE_NAME).ComplicationController</string>
+	<key>CLKComplicationSupportedFamilies</key>
+	<array>
+		<string>CLKComplicationFamilyGraphicCircular</string>
+		<string>CLKComplicationFamilyGraphicCorner</string>
+		<string>CLKComplicationFamilyGraphicRectangular</string>
+		<string>CLKComplicationFamilyModularSmall</string>
+		<string>CLKComplicationFamilyUtilitarianSmall</string>
+		<string>CLKComplicationFamilyUtilitarianSmallFlat</string>
+		<string>CLKComplicationFamilyCircularSmall</string>
+	</array>
 </dict>
 </plist>

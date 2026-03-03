@@ -9,9 +9,10 @@ export const rankingService = {
     courseId: string,
     limit: number = 10,
   ): Promise<RankingEntry[]> {
-    return api.get<RankingEntry[]>(
+    const res = await api.get<RankingListResponse>(
       `/courses/${courseId}/rankings?limit=${limit}`,
     );
+    return res.data;
   },
 
   /**

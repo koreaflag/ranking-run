@@ -17,12 +17,15 @@ import {
   FlatList,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { authService } from '../../services/authService';
+import { crewService } from '../../services/crewService';
+import type { CrewItem } from '../../types/api';
 import { savePendingProfile, clearPendingProfile } from '../../services/pendingSyncService';
 import { useTheme } from '../../hooks/useTheme';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
@@ -91,6 +94,7 @@ function getCountryName(code: string | null): string | null {
 
 export default function ProfileEditScreen() {
   const navigation = useNavigation();
+  const { t } = useTranslation();
   const { user, setUser } = useAuthStore();
   const darkMode = useSettingsStore((s) => s.darkMode);
   const colors = useTheme();
@@ -115,8 +119,22 @@ export default function ProfileEditScreen() {
   const [countrySearch, setCountrySearch] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [myCrews, setMyCrews] = useState<CrewItem[]>([]);
+  const [selectedCrewId, setSelectedCrewId] = useState<string | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const birthdayYPosition = useRef(0);
+
+  // Load user's crews
+  React.useEffect(() => {
+    crewService.getMyCrews().then((crews) => {
+      setMyCrews(crews);
+      // Find currently displayed crew
+      if (user?.crew_name) {
+        const current = crews.find((c) => c.name === user.crew_name);
+        if (current) setSelectedCrewId(current.id);
+      }
+    }).catch(() => {});
+  }, [user?.crew_name]);
 
   const handleOpenDatePicker = useCallback(() => {
     Keyboard.dismiss();
@@ -130,13 +148,13 @@ export default function ProfileEditScreen() {
   const isValidNickname = nickname.length >= 2 && nickname.length <= 12;
 
   const handlePickAvatar = () => {
-    Alert.alert('프로필 사진', '사진을 어디서 가져올까요?', [
-      { text: '카메라', onPress: () => pickImage('camera') },
-      { text: '앨범에서 선택', onPress: () => pickImage('library') },
+    Alert.alert(t('profileEdit.profilePhoto'), t('profileEdit.photoSource'), [
+      { text: t('common.camera'), onPress: () => pickImage('camera') },
+      { text: t('common.library'), onPress: () => pickImage('library') },
       ...(user?.avatar_url || avatarUri
-        ? [{ text: '기본 이미지로 변경', onPress: () => setAvatarUri('__remove__') }]
+        ? [{ text: t('common.defaultImage'), onPress: () => setAvatarUri('__remove__') }]
         : []),
-      { text: '취소', style: 'cancel' as const },
+      { text: t('common.cancel'), style: 'cancel' as const },
     ]);
   };
 
@@ -147,7 +165,7 @@ export default function ProfileEditScreen() {
         : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      Alert.alert('권한 필요', '사진에 접근하려면 권한을 허용해 주세요.');
+      Alert.alert(t('common.permissionTitle'), t('common.permissionPhoto'));
       return;
     }
 
@@ -172,7 +190,7 @@ export default function ProfileEditScreen() {
 
   const handleSave = async () => {
     if (!isValidNickname) {
-      Alert.alert('닉네임 확인', '닉네임은 2~12자로 입력해 주세요.');
+      Alert.alert(t('profileEdit.nicknameCheck'), t('profileEdit.nicknameCheckMsg'));
       return;
     }
 
@@ -180,15 +198,19 @@ export default function ProfileEditScreen() {
     const parsedWeight = weightKg ? parseFloat(weightKg) : null;
 
     if (parsedHeight != null && (parsedHeight < 50 || parsedHeight > 300)) {
-      Alert.alert('입력 확인', '키는 50~300cm 사이로 입력해 주세요.');
+      Alert.alert(t('profileEdit.inputCheck'), t('profileEdit.heightRange'));
       return;
     }
     if (parsedWeight != null && (parsedWeight < 20 || parsedWeight > 500)) {
-      Alert.alert('입력 확인', '몸무게는 20~500kg 사이로 입력해 주세요.');
+      Alert.alert(t('profileEdit.inputCheck'), t('profileEdit.weightRange'));
       return;
     }
 
     setIsSaving(true);
+
+    // Determine new crew_name from selection
+    const selectedCrew = myCrews.find((c) => c.id === selectedCrewId);
+    const newCrewName = selectedCrew?.name ?? null;
 
     // 1) Save locally first (instant)
     const localProfile = {
@@ -201,6 +223,7 @@ export default function ProfileEditScreen() {
       instagram_username: instagram.trim() || null,
       country,
       activity_region: activityRegion.trim() || undefined,
+      crew_name: newCrewName,
     };
 
     if (avatarUri === '__remove__') {
@@ -247,6 +270,11 @@ export default function ProfileEditScreen() {
 
         // Server succeeded — clear pending
         await clearPendingProfile();
+
+        // Sync crew selection if changed
+        if (selectedCrewId && newCrewName !== user?.crew_name) {
+          await crewService.setPrimaryCrew(selectedCrewId);
+        }
       } catch {
         // Server unreachable — pending data stays in queue for next sync
       }
@@ -257,7 +285,7 @@ export default function ProfileEditScreen() {
     avatarUri === '__remove__' ? null : avatarUri ?? user?.avatar_url ?? null;
 
   const formatBirthday = (d: Date) =>
-    `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+    t('profileEdit.birthdayFormat', { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() });
 
   return (
     <SafeAreaView style={styles.container}>
@@ -270,7 +298,7 @@ export default function ProfileEditScreen() {
           <TouchableOpacity onPress={() => navigation.goBack()} activeOpacity={0.7}>
             <Ionicons name="close" size={28} color={colors.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>프로필 수정</Text>
+          <Text style={styles.headerTitle}>{t('profileEdit.title')}</Text>
           <TouchableOpacity
             onPress={handleSave}
             disabled={isSaving || !isValidNickname}
@@ -285,7 +313,7 @@ export default function ProfileEditScreen() {
                   (!isValidNickname || isSaving) && styles.saveButtonDisabled,
                 ]}
               >
-                저장
+                {t('profileEdit.saveBtn')}
               </Text>
             )}
           </TouchableOpacity>
@@ -320,13 +348,13 @@ export default function ProfileEditScreen() {
 
           {/* Nickname */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>닉네임</Text>
+            <Text style={styles.fieldLabel}>{t('profileEdit.nickname')}</Text>
             <View style={styles.inputRow}>
               <TextInput
                 style={styles.textInput}
                 value={nickname}
                 onChangeText={setNickname}
-                placeholder="2~12자"
+                placeholder={t('profileEdit.nicknamePlaceholder')}
                 placeholderTextColor={colors.textTertiary}
                 maxLength={12}
                 returnKeyType="done"
@@ -334,19 +362,19 @@ export default function ProfileEditScreen() {
               <Text style={styles.charCount}>{nickname.length}/12</Text>
             </View>
             {nickname.length > 0 && !isValidNickname && (
-              <Text style={styles.errorText}>닉네임은 2자 이상 입력해 주세요</Text>
+              <Text style={styles.errorText}>{t('profileEdit.nicknameMinError')}</Text>
             )}
           </View>
 
           {/* Bio */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>자기소개</Text>
+            <Text style={styles.fieldLabel}>{t('profileEdit.bio')}</Text>
             <View style={styles.inputRow}>
               <TextInput
                 style={styles.bioInput}
                 value={bio}
                 onChangeText={setBio}
-                placeholder="한 줄로 나를 소개해 주세요"
+                placeholder={t('profileEdit.bioPlaceholder')}
                 placeholderTextColor={colors.textTertiary}
                 maxLength={100}
                 multiline
@@ -358,14 +386,14 @@ export default function ProfileEditScreen() {
 
           {/* Instagram */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>인스타그램</Text>
+            <Text style={styles.fieldLabel}>{t('profileEdit.instagram')}</Text>
             <View style={styles.unitInputRow}>
               <Text style={styles.unitLabel}>@</Text>
               <TextInput
                 style={[styles.textInput, { flex: 1 }]}
                 value={instagram}
                 onChangeText={setInstagram}
-                placeholder="인스타그램 아이디"
+                placeholder={t('profileEdit.instagramPlaceholder')}
                 placeholderTextColor={colors.textTertiary}
                 maxLength={30}
                 returnKeyType="done"
@@ -377,7 +405,7 @@ export default function ProfileEditScreen() {
 
           {/* Country */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>국가</Text>
+            <Text style={styles.fieldLabel}>{t('profileEdit.country')}</Text>
             <TouchableOpacity
               style={styles.selectInput}
               onPress={() => { Keyboard.dismiss(); setShowCountryPicker(true); }}
@@ -391,7 +419,7 @@ export default function ProfileEditScreen() {
               >
                 {country
                   ? `${getCountryFlag(country)} ${getCountryName(country)}`
-                  : '국가를 선택해 주세요'}
+                  : t('profileEdit.countryPlaceholder')}
               </Text>
               <Ionicons name="chevron-down" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
@@ -399,24 +427,94 @@ export default function ProfileEditScreen() {
 
           {/* Activity Region */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>활동지역</Text>
+            <Text style={styles.fieldLabel}>{t('profileEdit.region')}</Text>
             <TextInput
               style={styles.textInput}
               value={activityRegion}
               onChangeText={setActivityRegion}
-              placeholder="예: 서울 강남구"
+              placeholder={t('profileEdit.regionPlaceholder')}
               placeholderTextColor={colors.textTertiary}
               maxLength={30}
               returnKeyType="done"
             />
           </View>
 
+          {/* Crew display selection */}
+          {myCrews.length > 0 && (
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>{t('profileEdit.crewDisplay')}</Text>
+              <View style={styles.crewList}>
+                {/* "None" option */}
+                <TouchableOpacity
+                  style={[
+                    styles.crewOption,
+                    !selectedCrewId && styles.crewOptionSelected,
+                  ]}
+                  onPress={() => setSelectedCrewId(null)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="eye-off-outline"
+                    size={18}
+                    color={!selectedCrewId ? colors.primary : colors.textTertiary}
+                  />
+                  <Text
+                    style={[
+                      styles.crewOptionText,
+                      !selectedCrewId && styles.crewOptionTextSelected,
+                    ]}
+                  >
+                    {t('profileEdit.crewNone')}
+                  </Text>
+                  {!selectedCrewId && (
+                    <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+
+                {myCrews.map((crew) => {
+                  const isSelected = selectedCrewId === crew.id;
+                  return (
+                    <TouchableOpacity
+                      key={crew.id}
+                      style={[
+                        styles.crewOption,
+                        isSelected && styles.crewOptionSelected,
+                      ]}
+                      onPress={() => setSelectedCrewId(crew.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View
+                        style={[
+                          styles.crewBadgeDot,
+                          { backgroundColor: crew.badge_color },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.crewOptionText,
+                          isSelected && styles.crewOptionTextSelected,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {crew.name}
+                      </Text>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={styles.crewHint}>{t('profileEdit.crewHint')}</Text>
+            </View>
+          )}
+
           {/* Birthday */}
           <View
             style={styles.fieldGroup}
             onLayout={(e) => { birthdayYPosition.current = e.nativeEvent.layout.y; }}
           >
-            <Text style={styles.fieldLabel}>생년월일</Text>
+            <Text style={styles.fieldLabel}>{t('profileEdit.birthday')}</Text>
             <TouchableOpacity
               style={styles.selectInput}
               onPress={handleOpenDatePicker}
@@ -428,7 +526,7 @@ export default function ProfileEditScreen() {
                   !birthday && { color: colors.textTertiary },
                 ]}
               >
-                {birthday ? formatBirthday(birthday) : '생년월일을 선택해 주세요'}
+                {birthday ? formatBirthday(birthday) : t('profileEdit.birthdayPlaceholder')}
               </Text>
               <Ionicons name="calendar-outline" size={20} color={colors.textTertiary} />
             </TouchableOpacity>
@@ -454,7 +552,7 @@ export default function ProfileEditScreen() {
                   onPress={() => setShowDatePicker(false)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.dateConfirmText}>확인</Text>
+                  <Text style={styles.dateConfirmText}>{t('common.confirm')}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -463,7 +561,7 @@ export default function ProfileEditScreen() {
           {/* Height & Weight */}
           <View style={styles.rowFields}>
             <View style={[styles.fieldGroup, { flex: 1 }]}>
-              <Text style={styles.fieldLabel}>키</Text>
+              <Text style={styles.fieldLabel}>{t('profileEdit.height')}</Text>
               <View style={styles.unitInputRow}>
                 <TextInput
                   style={[styles.textInput, { flex: 1 }]}
@@ -480,7 +578,7 @@ export default function ProfileEditScreen() {
             </View>
 
             <View style={[styles.fieldGroup, { flex: 1 }]}>
-              <Text style={styles.fieldLabel}>몸무게</Text>
+              <Text style={styles.fieldLabel}>{t('profileEdit.weight')}</Text>
               <View style={styles.unitInputRow}>
                 <TextInput
                   style={[styles.textInput, { flex: 1 }]}
@@ -501,7 +599,7 @@ export default function ProfileEditScreen() {
           <View style={styles.infoBox}>
             <Ionicons name="shield-checkmark-outline" size={16} color={colors.textTertiary} />
             <Text style={styles.infoText}>
-              개인 정보는 칼로리 계산 등 러닝 통계에만 활용되며, 다른 사용자에게 공개되지 않습니다.
+              {t('profileEdit.privacyNote')}
             </Text>
           </View>
         </ScrollView>
@@ -516,7 +614,7 @@ export default function ProfileEditScreen() {
       >
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>국가 선택</Text>
+            <Text style={styles.modalTitle}>{t('profileEdit.countrySelect')}</Text>
             <TouchableOpacity
               onPress={() => { setShowCountryPicker(false); setCountrySearch(''); }}
               activeOpacity={0.7}
@@ -531,7 +629,7 @@ export default function ProfileEditScreen() {
               style={styles.searchInput}
               value={countrySearch}
               onChangeText={setCountrySearch}
-              placeholder="국가 검색..."
+              placeholder={t('profileEdit.countrySearch')}
               placeholderTextColor={colors.textTertiary}
               autoCorrect={false}
               returnKeyType="search"
@@ -589,7 +687,7 @@ export default function ProfileEditScreen() {
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.clearCountryText}>선택 해제</Text>
+                <Text style={styles.clearCountryText}>{t('profileEdit.countryDeselect')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -848,6 +946,47 @@ const createStyles = (c: ThemeColors) =>
       fontSize: FONT_SIZES.md,
       fontWeight: '600',
       color: c.textTertiary,
+    },
+
+    // Crew selection
+    crewList: {
+      gap: SPACING.sm,
+    },
+    crewOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.md,
+      paddingVertical: SPACING.md,
+      paddingHorizontal: SPACING.lg,
+      borderRadius: BORDER_RADIUS.md,
+      borderWidth: 1,
+      borderColor: c.border,
+      backgroundColor: c.card,
+    },
+    crewOptionSelected: {
+      borderColor: c.primary,
+      backgroundColor: c.primary + '10',
+    },
+    crewOptionText: {
+      flex: 1,
+      fontSize: FONT_SIZES.md,
+      fontWeight: '600',
+      color: c.text,
+    },
+    crewOptionTextSelected: {
+      color: c.primary,
+      fontWeight: '700',
+    },
+    crewBadgeDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+    },
+    crewHint: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '500',
+      color: c.textTertiary,
+      lineHeight: 16,
     },
 
     // Info box

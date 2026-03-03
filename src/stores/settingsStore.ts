@@ -2,6 +2,9 @@ import { create } from 'zustand';
 
 type DistanceUnit = 'km' | 'mi';
 type PaceUnit = 'min/km' | 'min/mi';
+export type RunEnvironment = 'outdoor' | 'indoor';
+export type VoiceGender = 'female' | 'male';
+export type ScreenOrientation = 'portrait' | 'landscape';
 
 interface SettingsState {
   // Units
@@ -25,6 +28,11 @@ interface SettingsState {
   countdownSeconds: number;
   splitAlertEnabled: boolean;
   voiceGuidance: boolean;
+  runEnvironment: RunEnvironment;
+  voiceGender: VoiceGender;
+  screenOrientation: ScreenOrientation;
+  showHeartRate: boolean;
+  showLevelColor: boolean;
 
   // Actions
   setDistanceUnit: (unit: DistanceUnit) => void;
@@ -39,6 +47,11 @@ interface SettingsState {
   setVoiceGuidance: (enabled: boolean) => void;
   setBackgroundImageUri: (uri: string | null) => void;
   setMap3DStyle: (enabled: boolean) => void;
+  setRunEnvironment: (env: RunEnvironment) => void;
+  setVoiceGender: (gender: VoiceGender) => void;
+  setScreenOrientation: (orientation: ScreenOrientation) => void;
+  setShowHeartRate: (show: boolean) => void;
+  setShowLevelColor: (show: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -58,6 +71,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   countdownSeconds: 3,
   splitAlertEnabled: true,
   voiceGuidance: true,
+  runEnvironment: 'outdoor',
+  voiceGender: 'female',
+  screenOrientation: 'portrait',
+  showHeartRate: true,
+  showLevelColor: true,
 
   setDistanceUnit: (unit) => set({ distanceUnit: unit }),
   setPaceUnit: (unit) => set({ paceUnit: unit }),
@@ -71,4 +89,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setVoiceGuidance: (enabled) => set({ voiceGuidance: enabled }),
   setBackgroundImageUri: (uri) => set({ backgroundImageUri: uri }),
   setMap3DStyle: (enabled) => set({ map3DStyle: enabled }),
+  setRunEnvironment: (env) => set({ runEnvironment: env }),
+  setVoiceGender: (gender) => set({ voiceGender: gender }),
+  setScreenOrientation: (orientation) => set({ screenOrientation: orientation }),
+  setShowHeartRate: (show) => set({ showHeartRate: show }),
+  setShowLevelColor: (show) => set({ showLevelColor: show }),
 }));

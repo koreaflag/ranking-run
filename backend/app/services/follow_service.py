@@ -17,6 +17,56 @@ from app.models.user import User
 class FollowService:
     """Handles follow/unfollow operations, follower lists, and friend activity."""
 
+    async def search_by_code(
+        self,
+        db: AsyncSession,
+        user_code: str,
+        current_user_id: UUID,
+    ) -> dict | None:
+        """Search a user by their unique user_code."""
+        result = await db.execute(
+            select(User).where(User.user_code == user_code)
+        )
+        user = result.scalar_one_or_none()
+        if user is None or user.id == current_user_id:
+            return None
+
+        follow_result = await db.execute(
+            select(Follow.id).where(
+                Follow.follower_id == current_user_id,
+                Follow.following_id == user.id,
+            )
+        )
+        is_following = follow_result.scalar_one_or_none() is not None
+
+        return {
+            "id": str(user.id),
+            "user_code": user.user_code,
+            "nickname": user.nickname,
+            "avatar_url": user.avatar_url,
+            "bio": user.bio,
+            "total_distance_meters": user.total_distance_meters,
+            "total_runs": user.total_runs,
+            "is_following": is_following,
+        }
+
+    async def follow_by_code(
+        self,
+        db: AsyncSession,
+        follower_id: UUID,
+        user_code: str,
+    ) -> Follow:
+        """Follow a user by their user_code."""
+        result = await db.execute(
+            select(User).where(User.user_code == user_code)
+        )
+        target = result.scalar_one_or_none()
+        if target is None:
+            raise NotFoundError(
+                code="NOT_FOUND", message="해당 코드의 사용자를 찾을 수 없습니다"
+            )
+        return await self.follow_user(db, follower_id, target.id)
+
     async def follow_user(
         self,
         db: AsyncSession,

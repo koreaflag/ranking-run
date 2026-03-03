@@ -5,20 +5,26 @@
 // ============================================================
 
 import type { TurnDirection } from './turnPointAnalyzer';
+import i18n from '../i18n';
+
+/** i18n key mapping for each turn direction. */
+const directionI18nKeyMap: Record<TurnDirection, string> = {
+  'straight': 'directions.straight',
+  'slight-left': 'directions.slightLeft',
+  'left': 'directions.left',
+  'sharp-left': 'directions.sharpLeft',
+  'slight-right': 'directions.slightRight',
+  'right': 'directions.right',
+  'sharp-right': 'directions.sharpRight',
+  'u-turn': 'directions.uTurn',
+};
 
 /**
- * Korean labels for each turn direction.
+ * Returns a translated label for the given turn direction.
  */
-export const directionToKorean: Record<TurnDirection, string> = {
-  'straight': '직진',
-  'slight-left': '약간 좌회전',
-  'left': '좌회전',
-  'sharp-left': '크게 좌회전',
-  'slight-right': '약간 우회전',
-  'right': '우회전',
-  'sharp-right': '크게 우회전',
-  'u-turn': '유턴',
-};
+export function getDirectionLabel(direction: TurnDirection): string {
+  return i18n.t(directionI18nKeyMap[direction]);
+}
 
 /**
  * Map a TurnDirection to an Ionicons icon name.
@@ -38,16 +44,16 @@ export function turnDirectionIcon(direction: TurnDirection): string {
 }
 
 /**
- * Format a human-readable turn instruction string in Korean.
+ * Format a human-readable turn instruction string.
  * Adapts wording based on distance to the turn.
  */
 export function formatTurnInstruction(
   distanceMeters: number,
   direction: TurnDirection,
 ): string {
-  const ko = directionToKorean[direction];
+  const dir = getDirectionLabel(direction);
 
-  if (distanceMeters <= 20) return `${ko}하세요`;
-  if (distanceMeters < 1000) return `${Math.round(distanceMeters)}m 앞에서 ${ko}`;
-  return `${(distanceMeters / 1000).toFixed(1)}km 앞에서 ${ko}`;
+  if (distanceMeters <= 20) return i18n.t('voice.turnNow', { direction: dir });
+  if (distanceMeters < 1000) return `${Math.round(distanceMeters)}m ${dir}`;
+  return `${(distanceMeters / 1000).toFixed(1)}km ${dir}`;
 }

@@ -8,7 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		01F3A4B5C6D7E8F90A1B2C3D /* ControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01F3A4B5C6D7E8F90A1B2C3E /* ControlView.swift */; };
+		02E1F2A3B4C5D6E70A1B2C3D /* PreparingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02E1F2A3B4C5D6E70A1B2C3E /* PreparingView.swift */; };
 		02F298461B432E194816937C /* PausedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A849E6BDBD56885F613276 /* PausedView.swift */; };
+		03A1B2C3D4E5F60718293A4B /* NavigateToStartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03A1B2C3D4E5F60718293A4C /* NavigateToStartView.swift */; };
 		0738A9A3CFB96EDA6A4AF2AB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1FA1B7C7CEB8D9C1433392A2 /* PrivacyInfo.xcprivacy */; };
 		0BA0D444EA396EC7F9750795 /* OutlierDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E39802E5031682A0308681 /* OutlierDetector.swift */; };
 		13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB01A68108700A75B9A /* AppDelegate.mm */; };
@@ -24,17 +26,26 @@
 		4274A2FB4F7BE8CC44189E9A /* HeartRateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8ABA79F8337CDC75B3CFBBF /* HeartRateManager.swift */; };
 		43BC916F90CCA882B15C5833 /* CoordinateConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA905B0A3DCFF3DE81BB4F45 /* CoordinateConverter.swift */; };
 		43BD8154A1C9BC7167956302 /* SensorFusionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5162480224957A552E6277ED /* SensorFusionManager.swift */; };
+		44E1CF682E31C59A19EB5943 /* RunningActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F174A75A6B91D58602D0811F /* RunningActivityAttributes.swift */; };
 		4EE58083BA648363AF5FF382 /* PedometerTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 187C1E20B93C32B28C9E9A39 /* PedometerTracker.swift */; };
 		50C64C031052019EF3222901 /* WatchBridgeModule.m in Sources */ = {isa = PBXBuildFile; fileRef = F5B6F11B14DE3F0EDABC002E /* WatchBridgeModule.m */; };
+		5A70836FCED54AC722D9DBF5 /* LiveActivityModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B1960C945A49962FB7E41F7 /* LiveActivityModule.m */; };
+		5A7B3C1D2E4F6A8B9C0D1E30 /* Settings-Watch.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 5A7B3C1D2E4F6A8B9C0D1E2F /* Settings-Watch.bundle */; };
 		5CFE20D4B7E69A9E7BF2A058 /* AltimeterTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B6102106B4CC9C3977B726 /* AltimeterTracker.swift */; };
 		681F6BFCFA8865BBD8DC0E83 /* MotionTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECB3F546B1B42AB7C4640E3F /* MotionTracker.swift */; };
 		72034B29ADF7B4496C5DB25D /* KalmanFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71F15C34D5DBDE3AD2B1B0E5 /* KalmanFilter.swift */; };
 		7822B446638980B0C52210A7 /* WatchBridgeModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C0D5E99EBB32668804A57B8 /* WatchBridgeModule.swift */; };
 		7A3DAF2430A2E41C8DD4F7DA /* WatchMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CB363B4A1EA35D9BB02DB7 /* WatchMessage.swift */; };
 		8711395128334C34B4188838 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1FA1B7C7CEB8D9C1433392A2 /* PrivacyInfo.xcprivacy */; };
+		87113952283350001B4188A0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 87113953283350001B4188A1 /* Assets.xcassets */; };
+		8E7D9F5D2009E4CABE6080ED /* RunCrewWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01C6BD21B286C4BFF2B20727 /* RunCrewWidgetsBundle.swift */; };
 		8F9DB380AF3B34C960213AC8 /* LocationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6FE64330D8041998CDF36B /* LocationEngine.swift */; };
+		920FF8733178BE905613800D /* LiveActivityModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D3E23E99F66DBAC3800DBC /* LiveActivityModule.swift */; };
 		9EB1D5F3875D84A6CB4DFDED /* GeoMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827B5F7E33D2E3BFEEE93F8 /* GeoMath.swift */; };
 		A8E53FF8C84BC51FFA91F02C /* StationaryDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D24E92F8EFCDDCA87BF7F9 /* StationaryDetector.swift */; };
+		AA11BB22CC33DD44EE55FF01 /* WorkoutMirroringManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF02 /* WorkoutMirroringManager.swift */; };
+		AA11BB22CC33DD44EE55FF03 /* WorkoutMirroringPhone.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA11BB22CC33DD44EE55FF04 /* WorkoutMirroringPhone.swift */; };
+		AC138B66D72DC2A0051FAC7D /* RunningLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E2BFD284F6334354901C949 /* RunningLiveActivity.swift */; };
 		B18059E884C0ABDD17F3DC3D /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC715A2D49A985799AEE119 /* ExpoModulesProvider.swift */; };
 		B70F8995DAADE426C72AF62F /* BatteryOptimizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED3B68D7E54F6B9A9CE010C /* BatteryOptimizer.swift */; };
 		B9D95FD262AEF5BC36FCCB3B /* RunningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F257DADDE52A1B98EA1A679 /* RunningView.swift */; };
@@ -42,23 +53,74 @@
 		C0750497B73D460CB0DD2E60 /* noop-file.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04EA1770F7404268825423FB /* noop-file.swift */; };
 		C44709053764FEE1BA111497 /* CompletedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2C54373AEC7799F16DD9F0D /* CompletedView.swift */; };
 		C5D6E7F8091A2B3C4D5E6F70 /* WatchLocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B4C5D6E7F80912A3B4C5D6 /* WatchLocationManager.swift */; };
+		C832EAB68A6AE3EDC9D4F8FE /* RunningActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7766235A0F3E1EF09A67A6 /* RunningActivityAttributes.swift */; };
+		CC11AA22BB33DD44EE55FF05 /* ComplicationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC11AA22BB33DD44EE55FF06 /* ComplicationController.swift */; };
 		CE3CF588755FA31E4A391FD7 /* CountdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D5A328F7D095939AC5C83AA /* CountdownView.swift */; };
 		D1A2B3C4E5F60718293A4B5C /* CourseNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* CourseNavigationView.swift */; };
 		D6E7F8091A2B3C4D5E6F7081 /* WatchRunStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C5D6E7F8091A2B3C4D5E6F /* WatchRunStorage.swift */; };
+		D6E7F8091A2B3C4D5E6F7082 /* WatchPedometerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C5D6E7F8091A2B3C4D5E70 /* WatchPedometerManager.swift */; };
 		D79283A1C1DAEA8340642A5B /* main.jsbundle in Resources */ = {isa = PBXBuildFile; fileRef = 13EE5B7D8FFCF78C1DA04FB3 /* main.jsbundle */; };
 		DE3E68B8EBE9DC7C26B0E96C /* RunCrewWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 792EFC1A398B9726AF9C506F /* RunCrewWatchApp.swift */; };
 		DF77140FD489E8326C6A0D4C /* WatchRunState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89D3EA53C449D4691B845758 /* WatchRunState.swift */; };
+		E1F2A3B4C5D6E7F80A1B2C3D /* RunCrew Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 7D877B030C22BC36F5C9BEB4 /* RunCrew Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E2FF90CBD5E420B5A9FC9D40 /* WatchSessionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DD646D26F6716EFC3EAE18D /* WatchSessionService.swift */; };
 		E75FEE9A10205677F345B5B0 /* GPSPoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = 961895AE3BDC38DBEF65850D /* GPSPoint.swift */; };
+		ECFF595BCCC2D11371CB93AD /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F5178E07207DBFD56D6E8234 /* Foundation.framework */; };
+		F8560A095CF81F4FFDCBB93E /* RunCrewWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 7F78B0C9EC180D1C8ABF3DFE /* RunCrewWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FA5943ACFB14C88098022DFC /* FilteredLocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 243FD64FC70174D33C86812C /* FilteredLocation.swift */; };
 		FBE70347F8E60CEDD539C4E0 /* GPSTrackerModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909473F9413E3A85CD4D8D1D /* GPSTrackerModule.swift */; };
 		FE4FCAD09D937B791916CE8A /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC30CCA13FB0CBAD7F791D16 /* WatchSessionManager.swift */; };
 		FFAAFA5B30D6367426D343A6 /* GPSTrackerModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 0BE70551443B1C23DDD6950C /* GPSTrackerModule.m */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		3552A31A779BD3FE3638D4E9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 333B31858795D2D5FEF6DC9B;
+			remoteInfo = RunCrewWidgets;
+		};
+		6778401B2F4B654D00A8A1ED /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7910D078E6D3D3B4111A7372;
+			remoteInfo = "RunCrew Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		32FB0FE7C55EF1343D1B3585 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F8560A095CF81F4FFDCBB93E /* RunCrewWidgets.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6778401D2F4B656B00A8A1ED /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				E1F2A3B4C5D6E7F80A1B2C3D /* RunCrew Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		01A849E6BDBD56885F613276 /* PausedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PausedView.swift; sourceTree = "<group>"; };
+		01C6BD21B286C4BFF2B20727 /* RunCrewWidgetsBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RunCrewWidgetsBundle.swift; sourceTree = "<group>"; };
 		01F3A4B5C6D7E8F90A1B2C3E /* ControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlView.swift; sourceTree = "<group>"; };
+		02E1F2A3B4C5D6E70A1B2C3E /* PreparingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreparingView.swift; sourceTree = "<group>"; };
+		03A1B2C3D4E5F60718293A4C /* NavigateToStartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigateToStartView.swift; sourceTree = "<group>"; };
 		04EA1770F7404268825423FB /* noop-file.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = "noop-file.swift"; path = "RunCrew/noop-file.swift"; sourceTree = "<group>"; };
 		0BE70551443B1C23DDD6950C /* GPSTrackerModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = GPSTrackerModule.m; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* RunCrew.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RunCrew.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -70,35 +132,47 @@
 		13EE5B7D8FFCF78C1DA04FB3 /* main.jsbundle */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; path = main.jsbundle; sourceTree = "<group>"; };
 		145AFB599CC8B1488AA8BA6E /* RunSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RunSession.swift; sourceTree = "<group>"; };
 		187C1E20B93C32B28C9E9A39 /* PedometerTracker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PedometerTracker.swift; sourceTree = "<group>"; };
+		1B1960C945A49962FB7E41F7 /* LiveActivityModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = LiveActivityModule.m; sourceTree = "<group>"; };
 		1C0D5E99EBB32668804A57B8 /* WatchBridgeModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchBridgeModule.swift; sourceTree = "<group>"; };
 		1FA1B7C7CEB8D9C1433392A2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = RunCrew/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		243FD64FC70174D33C86812C /* FilteredLocation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FilteredLocation.swift; sourceTree = "<group>"; };
+		300059E95FFCD85EEDF5D76B /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		33D3E23E99F66DBAC3800DBC /* LiveActivityModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveActivityModule.swift; sourceTree = "<group>"; };
 		42E39802E5031682A0308681 /* OutlierDetector.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OutlierDetector.swift; sourceTree = "<group>"; };
 		42F6E86EC0F37719B3DCB30B /* IdleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdleView.swift; sourceTree = "<group>"; };
 		5162480224957A552E6277ED /* SensorFusionManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SensorFusionManager.swift; sourceTree = "<group>"; };
 		57DDD89489C04FE777D3C0FA /* Pods-RunCrew.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunCrew.release.xcconfig"; path = "Target Support Files/Pods-RunCrew/Pods-RunCrew.release.xcconfig"; sourceTree = "<group>"; };
+		5A7B3C1D2E4F6A8B9C0D1E2F /* Settings-Watch.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; name = "Settings-Watch.bundle"; path = "RunCrew/Settings-Watch.bundle"; sourceTree = "<group>"; };
 		5C936CE9C388703A82467D33 /* libPods-RunCrew.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-RunCrew.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6DD646D26F6716EFC3EAE18D /* WatchSessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionService.swift; sourceTree = "<group>"; };
 		6F257DADDE52A1B98EA1A679 /* RunningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunningView.swift; sourceTree = "<group>"; };
 		71F15C34D5DBDE3AD2B1B0E5 /* KalmanFilter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KalmanFilter.swift; sourceTree = "<group>"; };
 		792EFC1A398B9726AF9C506F /* RunCrewWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunCrewWatchApp.swift; sourceTree = "<group>"; };
 		7D877B030C22BC36F5C9BEB4 /* RunCrew Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "RunCrew Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		7F78B0C9EC180D1C8ABF3DFE /* RunCrewWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RunCrewWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		87113953283350001B4188A1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		89D3EA53C449D4691B845758 /* WatchRunState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRunState.swift; sourceTree = "<group>"; };
 		8D5A328F7D095939AC5C83AA /* CountdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountdownView.swift; sourceTree = "<group>"; };
 		909473F9413E3A85CD4D8D1D /* GPSTrackerModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GPSTrackerModule.swift; sourceTree = "<group>"; };
 		961895AE3BDC38DBEF65850D /* GPSPoint.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GPSPoint.swift; sourceTree = "<group>"; };
 		9827B5F7E33D2E3BFEEE93F8 /* GeoMath.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeoMath.swift; sourceTree = "<group>"; };
+		9E2BFD284F6334354901C949 /* RunningLiveActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RunningLiveActivity.swift; sourceTree = "<group>"; };
 		9F563E5AB1BC162FFA0AB77E /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		A12ED3E9D449DD54528D5789 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* CourseNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseNavigationView.swift; sourceTree = "<group>"; };
 		A2CB363B4A1EA35D9BB02DB7 /* WatchMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMessage.swift; sourceTree = "<group>"; };
 		A3B4C5D6E7F80912A3B4C5D6 /* WatchLocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchLocationManager.swift; sourceTree = "<group>"; };
 		AA084EF6CBD1D1511D2A1C87 /* Pods-RunCrew.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunCrew.debug.xcconfig"; path = "Target Support Files/Pods-RunCrew/Pods-RunCrew.debug.xcconfig"; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE55FF02 /* WorkoutMirroringManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutMirroringManager.swift; sourceTree = "<group>"; };
+		AA11BB22CC33DD44EE55FF04 /* WorkoutMirroringPhone.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WorkoutMirroringPhone.swift; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = RunCrew/SplashScreen.storyboard; sourceTree = "<group>"; };
 		AAFD75EA8A035BB4B5684611 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AC7766235A0F3E1EF09A67A6 /* RunningActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RunningActivityAttributes.swift; sourceTree = "<group>"; };
 		AED3B68D7E54F6B9A9CE010C /* BatteryOptimizer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BatteryOptimizer.swift; sourceTree = "<group>"; };
 		B4C5D6E7F8091A2B3C4D5E6F /* WatchRunStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRunStorage.swift; sourceTree = "<group>"; };
+		B4C5D6E7F8091A2B3C4D5E70 /* WatchPedometerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPedometerManager.swift; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		CC11AA22BB33DD44EE55FF06 /* ComplicationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComplicationController.swift; sourceTree = "<group>"; };
 		CC30CCA13FB0CBAD7F791D16 /* WatchSessionManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
 		D0B6102106B4CC9C3977B726 /* AltimeterTracker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AltimeterTracker.swift; sourceTree = "<group>"; };
 		E8ABA79F8337CDC75B3CFBBF /* HeartRateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartRateManager.swift; sourceTree = "<group>"; };
@@ -106,8 +180,10 @@
 		ECB3F546B1B42AB7C4640E3F /* MotionTracker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MotionTracker.swift; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F08828EC4FA32996D10127FD /* RunSessionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunSessionViewModel.swift; sourceTree = "<group>"; };
+		F174A75A6B91D58602D0811F /* RunningActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RunningActivityAttributes.swift; sourceTree = "<group>"; };
 		F2C54373AEC7799F16DD9F0D /* CompletedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletedView.swift; sourceTree = "<group>"; };
 		F3D24E92F8EFCDDCA87BF7F9 /* StationaryDetector.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StationaryDetector.swift; sourceTree = "<group>"; };
+		F5178E07207DBFD56D6E8234 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		F5B6F11B14DE3F0EDABC002E /* WatchBridgeModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = WatchBridgeModule.m; sourceTree = "<group>"; };
 		FA4D95E8879DAA5AA02240F0 /* RunCrewWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = RunCrewWatch.entitlements; sourceTree = "<group>"; };
 		FA6FE64330D8041998CDF36B /* LocationEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocationEngine.swift; sourceTree = "<group>"; };
@@ -121,6 +197,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				3CABB75F6A663B0D98C07D70 /* libPods-RunCrew.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		70B91F752292B57DD4993D73 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ECFF595BCCC2D11371CB93AD /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -141,7 +225,6 @@
 				42E39802E5031682A0308681 /* OutlierDetector.swift */,
 				F3D24E92F8EFCDDCA87BF7F9 /* StationaryDetector.swift */,
 			);
-			name = Filter;
 			path = Filter;
 			sourceTree = "<group>";
 		};
@@ -168,6 +251,7 @@
 				13B07FB01A68108700A75B9A /* AppDelegate.mm */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
+				5A7B3C1D2E4F6A8B9C0D1E2F /* Settings-Watch.bundle */,
 				13B07FB71A68108700A75B9A /* main.m */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
 				04EA1770F7404268825423FB /* noop-file.swift */,
@@ -176,6 +260,7 @@
 				12E205E2E9C5AD8A6CA2205D /* GPS */,
 				B71E42A5C16A34FFEDF1923F /* Watch */,
 				13EE5B7D8FFCF78C1DA04FB3 /* main.jsbundle */,
+				A97856707AAAB0077F3ECD65 /* LiveActivity */,
 			);
 			name = RunCrew;
 			sourceTree = "<group>";
@@ -184,7 +269,9 @@
 			isa = PBXGroup;
 			children = (
 				792EFC1A398B9726AF9C506F /* RunCrewWatchApp.swift */,
+				CC11AA22BB33DD44EE55FF06 /* ComplicationController.swift */,
 				AAFD75EA8A035BB4B5684611 /* ContentView.swift */,
+				87113953283350001B4188A1 /* Assets.xcassets */,
 				F28F609F036BB2D62D249CE8 /* Models */,
 				DB707719F66144D1A936D838 /* Services */,
 				2F0D97CE4F13382B5141F8C6 /* ViewModels */,
@@ -200,6 +287,7 @@
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
 				5C936CE9C388703A82467D33 /* libPods-RunCrew.a */,
+				89B0EFFDA26419C5960E2E7E /* iOS */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -221,6 +309,8 @@
 				8D5A328F7D095939AC5C83AA /* CountdownView.swift */,
 				42F6E86EC0F37719B3DCB30B /* IdleView.swift */,
 				01A849E6BDBD56885F613276 /* PausedView.swift */,
+				03A1B2C3D4E5F60718293A4C /* NavigateToStartView.swift */,
+				02E1F2A3B4C5D6E70A1B2C3E /* PreparingView.swift */,
 				6F257DADDE52A1B98EA1A679 /* RunningView.swift */,
 			);
 			path = Views;
@@ -234,7 +324,6 @@
 				187C1E20B93C32B28C9E9A39 /* PedometerTracker.swift */,
 				5162480224957A552E6277ED /* SensorFusionManager.swift */,
 			);
-			name = Sensor;
 			path = Sensor;
 			sourceTree = "<group>";
 		};
@@ -255,6 +344,7 @@
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				D65327D7A22EEC0BE12398D9 /* Pods */,
 				D7E4C46ADA2E9064B798F356 /* ExpoModulesProviders */,
+				C08235AA15BDA5616AEE4437 /* RunCrewWidgets */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -266,8 +356,17 @@
 			children = (
 				13B07F961A680F5B00A75B9A /* RunCrew.app */,
 				7D877B030C22BC36F5C9BEB4 /* RunCrew Watch App.app */,
+				7F78B0C9EC180D1C8ABF3DFE /* RunCrewWidgets.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		89B0EFFDA26419C5960E2E7E /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				F5178E07207DBFD56D6E8234 /* Foundation.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 		92DBD88DE9BF7D494EA9DA96 /* RunCrew */ = {
@@ -278,6 +377,17 @@
 			name = RunCrew;
 			sourceTree = "<group>";
 		};
+		A97856707AAAB0077F3ECD65 /* LiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				AC7766235A0F3E1EF09A67A6 /* RunningActivityAttributes.swift */,
+				33D3E23E99F66DBAC3800DBC /* LiveActivityModule.swift */,
+				1B1960C945A49962FB7E41F7 /* LiveActivityModule.m */,
+			);
+			name = LiveActivity;
+			path = RunCrew/LiveActivity;
+			sourceTree = "<group>";
+		};
 		AEEB7017CC3BD2E0E4443F1E /* Util */ = {
 			isa = PBXGroup;
 			children = (
@@ -285,7 +395,6 @@
 				FA905B0A3DCFF3DE81BB4F45 /* CoordinateConverter.swift */,
 				9827B5F7E33D2E3BFEEE93F8 /* GeoMath.swift */,
 			);
-			name = Util;
 			path = Util;
 			sourceTree = "<group>";
 		};
@@ -295,6 +404,7 @@
 				CC30CCA13FB0CBAD7F791D16 /* WatchSessionManager.swift */,
 				1C0D5E99EBB32668804A57B8 /* WatchBridgeModule.swift */,
 				F5B6F11B14DE3F0EDABC002E /* WatchBridgeModule.m */,
+				AA11BB22CC33DD44EE55FF04 /* WorkoutMirroringPhone.swift */,
 			);
 			name = Watch;
 			path = RunCrew/Watch;
@@ -307,6 +417,18 @@
 			);
 			name = Supporting;
 			path = RunCrew/Supporting;
+			sourceTree = "<group>";
+		};
+		C08235AA15BDA5616AEE4437 /* RunCrewWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				01C6BD21B286C4BFF2B20727 /* RunCrewWidgetsBundle.swift */,
+				F174A75A6B91D58602D0811F /* RunningActivityAttributes.swift */,
+				9E2BFD284F6334354901C949 /* RunningLiveActivity.swift */,
+				300059E95FFCD85EEDF5D76B /* Info.plist */,
+			);
+			name = RunCrewWidgets;
+			path = RunCrewWidgets;
 			sourceTree = "<group>";
 		};
 		D65327D7A22EEC0BE12398D9 /* Pods */ = {
@@ -333,7 +455,9 @@
 				E8ABA79F8337CDC75B3CFBBF /* HeartRateManager.swift */,
 				A3B4C5D6E7F80912A3B4C5D6 /* WatchLocationManager.swift */,
 				B4C5D6E7F8091A2B3C4D5E6F /* WatchRunStorage.swift */,
+				B4C5D6E7F8091A2B3C4D5E70 /* WatchPedometerManager.swift */,
 				6DD646D26F6716EFC3EAE18D /* WatchSessionService.swift */,
+				AA11BB22CC33DD44EE55FF02 /* WorkoutMirroringManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -354,7 +478,6 @@
 				961895AE3BDC38DBEF65850D /* GPSPoint.swift */,
 				145AFB599CC8B1488AA8BA6E /* RunSession.swift */,
 			);
-			name = Model;
 			path = Model;
 			sourceTree = "<group>";
 		};
@@ -373,15 +496,37 @@
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				27F5D5ECF10883AE624E66A1 /* [CP] Embed Pods Frameworks */,
 				1C0CBC02EC4F7208F60D27C8 /* [CP] Copy Pods Resources */,
+				6778401D2F4B656B00A8A1ED /* Embed Watch Content */,
+				FAFA54A98D431C25AA9C2AA6 /* [Custom] Generate Vendored Framework dSYMs */,
+				32FB0FE7C55EF1343D1B3585 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				6778401C2F4B654D00A8A1ED /* PBXTargetDependency */,
+				F00974371AB6707191FAF871 /* PBXTargetDependency */,
 			);
 			name = RunCrew;
 			productName = RunCrew;
 			productReference = 13B07F961A680F5B00A75B9A /* RunCrew.app */;
 			productType = "com.apple.product-type.application";
+		};
+		333B31858795D2D5FEF6DC9B /* RunCrewWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B2D9564164AFF88F8A5BFC67 /* Build configuration list for PBXNativeTarget "RunCrewWidgets" */;
+			buildPhases = (
+				34E2A0E27FD8606F47C2EF3C /* Sources */,
+				70B91F752292B57DD4993D73 /* Frameworks */,
+				F5C5149800A0CB92F2DD7B7E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RunCrewWidgets;
+			productName = RunCrewWidgets;
+			productReference = 7F78B0C9EC180D1C8ABF3DFE /* RunCrewWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 		7910D078E6D3D3B4111A7372 /* RunCrew Watch App */ = {
 			isa = PBXNativeTarget;
@@ -411,6 +556,9 @@
 					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1250;
 					};
+					7910D078E6D3D3B4111A7372 = {
+						CreatedOnToolsVersion = 15.0;
+					};
 				};
 			};
 			buildConfigurationList = 83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "RunCrew" */;
@@ -428,6 +576,7 @@
 			targets = (
 				13B07F861A680F5B00A75B9A /* RunCrew */,
 				7910D078E6D3D3B4111A7372 /* RunCrew Watch App */,
+				333B31858795D2D5FEF6DC9B /* RunCrewWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -442,6 +591,7 @@
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				0738A9A3CFB96EDA6A4AF2AB /* PrivacyInfo.xcprivacy in Resources */,
 				D79283A1C1DAEA8340642A5B /* main.jsbundle in Resources */,
+				5A7B3C1D2E4F6A8B9C0D1E30 /* Settings-Watch.bundle in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -449,7 +599,15 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				87113952283350001B4188A0 /* Assets.xcassets in Resources */,
 				8711395128334C34B4188838 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F5C5149800A0CB92F2DD7B7E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -503,6 +661,7 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/AppAuth/AppAuthCore_Privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoLocalization/ExpoLocalization_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/GTMAppAuth/GTMAppAuth_Privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/GTMSessionFetcher/GTMSessionFetcher_Core_Privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/GoogleSignIn/GoogleSignIn.bundle",
@@ -523,6 +682,7 @@
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/AppAuthCore_Privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoLocalization_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GTMAppAuth_Privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GTMSessionFetcher_Core_Privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleSignIn.bundle",
@@ -588,6 +748,24 @@
 			shellPath = /bin/sh;
 			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-RunCrew/expo-configure-project.sh\"\n";
 		};
+		FAFA54A98D431C25AA9C2AA6 /* [Custom] Generate Vendored Framework dSYMs */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "[Custom] Generate Vendored Framework dSYMs";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "FRAMEWORKS_DIR=\"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\n[ ! -d \"$FRAMEWORKS_DIR\" ] && exit 0\nfor fw in \"$FRAMEWORKS_DIR\"/*.framework; do\n  [ ! -d \"$fw\" ] && continue\n  fw_name=$(basename \"$fw\" .framework)\n  binary=\"$fw/$fw_name\"\n  [ ! -f \"$binary\" ] && continue\n  dsym=\"${DWARF_DSYM_FOLDER_PATH}/${fw_name}.framework.dSYM\"\n  [ -d \"$dsym\" ] && continue\n  dsymutil \"$binary\" -o \"$dsym\" 2>/dev/null || true\ndone\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -618,6 +796,20 @@
 				FE4FCAD09D937B791916CE8A /* WatchSessionManager.swift in Sources */,
 				7822B446638980B0C52210A7 /* WatchBridgeModule.swift in Sources */,
 				50C64C031052019EF3222901 /* WatchBridgeModule.m in Sources */,
+				AA11BB22CC33DD44EE55FF03 /* WorkoutMirroringPhone.swift in Sources */,
+				C832EAB68A6AE3EDC9D4F8FE /* RunningActivityAttributes.swift in Sources */,
+				920FF8733178BE905613800D /* LiveActivityModule.swift in Sources */,
+				5A70836FCED54AC722D9DBF5 /* LiveActivityModule.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		34E2A0E27FD8606F47C2EF3C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8E7D9F5D2009E4CABE6080ED /* RunCrewWidgetsBundle.swift in Sources */,
+				44E1CF682E31C59A19EB5943 /* RunningActivityAttributes.swift in Sources */,
+				AC138B66D72DC2A0051FAC7D /* RunningLiveActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -637,24 +829,45 @@
 				CE3CF588755FA31E4A391FD7 /* CountdownView.swift in Sources */,
 				2402934AA406333D0313D484 /* IdleView.swift in Sources */,
 				02F298461B432E194816937C /* PausedView.swift in Sources */,
+				03A1B2C3D4E5F60718293A4B /* NavigateToStartView.swift in Sources */,
+				02E1F2A3B4C5D6E70A1B2C3D /* PreparingView.swift in Sources */,
 				B9D95FD262AEF5BC36FCCB3B /* RunningView.swift in Sources */,
 				D1A2B3C4E5F60718293A4B5C /* CourseNavigationView.swift in Sources */,
 				01F3A4B5C6D7E8F90A1B2C3D /* ControlView.swift in Sources */,
 				C5D6E7F8091A2B3C4D5E6F70 /* WatchLocationManager.swift in Sources */,
 				D6E7F8091A2B3C4D5E6F7081 /* WatchRunStorage.swift in Sources */,
+				D6E7F8091A2B3C4D5E6F7082 /* WatchPedometerManager.swift in Sources */,
+				AA11BB22CC33DD44EE55FF01 /* WorkoutMirroringManager.swift in Sources */,
+				CC11AA22BB33DD44EE55FF05 /* ComplicationController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		6778401C2F4B654D00A8A1ED /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7910D078E6D3D3B4111A7372 /* RunCrew Watch App */;
+			targetProxy = 6778401B2F4B654D00A8A1ED /* PBXContainerItemProxy */;
+		};
+		F00974371AB6707191FAF871 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = RunCrewWidgets;
+			target = 333B31858795D2D5FEF6DC9B /* RunCrewWidgets */;
+			targetProxy = 3552A31A779BD3FE3638D4E9 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = AA084EF6CBD1D1511D2A1C87 /* Pods-RunCrew.debug.xcconfig */;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = RunCrew/RunCrew.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6Q5TZCGM35;
 				ENABLE_BITCODE = NO;
@@ -688,9 +901,11 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 57DDD89489C04FE777D3C0FA /* Pods-RunCrew.release.xcconfig */;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = RunCrew/RunCrew.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6Q5TZCGM35;
 				INFOPLIST_FILE = RunCrew/Info.plist;
@@ -720,6 +935,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = RunCrewWatch/RunCrewWatch.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6Q5TZCGM35;
@@ -734,6 +950,7 @@
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = app.runcrew.watchkitapp;
 				PRODUCT_NAME = "RunCrew Watch App";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -749,6 +966,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = RunCrewWatch/RunCrewWatch.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 6Q5TZCGM35;
@@ -763,6 +981,7 @@
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = app.runcrew.watchkitapp;
 				PRODUCT_NAME = "RunCrew Watch App";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -897,6 +1116,69 @@
 			};
 			name = Release;
 		};
+		D8853D7C0375D38C0C4CF055 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 6Q5TZCGM35;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RunCrewWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
+				PRODUCT_BUNDLE_IDENTIFIER = app.runcrew.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		F7F25EB489D621C994D0E317 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 6Q5TZCGM35;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = RunCrewWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
+				PRODUCT_BUNDLE_IDENTIFIER = app.runcrew.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -923,6 +1205,15 @@
 			buildConfigurations = (
 				5AAEE19D44C758687AD327B6 /* Debug */,
 				59BADD1CA1AB94D44F14D2EF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B2D9564164AFF88F8A5BFC67 /* Build configuration list for PBXNativeTarget "RunCrewWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D8853D7C0375D38C0C4CF055 /* Release */,
+				F7F25EB489D621C994D0E317 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

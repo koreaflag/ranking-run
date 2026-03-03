@@ -13,6 +13,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.api.v1.router import api_router
+from app.api.v1.ws import ws_router
 from app.core.config import get_settings
 from app.core.container import Container
 from app.core.exceptions import AppError
@@ -76,6 +77,9 @@ if upload_dir.exists():
 
 # Include API routes
 app.include_router(api_router)
+
+# Include WebSocket routes (outside /api/v1 prefix since ws_router defines its own path)
+app.include_router(ws_router)
 
 
 # ---------------------------------------------------------------------------

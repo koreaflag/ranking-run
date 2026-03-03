@@ -62,6 +62,10 @@ struct LongPressStopButton: View {
     @State private var isPressed = false
     @State private var progress: CGFloat = 0
     @State private var timer: Timer?
+    @State private var pressStartTime: Date?
+    @State private var didComplete = false
+
+    private let holdDuration: TimeInterval = 2.0
 
     var body: some View {
         ZStack {
@@ -85,10 +89,10 @@ struct LongPressStopButton: View {
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
-                    if !isPressed { startLongPress() }
+                    if !isPressed && !didComplete { startLongPress() }
                 }
                 .onEnded { _ in
-                    cancelLongPress()
+                    if !didComplete { cancelLongPress() }
                 }
         )
         .accessibilityLabel("런닝 종료")
@@ -97,16 +101,20 @@ struct LongPressStopButton: View {
 
     private func startLongPress() {
         isPressed = true
+        didComplete = false
         progress = 0
+        pressStartTime = Date()
         HapticManager.shared.countdownTick()
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { t in
-            progress += 0.05 / 3.0  // fills over 3 seconds
-            if progress >= 1.0 {
+            guard let start = pressStartTime else { return }
+            let elapsed = Date().timeIntervalSince(start)
+            progress = CGFloat(min(elapsed / holdDuration, 1.0))
+            if elapsed >= holdDuration {
                 t.invalidate()
                 timer = nil
-                isPressed = false
-                HapticManager.shared.runCompleted()
+                didComplete = true
+                // Keep isPressed true — prevents DragGesture.onChanged from re-triggering
                 viewModel.sendStopCommand()
             }
         }
@@ -115,6 +123,7 @@ struct LongPressStopButton: View {
     private func cancelLongPress() {
         isPressed = false
         progress = 0
+        pressStartTime = nil
         timer?.invalidate()
         timer = nil
     }

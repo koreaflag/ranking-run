@@ -59,6 +59,9 @@ class CourseListItem(BaseModel):
     id: str
     title: str
     thumbnail_url: str | None
+    route_preview: list[list[float]] | None = Field(
+        None, description="Simplified [[lng, lat], ...] for thumbnail map rendering"
+    )
     distance_meters: int
     estimated_duration_seconds: int | None
     elevation_gain_meters: int
@@ -66,6 +69,9 @@ class CourseListItem(BaseModel):
     stats: CourseStatsInfo
     created_at: datetime
     distance_from_user_meters: float | None = None
+    like_count: int = 0
+    my_best_duration_seconds: int | None = None
+    active_runners: int = 0
 
 
 class CourseListResponse(BaseModel):
@@ -73,6 +79,15 @@ class CourseListResponse(BaseModel):
     data: list[CourseListItem]
     total_count: int
     has_next: bool
+
+
+class CourseCheckpoint(BaseModel):
+    """A single checkpoint along a course route."""
+    id: int
+    order: int
+    lat: float
+    lng: float
+    distance_from_start_meters: int
 
 
 class CourseDetail(BaseModel):
@@ -89,6 +104,7 @@ class CourseDetail(BaseModel):
     is_public: bool
     created_at: datetime
     creator: CourseCreatorInfo
+    checkpoints: list[CourseCheckpoint] | None = None
 
 
 class CourseStatsResponse(BaseModel):
@@ -136,12 +152,18 @@ class NearbyCourse(BaseModel):
     id: str
     title: str
     thumbnail_url: str | None
+    route_preview: list[list[float]] | None = Field(
+        None, description="Simplified [[lng, lat], ...] for thumbnail map rendering"
+    )
     distance_meters: int
     estimated_duration_seconds: int | None
     total_runs: int = 0
     avg_pace_seconds_per_km: int | None = None
     creator_nickname: str | None
     distance_from_user_meters: float
+    like_count: int = 0
+    difficulty: str | None = None
+    active_runners: int = 0
 
 
 class MyCourseItem(BaseModel):

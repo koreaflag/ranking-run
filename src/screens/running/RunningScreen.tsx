@@ -9,7 +9,9 @@ import {
   Platform,
   StatusBar,
   Animated,
+  NativeModules,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,21 +29,25 @@ import { runService } from '../../services/runService';
 import RouteMapView from '../../components/map/RouteMapView';
 import type { RouteMapViewHandle } from '../../components/map/RouteMapView';
 import { useCompassHeading } from '../../hooks/useCompassHeading';
+import { useCheckpointTracker } from '../../hooks/useCheckpointTracker';
+import { useLiveActivity } from '../../hooks/useLiveActivity';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
-import type { RunningStackParamList } from '../../types/navigation';
+import type { WorldStackParamList } from '../../types/navigation';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import { metersToKm, formatDuration, formatPace } from '../../utils/format';
 
-type RunningNav = NativeStackNavigationProp<RunningStackParamList, 'RunningMain'>;
-type RunningRoute = RouteProp<RunningStackParamList, 'RunningMain'>;
+type RunningNav = NativeStackNavigationProp<WorldStackParamList, 'RunningMain'>;
+type RunningRoute = RouteProp<WorldStackParamList, 'RunningMain'>;
 
 export default function RunningScreen() {
+  const { t } = useTranslation();
   const navigation = useNavigation<RunningNav>();
   const route = useRoute<RunningRoute>();
   const [dismissedCourse, setDismissedCourse] = useState(false);
   const courseId = dismissedCourse ? null : (route.params?.courseId ?? null);
   const [courseRoute, setCourseRoute] = useState<Array<{ latitude: number; longitude: number }> | null>(null);
+  const [courseCheckpoints, setCourseCheckpoints] = useState<import('../../types/api').CourseCheckpoint[] | null>(null);
 
   const {
     phase,
@@ -62,6 +68,7 @@ export default function RunningScreen() {
     isNearStart,
     loopDetected,
     distanceToStart,
+    isAutoPaused,
     startSession,
     updateSessionId,
     pause,
@@ -69,6 +76,7 @@ export default function RunningScreen() {
     complete,
     reset,
     setPhase,
+    setCheckpointPasses,
   } = useRunningStore();
 
   // Only use GPS course heading when actually moving. When stationary, magnetometer
@@ -86,6 +94,7 @@ export default function RunningScreen() {
   const { startTracking, stopTracking, pauseTracking, resumeTracking } =
     useGPSTracker();
   useRunTimer();
+  useLiveActivity();
 
   const [countdown, setCountdown] = useState<number | null>(null);
   const [loopHapticFired, setLoopHapticFired] = useState(false);
@@ -101,10 +110,19 @@ export default function RunningScreen() {
     }
   }, [loopDetected, loopHapticFired, courseId, hapticFeedback]);
 
-  // Reset stale state from previous run on mount
+  // Reset stale state from previous run on mount — but only when this screen
+  // is actually focused. When watch sync navigates directly to RunResult,
+  // RunningMain mounts in the background; resetting here would wipe the data
+  // that RunResult is displaying.
   useEffect(() => {
     if (phase === 'completed') {
-      reset();
+      const timer = setTimeout(() => {
+        const { phase: currentPhase } = useRunningStore.getState();
+        if (currentPhase === 'completed' && navigation.isFocused()) {
+          reset();
+        }
+      }, 300);
+      return () => clearTimeout(timer);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -135,10 +153,11 @@ export default function RunningScreen() {
     }
   }, [currentLocation]);
 
-  // Fetch course route for navigation overlay
+  // Fetch course route + checkpoints for navigation overlay
   useEffect(() => {
     if (!courseId) {
       setCourseRoute(null);
+      setCourseCheckpoints(null);
       return;
     }
     courseService.getCourseDetail(courseId).then((detail) => {
@@ -147,8 +166,10 @@ export default function RunningScreen() {
         longitude: lng,
       }));
       setCourseRoute(points);
+      setCourseCheckpoints((detail as any).checkpoints ?? null);
     }).catch(() => {
       setCourseRoute(null);
+      setCourseCheckpoints(null);
     });
   }, [courseId]);
 
@@ -162,10 +183,39 @@ export default function RunningScreen() {
     currentLocation?.bearing ?? 0,
   );
 
+  // Checkpoint tracker
+  const {
+    passedCount: cpPassedCount,
+    totalCount: cpTotalCount,
+    checkpointPasses,
+    markerData: cpMarkerData,
+    justPassed: cpJustPassed,
+    updateLocation: cpUpdateLocation,
+  } = useCheckpointTracker(courseCheckpoints);
+
+  // Feed GPS updates to checkpoint tracker
+  useEffect(() => {
+    if (currentLocation && phase === 'running' && courseId) {
+      cpUpdateLocation(currentLocation.latitude, currentLocation.longitude);
+    }
+  }, [currentLocation, phase, courseId, cpUpdateLocation]);
+
   // Countdown before starting
   const handleStart = useCallback(async () => {
     setPhase('countdown');
     setCountdown(countdownSeconds);
+
+    // Capture timestamp in JS — exactly when the phone starts showing "3".
+    // Pass to native so the watch calculates from this same moment,
+    // eliminating RN bridge latency from the sync equation.
+    const countdownStartedAt = Date.now();
+    try {
+      if (Platform.OS === 'ios' && NativeModules.GPSTrackerModule?.notifyCountdownStart) {
+        NativeModules.GPSTrackerModule.notifyCountdownStart(countdownSeconds, countdownStartedAt).catch(() => {});
+      }
+    } catch {
+      // Native method may not exist yet — safe to ignore
+    }
 
     for (let i = countdownSeconds; i > 0; i--) {
       setCountdown(i);
@@ -234,12 +284,16 @@ export default function RunningScreen() {
   }, [resume, resumeTracking, hapticFeedback]);
 
   const handleStop = useCallback(() => {
-    Alert.alert('러닝 종료', '러닝을 종료하시겠습니까?', [
-      { text: '계속 달리기', style: 'cancel' },
+    Alert.alert(t('running.alerts.stopTitle'), t('running.alerts.stopMsg'), [
+      { text: t('running.alerts.continueRunning'), style: 'cancel' },
       {
-        text: '종료',
+        text: t('running.controls.stop'),
         style: 'destructive',
         onPress: async () => {
+          // Save checkpoint passes before completing
+          if (checkpointPasses.length > 0) {
+            setCheckpointPasses(checkpointPasses);
+          }
           await stopTracking();
           complete();
 
@@ -255,10 +309,13 @@ export default function RunningScreen() {
         },
       },
     ]);
-  }, [stopTracking, complete, hapticFeedback, sessionId, navigation]);
+  }, [stopTracking, complete, hapticFeedback, sessionId, navigation, checkpointPasses, setCheckpointPasses]);
 
   // Watch stop (no confirmation — user already tapped stop on Watch)
   const handleWatchStop = useCallback(async () => {
+    if (checkpointPasses.length > 0) {
+      setCheckpointPasses(checkpointPasses);
+    }
     await stopTracking();
     complete();
     if (hapticFeedback) {
@@ -267,14 +324,18 @@ export default function RunningScreen() {
     if (sessionId) {
       navigation.replace('RunResult', { sessionId });
     }
-  }, [stopTracking, complete, hapticFeedback, sessionId, navigation]);
+  }, [stopTracking, complete, hapticFeedback, sessionId, navigation, checkpointPasses, setCheckpointPasses]);
 
   // Watch companion
   useWatchCompanion({
     onPauseCommand: handlePause,
     onResumeCommand: handleResume,
     onStopCommand: handleWatchStop,
-  }, courseNavigation);
+  }, courseNavigation, {
+    passedCount: cpPassedCount,
+    totalCount: cpTotalCount,
+    justPassed: !!cpJustPassed,
+  });
 
   // Voice guidance for course navigation
   useVoiceGuidance({
@@ -284,14 +345,25 @@ export default function RunningScreen() {
     enabled: voiceGuidance && !!courseId,
   });
 
-  // Cleanup on unmount
+  // Cleanup on unmount only — stop GPS if still running when user navigates away.
+  // IMPORTANT: Must use refs, NOT state in deps. With phase in the dependency array,
+  // the cleanup fires on every phase change (e.g. running→paused), which calls
+  // stopTracking() and sends "completed" to the watch mid-run.
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  const stopTrackingRef = useRef(stopTracking);
+  stopTrackingRef.current = stopTracking;
+
+  // No pre-warm on tab entry — startWatchApp(with:) turns on the watch screen.
+  // Watch launches when START is pressed (countdown phase triggers launchWatchApp).
+  // Timestamp-based CountdownView compensates for the ~1s launch delay.
   useEffect(() => {
     return () => {
-      if (phase === 'running' || phase === 'paused') {
-        stopTracking();
+      if (phaseRef.current === 'running' || phaseRef.current === 'paused') {
+        stopTrackingRef.current();
       }
     };
-  }, [phase, stopTracking]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Render based on phase ----
 
@@ -309,18 +381,18 @@ export default function RunningScreen() {
     );
   }
 
-  if (phase === 'countdown' && countdown !== null) {
+  if (phase === 'countdown') {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle={colors.statusBar} />
         <View style={styles.countdownContainer}>
-          <Text style={styles.countdownLabel}>준비하세요</Text>
-          <Text style={styles.countdownNumber}>{countdown}</Text>
+          <Text style={styles.countdownLabel}>{t('running.countdown.ready')}</Text>
+          <Text style={styles.countdownNumber}>{countdown ?? countdownSeconds}</Text>
           <View style={styles.countdownBarTrack}>
             <View
               style={[
                 styles.countdownBarFill,
-                { width: `${((countdownSeconds - countdown + 1) / countdownSeconds) * 100}%` },
+                { width: `${((countdownSeconds - (countdown ?? countdownSeconds) + 1) / countdownSeconds) * 100}%` },
               ]}
             />
           </View>
@@ -331,7 +403,7 @@ export default function RunningScreen() {
 
   // During running, GPS is active — only show error for truly disabled state
   const gpsDisabled = gpsStatus === 'disabled';
-  const gpsLabel = gpsDisabled ? '위치 권한 필요' : 'GPS 연결됨';
+  const gpsLabel = gpsDisabled ? t('running.status.gpsPermissionNeeded') : t('running.status.gpsConnected');
   const gpsColor = gpsDisabled ? colors.error : colors.success;
 
   return (
@@ -346,7 +418,7 @@ export default function RunningScreen() {
           </View>
           <View style={styles.modeChip}>
             <Text style={styles.modeChipText}>
-              {courseId ? '코스 러닝' : '자유 러닝'}
+              {courseId ? t('running.status.courseRunning') : t('running.status.freeRunning')}
             </Text>
           </View>
           {watchConnected && (
@@ -369,13 +441,14 @@ export default function RunningScreen() {
           )}
         </View>
 
-        {/* Mini Map */}
+        {/* Mini Map — flex fills remaining space, shrinks when banners appear */}
         <View style={styles.miniMapContainer}>
           <RouteMapView
             ref={mapRef}
             routePoints={routePoints}
             hideRouteMarkers
             previewPolyline={courseRoute ?? undefined}
+            checkpoints={cpMarkerData.length > 0 ? cpMarkerData : undefined}
             showUserLocation
             followsUserLocation={followUser}
             interactive
@@ -417,7 +490,15 @@ export default function RunningScreen() {
         {phase === 'paused' && (
           <View style={styles.pausedBanner}>
             <Ionicons name="pause" size={16} color={colors.background} />
-            <Text style={styles.pausedText}>일시정지</Text>
+            <Text style={styles.pausedText}>{t('running.status.paused')}</Text>
+          </View>
+        )}
+
+        {/* Auto-paused Banner */}
+        {isAutoPaused && phase === 'running' && (
+          <View style={styles.autoPausedBanner}>
+            <Ionicons name="pause-circle-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.autoPausedText}>{t('running.status.autoPaused')}</Text>
           </View>
         )}
 
@@ -425,7 +506,17 @@ export default function RunningScreen() {
         {courseNavigation?.isOffCourse && (
           <View style={styles.offCourseBanner}>
             <Ionicons name="warning" size={16} color={colors.white} />
-            <Text style={styles.offCourseText}>코스를 이탈했습니다</Text>
+            <Text style={styles.offCourseText}>{t('running.status.offCourse')}</Text>
+          </View>
+        )}
+
+        {/* Checkpoint pass toast */}
+        {cpJustPassed && (
+          <View style={styles.checkpointBanner}>
+            <Ionicons name="flag" size={16} color={colors.background} />
+            <Text style={styles.checkpointBannerText}>
+              {t('running.status.checkpointPassed', { order: cpJustPassed.order, total: cpJustPassed.total })}
+            </Text>
           </View>
         )}
 
@@ -447,7 +538,6 @@ export default function RunningScreen() {
 
         {/* Hero Metric: Distance */}
         <View style={styles.heroSection}>
-          <Text style={styles.heroLabel}>거리</Text>
           <View style={styles.heroValueRow}>
             <Text style={styles.heroValue}>
               {metersToKm(distanceMeters)}
@@ -459,7 +549,7 @@ export default function RunningScreen() {
         {/* Course progress (course running only) */}
         {courseNavigation && courseRoute && (
           <View style={styles.courseProgressRow}>
-            <Text style={styles.courseProgressLabel}>코스 진행</Text>
+            <Text style={styles.courseProgressLabel}>{t('running.status.courseProgressLabel')}</Text>
             <View style={styles.courseProgressBarTrack}>
               <View
                 style={[
@@ -469,7 +559,7 @@ export default function RunningScreen() {
               />
             </View>
             <Text style={styles.courseProgressText}>
-              {metersToKm(courseNavigation.remainingDistanceMeters)} km 남음
+              {t('running.status.courseProgress', { distance: metersToKm(courseNavigation.remainingDistanceMeters) })}
             </Text>
           </View>
         )}
@@ -478,42 +568,42 @@ export default function RunningScreen() {
         <View style={styles.dashboardGrid}>
           <View style={styles.dashboardRow}>
             <View style={styles.dashboardCell}>
-              <Text style={styles.dashboardLabel}>시간</Text>
+              <Text style={styles.dashboardLabel}>{t('running.metrics.time')}</Text>
               <Text style={styles.dashboardValue}>
                 {formatDuration(durationSeconds)}
               </Text>
             </View>
             <View style={styles.dashboardDivider} />
             <View style={styles.dashboardCell}>
-              <Text style={styles.dashboardLabel}>평균 페이스</Text>
+              <Text style={styles.dashboardLabel}>{t('running.metrics.avgPace')}</Text>
               <Text style={styles.dashboardValue}>
                 {formatPace(avgPaceSecondsPerKm)}
               </Text>
             </View>
             <View style={styles.dashboardDivider} />
             <View style={styles.dashboardCell}>
-              <Text style={styles.dashboardLabel}>칼로리</Text>
+              <Text style={styles.dashboardLabel}>{t('running.metrics.calories')}</Text>
               <Text style={styles.dashboardValue}>{calories}</Text>
             </View>
           </View>
           <View style={styles.dashboardRowDivider} />
           <View style={styles.dashboardRow}>
             <View style={styles.dashboardCell}>
-              <Text style={styles.dashboardLabel}>심박수</Text>
+              <Text style={styles.dashboardLabel}>{t('running.metrics.heartRate')}</Text>
               <Text style={[styles.dashboardValue, heartRate > 0 && { color: colors.error }]}>
                 {heartRate > 0 ? Math.round(heartRate) : '--'}
               </Text>
             </View>
             <View style={styles.dashboardDivider} />
             <View style={styles.dashboardCell}>
-              <Text style={styles.dashboardLabel}>케이던스</Text>
+              <Text style={styles.dashboardLabel}>{t('running.metrics.cadence')}</Text>
               <Text style={styles.dashboardValue}>
                 {cadence > 0 ? cadence : '--'}
               </Text>
             </View>
             <View style={styles.dashboardDivider} />
             <View style={styles.dashboardCell}>
-              <Text style={styles.dashboardLabel}>고도(m)</Text>
+              <Text style={styles.dashboardLabel}>{t('running.metrics.elevation')}</Text>
               <Text style={styles.dashboardValue}>
                 {elevationGainMeters > 0 ? `+${Math.round(elevationGainMeters)}` : '--'}
               </Text>
@@ -531,7 +621,7 @@ export default function RunningScreen() {
                 activeOpacity={0.7}
               >
                 <Ionicons name="play" size={28} color={colors.white} />
-                <Text style={styles.resumeLabel}>재개</Text>
+                <Text style={styles.resumeLabel}>{t('running.controls.resume')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.stopButton}
@@ -539,7 +629,7 @@ export default function RunningScreen() {
                 activeOpacity={0.7}
               >
                 <Ionicons name="stop" size={28} color={colors.white} />
-                <Text style={styles.stopLabel}>종료</Text>
+                <Text style={styles.stopLabel}>{t('running.controls.stop')}</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -550,7 +640,7 @@ export default function RunningScreen() {
                 activeOpacity={0.7}
               >
                 <Ionicons name="pause" size={28} color={colors.text} />
-                <Text style={styles.pauseLabel}>일시정지</Text>
+                <Text style={styles.pauseLabel}>{t('running.controls.pause')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.stopButton}
@@ -558,7 +648,7 @@ export default function RunningScreen() {
                 activeOpacity={0.7}
               >
                 <Ionicons name="stop" size={28} color={colors.white} />
-                <Text style={styles.stopLabel}>종료</Text>
+                <Text style={styles.stopLabel}>{t('running.controls.stop')}</Text>
               </TouchableOpacity>
             </>
           )}
@@ -581,20 +671,21 @@ function IdleView({
   onStart: () => void;
   onDismissCourse: () => void;
 }) {
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   // On idle screen, show GPS ready if native module exists
   const gpsColor = gpsStatus === 'disabled' ? colors.error : colors.success;
-  const gpsLabel = gpsStatus === 'disabled' ? '위치 권한 필요' : 'GPS 준비됨';
+  const gpsLabel = gpsStatus === 'disabled' ? t('running.status.gpsPermissionNeeded') : t('running.status.gpsReady');
 
   const handleDismissCourse = () => {
     Alert.alert(
-      '자유 러닝으로 전환',
-      '코스 러닝을 취소하고 자유 러닝으로 전환할까요?',
+      t('running.alerts.switchToFreeTitle'),
+      t('running.alerts.switchToFreeMsg'),
       [
-        { text: '취소', style: 'cancel' },
-        { text: '전환', onPress: onDismissCourse },
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('running.alerts.switchBtn'), onPress: onDismissCourse },
       ],
     );
   };
@@ -609,16 +700,16 @@ function IdleView({
             onPress={handleDismissCourse}
             activeOpacity={0.7}
           >
-            <Text style={styles.idleModeChipText}>코스 러닝</Text>
+            <Text style={styles.idleModeChipText}>{t('running.status.courseRunning')}</Text>
             <Ionicons name="close" size={14} color={colors.textSecondary} />
           </TouchableOpacity>
         ) : (
-          <Text style={styles.idleModeLabel}>자유 러닝</Text>
+          <Text style={styles.idleModeLabel}>{t('running.status.freeRunning')}</Text>
         )}
         <Text style={styles.idleTitle}>
           {courseId
-            ? '코스를 따라 달려보세요'
-            : '자유롭게 달려보세요'}
+            ? t('running.idle.courseTitle')
+            : t('running.idle.freeTitle')}
         </Text>
       </View>
 
@@ -638,7 +729,7 @@ function IdleView({
       </TouchableOpacity>
 
       <Text style={styles.idleTip}>
-        버튼을 눌러 카운트다운을 시작하세요
+        {t('running.idle.tip')}
       </Text>
     </View>
   );
@@ -826,10 +917,12 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
 
   // Mini map
   miniMapContainer: {
+    flex: 1,
+    minHeight: 100,
     marginTop: SPACING.sm,
   },
   miniMap: {
-    height: 220,
+    flex: 1,
     borderRadius: BORDER_RADIUS.lg,
     overflow: 'hidden',
   },
@@ -884,12 +977,28 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '700',
     color: c.background,
   },
+  autoPausedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    backgroundColor: c.surface,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.sm,
+    marginTop: SPACING.md,
+    borderWidth: 1,
+    borderColor: c.divider,
+  },
+  autoPausedText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: c.textSecondary,
+  },
 
   // Hero distance
   heroSection: {
     alignItems: 'center',
-    paddingTop: SPACING.lg,
-    paddingBottom: SPACING.sm,
+    paddingVertical: SPACING.xs,
   },
   heroLabel: {
     fontSize: FONT_SIZES.sm,
@@ -994,7 +1103,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     justifyContent: 'center',
     gap: SPACING.xxl,
     paddingVertical: SPACING.md,
-    marginTop: 'auto',
   },
 
   // Pause button
@@ -1070,6 +1178,24 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: FONT_SIZES.md,
     fontWeight: '700',
     color: c.white,
+  },
+
+  // Checkpoint pass banner
+  checkpointBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    backgroundColor: c.success,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.sm,
+    marginTop: SPACING.md,
+  },
+  checkpointBannerText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '800',
+    color: c.background,
+    letterSpacing: 0.5,
   },
 
   // Loop detection banners

@@ -1,0 +1,1048 @@
+diff --git a/node_modules/expo-modules-core/ios/Core/ExpoBridgeModule.h b/node_modules/expo-modules-core/ios/Core/ExpoBridgeModule.h
+index 067e470..5338000 100644
+--- a/node_modules/expo-modules-core/ios/Core/ExpoBridgeModule.h
++++ b/node_modules/expo-modules-core/ios/Core/ExpoBridgeModule.h
+@@ -6,6 +6,8 @@
+ 
+ @class EXAppContext;
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface ExpoBridgeModule : NSObject <RCTBridgeModule>
+ 
+ @property (nonatomic, nullable, strong) EXAppContext *appContext;
+@@ -16,3 +18,5 @@
+            legacyModuleRegistry:(nonnull EXModuleRegistry *)moduleRegistry;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/EXLegacyExpoViewProtocol.h b/node_modules/expo-modules-core/ios/EXLegacyExpoViewProtocol.h
+index 00aacdb..0a727e0 100644
+--- a/node_modules/expo-modules-core/ios/EXLegacyExpoViewProtocol.h
++++ b/node_modules/expo-modules-core/ios/EXLegacyExpoViewProtocol.h
+@@ -6,8 +6,12 @@
+  The protocol required for the Objective-C views to be initialized with the legacy module registry.
+  - ToDo: Remove once all views are migrated to the new API and Swift.
+  */
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXLegacyExpoViewProtocol
+ 
+ - (instancetype)initWithModuleRegistry:(nullable EXModuleRegistry *)moduleRegistry;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Fabric/ExpoFabricViewObjC.h b/node_modules/expo-modules-core/ios/Fabric/ExpoFabricViewObjC.h
+index 75ed964..b5c72b5 100644
+--- a/node_modules/expo-modules-core/ios/Fabric/ExpoFabricViewObjC.h
++++ b/node_modules/expo-modules-core/ios/Fabric/ExpoFabricViewObjC.h
+@@ -10,6 +10,8 @@
+ 
+ #import <React/RCTViewComponentView.h> // Allows non-umbrella since it's coming from React-RCTFabric
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface ExpoFabricViewObjC : RCTViewComponentView
+ @end
+ 
+@@ -29,6 +31,8 @@
+ 
+ @class EXAppContext;
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ // Addition to the interface that is visible in both Swift and Objective-C
+ @interface ExpoFabricViewObjC (ExpoFabricViewInterface)
+ 
+@@ -55,3 +59,5 @@
+ - (void)unmountChildComponentView:(nonnull UIView *)childComponentView index:(NSInteger)index;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/Camera/EXCameraInterface.h b/node_modules/expo-modules-core/ios/Interfaces/Camera/EXCameraInterface.h
+index e9fdfa4..6ba5bed 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/Camera/EXCameraInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/Camera/EXCameraInterface.h
+@@ -2,6 +2,8 @@
+ 
+ #import <AVKit/AVKit.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXCameraInterface
+ 
+ #if !TARGET_OS_TV
+@@ -10,3 +12,5 @@
+ #endif
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/Constants/EXConstantsInterface.h b/node_modules/expo-modules-core/ios/Interfaces/Constants/EXConstantsInterface.h
+index a00abce..eb2be87 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/Constants/EXConstantsInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/Constants/EXConstantsInterface.h
+@@ -3,6 +3,8 @@
+ #import <Foundation/Foundation.h>
+ #import <CoreGraphics/CoreGraphics.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXConstantsInterface
+ 
+ - (NSDictionary *)constants;
+@@ -18,3 +20,5 @@
+ + (NSString *)deviceName;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/FaceDetector/EXFaceDetectorManagerInterface.h b/node_modules/expo-modules-core/ios/Interfaces/FaceDetector/EXFaceDetectorManagerInterface.h
+index faf34a7..ed56081 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/FaceDetector/EXFaceDetectorManagerInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/FaceDetector/EXFaceDetectorManagerInterface.h
+@@ -3,6 +3,8 @@
+ #import <Foundation/Foundation.h>
+ #import <AVFoundation/AVFoundation.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXFaceDetectorManagerInterface
+ #if !TARGET_OS_TV
+ - (void)setSessionQueue:(dispatch_queue_t)sessionQueue;
+@@ -17,3 +19,5 @@
+ - (void)stopFaceDetection;
+ #endif
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/FaceDetector/EXFaceDetectorManagerProviderInterface.h b/node_modules/expo-modules-core/ios/Interfaces/FaceDetector/EXFaceDetectorManagerProviderInterface.h
+index ea19653..357fc40 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/FaceDetector/EXFaceDetectorManagerProviderInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/FaceDetector/EXFaceDetectorManagerProviderInterface.h
+@@ -2,8 +2,12 @@
+ 
+ #import <ExpoModulesCore/EXFaceDetectorManagerInterface.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXFaceDetectorManagerProviderInterface
+ 
+ - (id<EXFaceDetectorManagerInterface>)createFaceDetectorManager;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/FileSystem/EXFilePermissionModuleInterface.h b/node_modules/expo-modules-core/ios/Interfaces/FileSystem/EXFilePermissionModuleInterface.h
+index e5d8be7..4ff97f8 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/FileSystem/EXFilePermissionModuleInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/FileSystem/EXFilePermissionModuleInterface.h
+@@ -2,9 +2,13 @@
+ 
+ #import <ExpoModulesCore/EXFileSystemInterface.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXFilePermissionModuleInterface
+ 
+ - (EXFileSystemPermissionFlags)getPathPermissions:(NSString *)path;
+ 
+ @end
+ 
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/FileSystem/EXFileSystemInterface.h b/node_modules/expo-modules-core/ios/Interfaces/FileSystem/EXFileSystemInterface.h
+index fca4649..fa01009 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/FileSystem/EXFileSystemInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/FileSystem/EXFileSystemInterface.h
+@@ -9,6 +9,8 @@ typedef NS_OPTIONS(unsigned int, EXFileSystemPermissionFlags) {
+ };
+ 
+ // TODO: Maybe get rid of this interface in favor of EXFileSystemManager and private utilities classes
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXFileSystemInterface
+ 
+ @property (nonatomic, readonly) NSString *documentDirectory;
+@@ -21,3 +23,5 @@ typedef NS_OPTIONS(unsigned int, EXFileSystemPermissionFlags) {
+ - (BOOL)ensureDirExistsWithPath:(NSString *)path;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/ImageLoader/EXImageLoaderInterface.h b/node_modules/expo-modules-core/ios/Interfaces/ImageLoader/EXImageLoaderInterface.h
+index 2b241d1..895367b 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/ImageLoader/EXImageLoaderInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/ImageLoader/EXImageLoaderInterface.h
+@@ -4,9 +4,13 @@
+ 
+ typedef void (^EXImageLoaderCompletionBlock)(NSError *error, UIImage *image);
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXImageLoaderInterface <NSObject>
+ 
+ - (void)loadImageForURL:(NSURL *)imageURL
+       completionHandler:(EXImageLoaderCompletionBlock)completionHandler;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXPermissionsInterface.h b/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXPermissionsInterface.h
+index a4c5065..767f1ef 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXPermissionsInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXPermissionsInterface.h
+@@ -14,6 +14,8 @@ typedef enum EXPermissionStatus {
+ } EXPermissionStatus;
+ 
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXPermissionsRequester <NSObject>
+ 
+ + (NSString *)permissionType;
+@@ -41,3 +43,5 @@ typedef enum EXPermissionStatus {
+ - (id<EXPermissionsRequester>)getPermissionRequesterForType:(NSString *)type;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXPermissionsMethodsDelegate.h b/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXPermissionsMethodsDelegate.h
+index e06b9f3..61d7582 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXPermissionsMethodsDelegate.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXPermissionsMethodsDelegate.h
+@@ -3,6 +3,8 @@
+ #import <Foundation/Foundation.h>
+ #import <ExpoModulesCore/EXPermissionsInterface.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXPermissionsMethodsDelegate : NSObject
+ 
+ + (void)getPermissionWithPermissionsManager:(id<EXPermissionsInterface>)permissionsManager
+@@ -19,3 +21,5 @@
+     withPermissionsManager:(id<EXPermissionsInterface>)permissionsManager;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXUserNotificationCenterProxyInterface.h b/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXUserNotificationCenterProxyInterface.h
+index 7a87da8..9c87d67 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXUserNotificationCenterProxyInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/Permissions/EXUserNotificationCenterProxyInterface.h
+@@ -3,9 +3,13 @@
+ #import <Foundation/Foundation.h>
+ #import <UserNotifications/UserNotifications.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXUserNotificationCenterProxyInterface <NSObject>
+ 
+ - (void)getNotificationSettingsWithCompletionHandler:(nonnull void(^)(UNNotificationSettings *__nonnull settings))completionHandler;
+ - (void)requestAuthorizationWithOptions:(UNAuthorizationOptions)options completionHandler:(nonnull void (^)(BOOL granted, NSError *__nullable error))completionHandler;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXAccelerometerInterface.h b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXAccelerometerInterface.h
+index 604c0c0..a0c1770 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXAccelerometerInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXAccelerometerInterface.h
+@@ -1,5 +1,7 @@
+ // Copyright 2018-present 650 Industries. All rights reserved.
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXAccelerometerInterface
+ 
+ - (void)sensorModuleDidSubscribeForAccelerometerUpdates:(id)scopedSensorModule withHandler:(void (^)(NSDictionary *event))handlerBlock;
+@@ -8,3 +10,5 @@
+ - (BOOL)isAccelerometerAvailable;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXBarometerInterface.h b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXBarometerInterface.h
+index ad36825..cb574e2 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXBarometerInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXBarometerInterface.h
+@@ -1,5 +1,7 @@
+ // Copyright 2018-present 650 Industries. All rights reserved.
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXBarometerInterface
+ 
+ - (void)sensorModuleDidSubscribeForBarometerUpdates:(id)scopedSensorModule withHandler:(void (^)(NSDictionary *event))handlerBlock;
+@@ -8,3 +10,5 @@
+ - (BOOL)isBarometerAvailable;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXDeviceMotionInterface.h b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXDeviceMotionInterface.h
+index bf47e95..6faddf2 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXDeviceMotionInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXDeviceMotionInterface.h
+@@ -1,5 +1,7 @@
+ // Copyright 2018-present 650 Industries. All rights reserved.
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXDeviceMotionInterface
+ 
+ - (float)getGravity;
+@@ -9,3 +11,5 @@
+ - (BOOL)isDeviceMotionAvailable;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXGyroscopeInterface.h b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXGyroscopeInterface.h
+index 9553f63..e61d8a4 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXGyroscopeInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXGyroscopeInterface.h
+@@ -1,5 +1,7 @@
+ // Copyright 2018-present 650 Industries. All rights reserved.
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXGyroscopeInterface
+ 
+ - (void)sensorModuleDidSubscribeForGyroscopeUpdates:(id)scopedSensorModule withHandler:(void (^)(NSDictionary *event))handlerBlock;
+@@ -8,3 +10,5 @@
+ - (BOOL)isGyroAvailable;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXMagnetometerInterface.h b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXMagnetometerInterface.h
+index efc1c46..490cae0 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXMagnetometerInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXMagnetometerInterface.h
+@@ -1,5 +1,7 @@
+ // Copyright 2018-present 650 Industries. All rights reserved.
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXMagnetometerInterface
+ 
+ - (void)sensorModuleDidSubscribeForMagnetometerUpdates:(id)scopedSensorModule withHandler:(void (^)(NSDictionary *event))handlerBlock;
+@@ -8,3 +10,5 @@
+ - (BOOL)isMagnetometerAvailable;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXMagnetometerUncalibratedInterface.h b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXMagnetometerUncalibratedInterface.h
+index 9419c59..f2375ff 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXMagnetometerUncalibratedInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/Sensors/EXMagnetometerUncalibratedInterface.h
+@@ -1,5 +1,7 @@
+ // Copyright 2018-present 650 Industries. All rights reserved.
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXMagnetometerUncalibratedInterface
+ 
+ - (void)sensorModuleDidSubscribeForMagnetometerUncalibratedUpdates:(id)scopedSensorModule
+@@ -9,3 +11,5 @@
+ - (BOOL)isMagnetometerUncalibratedAvailable;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskConsumerInterface.h b/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskConsumerInterface.h
+index e4de1af..5e0a33e 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskConsumerInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskConsumerInterface.h
+@@ -6,6 +6,8 @@
+ // Interface for task consumers. Task consumers are the objects that are responsible for handling tasks.
+ // Consumers are getting signals from TaskManager (and service) about a few events that are happening during task's lifecycle.
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXTaskConsumerInterface <NSObject>
+ 
+ @property (nonatomic, strong) id<EXTaskInterface> __nullable task;
+@@ -61,3 +63,5 @@
+ - (NSUInteger)normalizeTaskResult:(nullable id)result;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskInterface.h b/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskInterface.h
+index 4d9ff8e..27cdb7f 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskInterface.h
+@@ -3,6 +3,8 @@
+ #import <Foundation/Foundation.h>
+ 
+ // forward declaration for consumer interface
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXTaskConsumerInterface;
+ 
+ @protocol EXTaskInterface
+@@ -38,3 +40,5 @@
+ - (void)executeWithData:(nullable NSDictionary *)data withError:(nullable NSError *)error;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskServiceInterface.h b/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskServiceInterface.h
+index f47f97b..b2efeb0 100644
+--- a/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskServiceInterface.h
++++ b/node_modules/expo-modules-core/ios/Interfaces/TaskManager/EXTaskServiceInterface.h
+@@ -4,6 +4,8 @@
+ #import <ExpoModulesCore/EXTaskInterface.h>
+ #import <ExpoModulesCore/EXTaskManagerInterface.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXTaskServiceInterface
+ 
+ /**
+@@ -74,3 +76,5 @@
+          completionHandler:(nullable void (^)(UIBackgroundFetchResult))completionHandler;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIInstaller.h b/node_modules/expo-modules-core/ios/JSI/EXJSIInstaller.h
+index b26eb1c..481ee5a 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJSIInstaller.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJSIInstaller.h
+@@ -15,6 +15,8 @@
+  */
+ extern NSString * _Nonnull const EXGlobalCoreObjectPropertyName;
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXJavaScriptRuntimeManager : NSObject
+ 
+ /**
+@@ -54,3 +56,5 @@ extern NSString * _Nonnull const EXGlobalCoreObjectPropertyName;
+ + (void)installNativeModuleClass:(nonnull EXRuntime *)runtime;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
+index 69785d1..bef860e 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJSIUtils.h
+@@ -17,9 +17,9 @@ namespace expo {
+ 
+ #pragma mark - Promises
+ 
+-using PromiseInvocationBlock = void (^)(RCTPromiseResolveBlock resolveWrapper, RCTPromiseRejectBlock rejectWrapper);
++using PromiseInvocationBlock = void (^)(RCTPromiseResolveBlock _Nonnull resolveWrapper, RCTPromiseRejectBlock _Nonnull rejectWrapper);
+ 
+-void callPromiseSetupWithBlock(jsi::Runtime &runtime, std::shared_ptr<react::CallInvoker> jsInvoker, std::shared_ptr<react::Promise> promise, PromiseInvocationBlock setupBlock);
++void callPromiseSetupWithBlock(jsi::Runtime &runtime, std::shared_ptr<react::CallInvoker> jsInvoker, std::shared_ptr<react::Promise> promise, PromiseInvocationBlock _Nonnull setupBlock);
+ 
+ #pragma mark - Weak objects
+ 
+@@ -45,7 +45,7 @@ std::shared_ptr<jsi::Object> derefWeakRef(jsi::Runtime &runtime, std::shared_ptr
+ 
+ #pragma mark - Errors
+ 
+-jsi::Value makeCodedError(jsi::Runtime &runtime, NSString *code, NSString *message);
++jsi::Value makeCodedError(jsi::Runtime &runtime, NSString * _Nonnull code, NSString * _Nonnull message);
+ 
+ } // namespace expo
+ 
+@@ -55,6 +55,8 @@ jsi::Value makeCodedError(jsi::Runtime &runtime, NSString *code, NSString *messa
+ #import <ExpoModulesCore/EXJavaScriptRuntime.h>
+ 
+ NS_SWIFT_NAME(JSIUtils)
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXJSIUtils : NSObject
+ 
+ + (nonnull EXJavaScriptObject *)createNativeModuleObject:(nonnull EXJavaScriptRuntime *)runtime;
+@@ -65,3 +67,5 @@ NS_SWIFT_NAME(JSIUtils)
+         inRuntime:(nonnull EXJavaScriptRuntime *)runtime;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptObject.h b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptObject.h
+index 0b8d76d..e93f304 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptObject.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptObject.h
+@@ -31,6 +31,8 @@ typedef NS_OPTIONS(NSInteger, EXJavaScriptObjectPropertyDescriptor) {
+ } NS_SWIFT_NAME(JavaScriptObjectPropertyDescriptor);
+ 
+ NS_SWIFT_NAME(JavaScriptObject)
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXJavaScriptObject : NSObject
+ 
+ // Some parts of the interface must be hidden for Swift – it can't import any C++ code.
+@@ -100,3 +102,5 @@ NS_SWIFT_NAME(JavaScriptObject)
+ - (void)setExternalMemoryPressure:(size_t)size;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h
+index 57047ce..da6a710 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptRuntime.h
+@@ -34,6 +34,8 @@ typedef jsi::Value (^JSHostFunctionBlock)(jsi::Runtime &runtime,
+ #endif // __cplusplus
+ 
+ NS_SWIFT_NAME(JavaScriptRuntime)
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXJavaScriptRuntime : NSObject
+ 
+ /**
+@@ -129,3 +131,5 @@ typedef void (^ClassConstructorBlock)(EXJavaScriptObject * _Nonnull thisValue, N
+ - (void)schedule:(nonnull JSRuntimeExecutionBlock)block priority:(int)priority NS_REFINED_FOR_SWIFT;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptTypedArray.h b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptTypedArray.h
+index df2174b..2c88b95 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptTypedArray.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptTypedArray.h
+@@ -21,6 +21,8 @@ typedef NS_ENUM(NSInteger, EXTypedArrayKind) {
+ } NS_SWIFT_NAME(TypedArrayKind);
+ 
+ NS_SWIFT_NAME(JavaScriptTypedArray)
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXJavaScriptTypedArray : EXJavaScriptObject
+ 
+ @property (nonatomic) EXTypedArrayKind kind;
+@@ -28,3 +30,5 @@ NS_SWIFT_NAME(JavaScriptTypedArray)
+ - (nonnull void *)getUnsafeMutableRawPointer;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptValue.h b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptValue.h
+index 74aec86..36bedbb 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptValue.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptValue.h
+@@ -16,6 +16,8 @@ namespace jsi = facebook::jsi;
+  Represents any JavaScript value. Its purpose is to exposes `facebook::jsi::Value` API back to Swift.
+  */
+ NS_SWIFT_NAME(JavaScriptValue)
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXJavaScriptValue : NSObject
+ 
+ #ifdef __cplusplus
+@@ -68,3 +70,5 @@ NS_SWIFT_NAME(JavaScriptValue)
+ + (nonnull EXJavaScriptValue *)from:(nullable id)value runtime:(nonnull EXJavaScriptRuntime *)runtime;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptWeakObject.h b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptWeakObject.h
+index 39748b5..05415a8 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXJavaScriptWeakObject.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXJavaScriptWeakObject.h
+@@ -11,6 +11,8 @@ namespace jsi = facebook::jsi;
+ #endif // __cplusplus
+ 
+ NS_SWIFT_NAME(JavaScriptWeakObject)
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXJavaScriptWeakObject : NSObject
+ 
+ #ifdef __cplusplus
+@@ -21,3 +23,5 @@ NS_SWIFT_NAME(JavaScriptWeakObject)
+ - (nullable EXJavaScriptObject *)lock;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXRawJavaScriptFunction.h b/node_modules/expo-modules-core/ios/JSI/EXRawJavaScriptFunction.h
+index 09cf2d9..214a739 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXRawJavaScriptFunction.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXRawJavaScriptFunction.h
+@@ -10,6 +10,8 @@ namespace jsi = facebook::jsi;
+ #endif // __cplusplus
+ 
+ NS_SWIFT_NAME(RawJavaScriptFunction)
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXRawJavaScriptFunction : NSObject
+ 
+ #ifdef __cplusplus
+@@ -22,3 +24,5 @@ NS_SWIFT_NAME(RawJavaScriptFunction)
+                                    asConstructor:(BOOL)asConstructor;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/JSI/EXSharedObjectUtils.h b/node_modules/expo-modules-core/ios/JSI/EXSharedObjectUtils.h
+index 6790601..3f7e1ff 100644
+--- a/node_modules/expo-modules-core/ios/JSI/EXSharedObjectUtils.h
++++ b/node_modules/expo-modules-core/ios/JSI/EXSharedObjectUtils.h
+@@ -5,6 +5,8 @@
+ typedef void (^ObjectReleaser)(long objectId);
+ 
+ NS_SWIFT_NAME(SharedObjectUtils)
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXSharedObjectUtils : NSObject
+ 
+ + (void)setNativeState:(nonnull EXJavaScriptObject *)object
+@@ -13,3 +15,5 @@ NS_SWIFT_NAME(SharedObjectUtils)
+               releaser:(nonnull ObjectReleaser)releaser;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/EXBridgeModule.h b/node_modules/expo-modules-core/ios/Legacy/EXBridgeModule.h
+index c720d91..1f1571f 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/EXBridgeModule.h
++++ b/node_modules/expo-modules-core/ios/Legacy/EXBridgeModule.h
+@@ -11,6 +11,8 @@
+     RCTRegisterModule(self); \
+   )
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXBridgeModule <RCTBridgeModule>
+ 
+ @optional
+@@ -18,3 +20,5 @@
+ - (void)setBridge:(RCTBridge *)bridge;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/EXUtilities.m b/node_modules/expo-modules-core/ios/Legacy/EXUtilities.m
+index d4cd1df..e479a3a 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/EXUtilities.m
++++ b/node_modules/expo-modules-core/ios/Legacy/EXUtilities.m
+@@ -23,7 +23,8 @@ @implementation EXUtilities
+ 
+ + (const NSArray<Protocol *> *)exportedInterfaces
+ {
+-  return @[@protocol(EXUtilitiesInterface)];
++  NSArray<Protocol *> *ifaces = @[@protocol(EXUtilitiesInterface)];
++  return ifaces;
+ }
+ 
+ - (void)setModuleRegistry:(EXModuleRegistry *)moduleRegistry
+diff --git a/node_modules/expo-modules-core/ios/Legacy/ModuleRegistry/EXModuleRegistryDelegate.h b/node_modules/expo-modules-core/ios/Legacy/ModuleRegistry/EXModuleRegistryDelegate.h
+index 8c900e5..ac03798 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/ModuleRegistry/EXModuleRegistryDelegate.h
++++ b/node_modules/expo-modules-core/ios/Legacy/ModuleRegistry/EXModuleRegistryDelegate.h
+@@ -4,8 +4,12 @@
+ 
+ #import <ExpoModulesCore/EXInternalModule.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXModuleRegistryDelegate <NSObject>
+ 
+ - (id<EXInternalModule>)pickInternalModuleImplementingInterface:(Protocol *)interface fromAmongModules:(NSArray<id<EXInternalModule>> *)internalModules;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/ModuleRegistryAdapter/EXModuleRegistryAdapter.h b/node_modules/expo-modules-core/ios/Legacy/ModuleRegistryAdapter/EXModuleRegistryAdapter.h
+index 516c8be..320ec55 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/ModuleRegistryAdapter/EXModuleRegistryAdapter.h
++++ b/node_modules/expo-modules-core/ios/Legacy/ModuleRegistryAdapter/EXModuleRegistryAdapter.h
+@@ -9,6 +9,8 @@
+ // for different experiences.
+ 
+ NS_SWIFT_NAME(ModuleRegistryAdapter)
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXModuleRegistryAdapter : NSObject
+ 
+ @property (nonnull, nonatomic, readonly) EXModuleRegistryProvider *moduleRegistryProvider;
+@@ -22,3 +24,5 @@ __deprecated_msg("Expo modules are now automatically registered. You can remove
+ __deprecated_msg("Expo modules are now automatically registered. You can replace this with an empty array.");
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/ModuleRegistryAdapter/EXModuleRegistryHolderReactModule.h b/node_modules/expo-modules-core/ios/Legacy/ModuleRegistryAdapter/EXModuleRegistryHolderReactModule.h
+index 7ced47a..55497a3 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/ModuleRegistryAdapter/EXModuleRegistryHolderReactModule.h
++++ b/node_modules/expo-modules-core/ios/Legacy/ModuleRegistryAdapter/EXModuleRegistryHolderReactModule.h
+@@ -4,9 +4,13 @@
+ 
+ #import <ExpoModulesCore/EXModuleRegistry.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXModuleRegistryHolderReactModule : NSObject <RCTBridgeModule>
+ 
+ - (nonnull instancetype)initWithModuleRegistry:(nonnull EXModuleRegistry *)moduleRegistry;
+ - (nullable EXModuleRegistry *)exModuleRegistry;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/NativeModulesProxy/EXNativeModulesProxy.h b/node_modules/expo-modules-core/ios/Legacy/NativeModulesProxy/EXNativeModulesProxy.h
+index c65d952..55a0798 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/NativeModulesProxy/EXNativeModulesProxy.h
++++ b/node_modules/expo-modules-core/ios/Legacy/NativeModulesProxy/EXNativeModulesProxy.h
+@@ -8,6 +8,8 @@
+ // A convenience class, which acts as a store for the native modules proxy config
+ 
+ NS_SWIFT_NAME(ModulesProxyConfig)
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXModulesProxyConfig : NSObject
+ 
+ - (instancetype)initWithConstants:(nonnull NSDictionary *)constants
+@@ -35,3 +37,5 @@ NS_SWIFT_NAME(LegacyNativeModulesProxy)
+ - (void)callMethod:(NSString *)moduleName methodNameOrKey:(id)methodNameOrKey arguments:(NSArray *)arguments resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXAppLifecycleListener.h b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXAppLifecycleListener.h
+index 36be7c3..6ab6659 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXAppLifecycleListener.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXAppLifecycleListener.h
+@@ -5,6 +5,8 @@
+ // Utility protocol helping modules to register with specific platform adapter
+ // for application lifecycle events.
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXAppLifecycleListener <NSObject>
+ 
+ - (void)onAppBackgrounded;
+@@ -15,3 +17,5 @@
+ - (void)onAppContentWillReload;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXAppLifecycleService.h b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXAppLifecycleService.h
+index c895670..ef40c1f 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXAppLifecycleService.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXAppLifecycleService.h
+@@ -4,6 +4,8 @@
+ 
+ #import <ExpoModulesCore/EXAppLifecycleListener.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXAppLifecycleService <NSObject>
+ 
+ - (void)registerAppLifecycleListener:(id<EXAppLifecycleListener>)listener;
+@@ -12,3 +14,5 @@
+ - (void)setAppStateToForeground;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXEventEmitter.h b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXEventEmitter.h
+index 6031fdf..404e59a 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXEventEmitter.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXEventEmitter.h
+@@ -8,6 +8,8 @@
+ // Implement this protocol in your exported module to be able
+ // to send events through platform event emitter.
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXEventEmitter
+ 
+ - (void)startObserving;
+@@ -16,3 +18,5 @@
+ - (NSArray<NSString *> *)supportedEvents;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXEventEmitterService.h b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXEventEmitterService.h
+index 60ac11a..2b2f9aa 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXEventEmitterService.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXEventEmitterService.h
+@@ -5,8 +5,12 @@
+ #import <ExpoModulesCore/EXDefines.h>
+ #import <ExpoModulesCore/EXExportedModule.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXEventEmitterService
+ 
+ - (void)sendEventWithName:(NSString *)name body:(id)body;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXInternalModule.h b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXInternalModule.h
+index 693a472..dbb8006 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXInternalModule.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXInternalModule.h
+@@ -7,9 +7,13 @@
+ // to make the module available under any of `exportedInterfaces`
+ // via EXModuleRegistry.
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXInternalModule <NSObject>
+ 
+ - (instancetype)init;
+ + (const NSArray<Protocol *> *)exportedInterfaces;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXJavaScriptContextProvider.h b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXJavaScriptContextProvider.h
+index e3c5217..da71784 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXJavaScriptContextProvider.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXJavaScriptContextProvider.h
+@@ -3,9 +3,13 @@
+ #import <Foundation/Foundation.h>
+ #import <JavaScriptCore/JavaScriptCore.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXJavaScriptContextProvider <NSObject>
+ 
+ - (JSGlobalContextRef)javaScriptContextRef;
+ - (void *)javaScriptRuntimePointer;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXLogHandler.h b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXLogHandler.h
+index 15847e3..79facbc 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXLogHandler.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXLogHandler.h
+@@ -2,6 +2,8 @@
+ 
+ #import <Foundation/Foundation.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXLogHandler
+ 
+ - (void)info:(nonnull NSString *)message;
+@@ -10,3 +12,5 @@
+ - (void)fatal:(nonnull NSError *)error;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXModuleRegistryConsumer.h b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXModuleRegistryConsumer.h
+index 76d7e6d..73aba3b 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXModuleRegistryConsumer.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXModuleRegistryConsumer.h
+@@ -8,8 +8,12 @@
+ // in EXModuleRegistry to receive an instance of the module registry
+ // when it's initialized (ready to provide references to other modules).
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXModuleRegistryConsumer <NSObject>
+ 
+ - (void)setModuleRegistry:(nonnull EXModuleRegistry *)moduleRegistry;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXUIManager.h b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXUIManager.h
+index 00b994a..1e463e4 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXUIManager.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXUIManager.h
+@@ -4,6 +4,8 @@
+ 
+ #import <ExpoModulesCore/Platform.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXUIManager <NSObject>
+ 
+ - (void)addUIBlock:(void (^)(NSDictionary<id, UIView *> *))block;
+@@ -15,3 +17,5 @@
+ - (void)dispatchOnClientThread:(dispatch_block_t)block;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXUtilitiesInterface.h b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXUtilitiesInterface.h
+index e3744d7..280989e 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Protocols/EXUtilitiesInterface.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Protocols/EXUtilitiesInterface.h
+@@ -2,6 +2,8 @@
+ 
+ #import <ExpoModulesCore/Platform.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @protocol EXUtilitiesInterface
+ 
+ - (nullable NSDictionary *)launchOptions;
+@@ -9,3 +11,5 @@
+ - (nullable UIViewController *)currentViewController;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Services/EXReactLogHandler.h b/node_modules/expo-modules-core/ios/Legacy/Services/EXReactLogHandler.h
+index 4b0200c..2cdfc90 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Services/EXReactLogHandler.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Services/EXReactLogHandler.h
+@@ -3,6 +3,10 @@
+ #import <ExpoModulesCore/EXSingletonModule.h>
+ #import <ExpoModulesCore/EXLogHandler.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXReactLogHandler : EXSingletonModule <EXLogHandler>
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeAdapter.h b/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeAdapter.h
+index 8cc9565..cf797f9 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeAdapter.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeAdapter.h
+@@ -10,8 +10,12 @@
+ #import <ExpoModulesCore/EXJavaScriptContextProvider.h>
+ #import <ExpoModulesCore/EXBridgeModule.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXReactNativeAdapter : NSObject <EXInternalModule, EXBridgeModule, EXAppLifecycleService, EXUIManager, EXJavaScriptContextProvider, EXModuleRegistryConsumer>
+ 
+ - (void)setBridge:(RCTBridge *)bridge;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeAdapter.mm b/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeAdapter.mm
+index e033fa8..0078e57 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeAdapter.mm
++++ b/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeAdapter.mm
+@@ -33,7 +33,8 @@ + (NSString *)moduleName
+ 
+ + (const NSArray<Protocol *> *)exportedInterfaces
+ {
+-  return @[@protocol(EXAppLifecycleService), @protocol(EXUIManager), @protocol(EXJavaScriptContextProvider)];
++  NSArray<Protocol *> *ifaces = @[@protocol(EXAppLifecycleService), @protocol(EXUIManager), @protocol(EXJavaScriptContextProvider)];
++  return ifaces;
+ }
+ 
+ # pragma mark - Lifecycle methods
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeEventEmitter.h b/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeEventEmitter.h
+index fdde7a0..971a92a 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeEventEmitter.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeEventEmitter.h
+@@ -11,8 +11,12 @@
+ // so we use class forward declaration here. Swift header must be imported in the `.m` file.
+ @class EXAppContext;
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXReactNativeEventEmitter : RCTEventEmitter <EXInternalModule, EXBridgeModule, EXModuleRegistryConsumer, EXEventEmitterService>
+ 
+ @property (nonatomic, strong) EXAppContext *appContext;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeEventEmitter.m b/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeEventEmitter.m
+index 8c4e9e1..eaa54d2 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeEventEmitter.m
++++ b/node_modules/expo-modules-core/ios/Legacy/Services/EXReactNativeEventEmitter.m
+@@ -34,7 +34,8 @@ + (BOOL)requiresMainQueueSetup
+ 
+ + (const NSArray<Protocol *> *)exportedInterfaces
+ {
+-  return @[@protocol(EXEventEmitterService)];
++  NSArray<Protocol *> *ifaces = @[@protocol(EXEventEmitterService)];
++  return ifaces;
+ }
+ 
+ - (NSArray<NSString *> *)supportedEvents
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXPermissionsService.h b/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXPermissionsService.h
+index b30490a..cea9a0f 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXPermissionsService.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXPermissionsService.h
+@@ -4,6 +4,8 @@
+ #import <ExpoModulesCore/EXModuleRegistryConsumer.h>
+ #import <ExpoModulesCore/EXPermissionsInterface.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXPermissionsService : EXExportedModule <EXPermissionsInterface, EXModuleRegistryConsumer>
+ 
+ + (EXPermissionStatus)statusForPermission:(NSDictionary *)permission;
+@@ -17,3 +19,5 @@
+ - (NSDictionary *)getPermissionUsingRequesterClass:(Class)requesterClass;
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXPermissionsService.m b/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXPermissionsService.m
+index 9f25447..b17656e 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXPermissionsService.m
++++ b/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXPermissionsService.m
+@@ -34,7 +34,8 @@ - (instancetype)init
+ 
+ + (const NSArray<Protocol *> *)exportedInterfaces
+ {
+-  return @[@protocol(EXPermissionsInterface)];
++  NSArray<Protocol *> *ifaces = @[@protocol(EXPermissionsInterface)];
++  return ifaces;
+ }
+ 
+ - (void)registerRequesters:(NSArray<id<EXPermissionsRequester>> *)newRequesters {
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXReactNativeUserNotificationCenterProxy.h b/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXReactNativeUserNotificationCenterProxy.h
+index 8bb863c..5f73014 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXReactNativeUserNotificationCenterProxy.h
++++ b/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXReactNativeUserNotificationCenterProxy.h
+@@ -6,6 +6,10 @@
+ #import <ExpoModulesCore/EXInternalModule.h>
+ #import <ExpoModulesCore/EXUserNotificationCenterProxyInterface.h>
+ 
++NS_ASSUME_NONNULL_BEGIN
++
+ @interface EXReactNativeUserNotificationCenterProxy : NSObject <EXInternalModule, EXUserNotificationCenterProxyInterface>
+ 
+ @end
++
++NS_ASSUME_NONNULL_END
+diff --git a/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXReactNativeUserNotificationCenterProxy.m b/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXReactNativeUserNotificationCenterProxy.m
+index ec1b428..2fee941 100644
+--- a/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXReactNativeUserNotificationCenterProxy.m
++++ b/node_modules/expo-modules-core/ios/Legacy/Services/Permissions/EXReactNativeUserNotificationCenterProxy.m
+@@ -9,7 +9,8 @@ @implementation EXReactNativeUserNotificationCenterProxy
+ 
+ + (const NSArray<Protocol *> *)exportedInterfaces
+ {
+-  return @[@protocol(EXUserNotificationCenterProxyInterface)];
++  NSArray<Protocol *> *ifaces = @[@protocol(EXUserNotificationCenterProxyInterface)];
++  return ifaces;
+ }
+ 
+ - (void)getNotificationSettingsWithCompletionHandler:(void(^)(UNNotificationSettings *settings))completionHandler
+diff --git a/node_modules/expo-modules-core/ios/Platform.h b/node_modules/expo-modules-core/ios/Platform.h
+index 04982e4..986cbf7 100644
+--- a/node_modules/expo-modules-core/ios/Platform.h
++++ b/node_modules/expo-modules-core/ios/Platform.h
+@@ -18,6 +18,8 @@
+ @compatibility_alias UIApplication NSApplication;
+ #endif
+ 
++NS_ASSUME_NONNULL_BEGIN
+ @protocol UIApplicationDelegate <NSApplicationDelegate> @end
++NS_ASSUME_NONNULL_END
+ 
+ #endif // TARGET_OS_OSX

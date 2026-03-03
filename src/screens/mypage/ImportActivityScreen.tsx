@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import ScreenHeader from '../../components/common/ScreenHeader';
 import BlurredBackground from '../../components/common/BlurredBackground';
@@ -10,20 +11,21 @@ import type { ThemeColors } from '../../utils/constants';
 
 export default function ImportActivityScreen() {
   const navigation = useNavigation();
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
     <BlurredBackground>
       <SafeAreaView style={styles.container}>
-        <ScreenHeader title="기록 가져오기" onBack={() => navigation.goBack()} />
+        <ScreenHeader title={t('import.title')} onBack={() => navigation.goBack()} />
         <View style={styles.content}>
           <View style={styles.iconCircle}>
             <Ionicons name="cloud-upload-outline" size={48} color={colors.textTertiary} />
           </View>
-          <Text style={styles.title}>준비 중입니다</Text>
+          <Text style={styles.title}>{t('common.preparing')}</Text>
           <Text style={styles.description}>
-            GPX / FIT 파일 가져오기 기능을{'\n'}곧 제공할 예정입니다.
+            {t('import.comingSoon')}
           </Text>
         </View>
       </SafeAreaView>

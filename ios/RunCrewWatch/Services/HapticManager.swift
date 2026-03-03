@@ -77,4 +77,15 @@ class HapticManager {
     func turnApproaching() {
         WKInterfaceDevice.current().play(.click)
     }
+
+    func arrivedAtStart() {
+        WKInterfaceDevice.current().play(.success)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            WKInterfaceDevice.current().play(.success)
+        }
+    }
+
+    func checkpointPassed() {
+        WKInterfaceDevice.current().play(.success)
+    }
 }

@@ -1,4 +1,4 @@
-"""Upload endpoints: avatar image upload."""
+"""Upload endpoints: avatar and general image upload."""
 import os
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
@@ -59,5 +59,49 @@ async def upload_avatar(
     # Upload via storage abstraction (local or S3)
     storage = get_storage()
     url = await storage.upload(data=contents, folder="avatars", extension=ext)
+
+    return {"url": url}
+
+
+@router.post("/image")
+async def upload_image(
+    file: UploadFile,
+    current_user: CurrentUser,
+) -> dict:
+    """Upload a general-purpose image. Accepts JPEG, PNG, WebP up to 5MB."""
+    if file.content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "VALIDATION_ERROR",
+                "message": f"Invalid file type: {file.content_type}. Allowed: {', '.join(ALLOWED_CONTENT_TYPES)}",
+            },
+        )
+
+    ext = ".jpg"
+    if file.filename:
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "VALIDATION_ERROR",
+                    "message": f"Invalid file extension: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
+                },
+            )
+
+    contents = await file.read()
+    max_size = settings.max_upload_size_bytes
+    if len(contents) > max_size:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail={
+                "code": "UPLOAD_TOO_LARGE",
+                "message": f"File too large. Maximum size: {settings.MAX_UPLOAD_SIZE_MB}MB",
+            },
+        )
+
+    storage = get_storage()
+    url = await storage.upload(data=contents, folder="images", extension=ext)
 
     return {"url": url}

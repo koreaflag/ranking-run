@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 import { useRunningStore } from '../stores/runningStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import type {
   WatchHeartRateEvent,
   WatchCommandEvent,
@@ -25,6 +26,11 @@ export function useWatchCompanion(
     onStopCommand?: () => void;
   },
   navigation?: CourseNavigation | null,
+  checkpointData?: {
+    passedCount: number;
+    totalCount: number;
+    justPassed: boolean;
+  },
 ) {
   const subscriptionsRef = useRef<Array<{ remove: () => void }>>([]);
   const {
@@ -35,6 +41,7 @@ export function useWatchCompanion(
     avgPaceSecondsPerKm,
     gpsStatus,
     calories,
+    isAutoPaused,
     updateHeartRate,
     setWatchConnected,
   } = useRunningStore();
@@ -55,6 +62,12 @@ export function useWatchCompanion(
       avgPace: avgPaceSecondsPerKm,
       gpsStatus,
       calories,
+      isAutoPaused,
+      // Countdown sync: send start timestamp so watch can compensate for WCSession latency
+      ...(phase === 'countdown' ? {
+        countdownStartedAt: Date.now(),
+        countdownTotal: useSettingsStore.getState().countdownSeconds,
+      } : {}),
       // Course navigation data
       isCourseRun: !!navigation,
       navBearing: navigation?.bearingToNext ?? -1,
@@ -66,11 +79,16 @@ export function useWatchCompanion(
       // Turn-point navigation
       navNextTurnDirection: navigation?.nextTurnDirection ?? '',
       navDistanceToNextTurn: navigation?.distanceToNextTurn ?? -1,
+      // Checkpoint progress
+      cpPassed: checkpointData?.passedCount ?? 0,
+      cpTotal: checkpointData?.totalCount ?? 0,
+      cpJustPassed: checkpointData?.justPassed ?? false,
     }).catch(() => {
       // Silently ignore send failures (Watch may be unreachable)
     });
   }, [phase, distanceMeters, durationSeconds, currentPaceSecondsPerKm,
-      avgPaceSecondsPerKm, gpsStatus, calories, navigation]);
+      avgPaceSecondsPerKm, gpsStatus, calories, isAutoPaused, navigation,
+      checkpointData?.passedCount, checkpointData?.totalCount, checkpointData?.justPassed]);
 
   // Subscribe to Watch events during active running
   useEffect(() => {

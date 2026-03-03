@@ -70,8 +70,26 @@ class Event(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     center_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     center_lng: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Crew-specific fields
+    recurring_schedule: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )  # e.g., "매주 토 6AM"
+    meeting_point: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )  # e.g., "반포 한강공원 입구"
+
+    # Creator
+    creator_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Relationships
     course: Mapped["Course | None"] = relationship("Course", lazy="joined")
+    creator: Mapped["User | None"] = relationship(
+        "User", lazy="joined", foreign_keys=[creator_id]
+    )
     participants: Mapped[list["EventParticipant"]] = relationship(
         back_populates="event",
         cascade="all, delete-orphan",

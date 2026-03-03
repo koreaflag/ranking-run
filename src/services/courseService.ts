@@ -62,7 +62,7 @@ export const courseService = {
     swLng: number,
     neLat: number,
     neLng: number,
-    limit: number = 100,
+    limit: number = 500,
   ): Promise<CourseMarker[]> {
     const query = toQuery({
       sw_lat: swLat,

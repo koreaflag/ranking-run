@@ -94,7 +94,11 @@ class WatchBridgeModule: RCTEventEmitter {
                       resolver resolve: @escaping RCTPromiseResolveBlock,
                       rejecter reject: @escaping RCTPromiseRejectBlock) {
         if let dict = state as? [String: Any] {
-            WatchSessionManager.shared.sendRunStateUpdate(dict)
+            // Non-authoritative: useWatchCompanion fires on every metric change and
+            // can deliver stale phases through the async RN bridge. The manager will
+            // block stale phase reversions that arrive shortly after an authoritative
+            // phase change from GPSTrackerModule.
+            WatchSessionManager.shared.sendRunStateUpdate(dict, authoritative: false)
         }
         resolve(nil)
     }

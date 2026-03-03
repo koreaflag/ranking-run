@@ -146,6 +146,13 @@ class FilterConfig(BaseModel):
     outlier_accuracy_threshold: float
 
 
+class CheckpointPass(BaseModel):
+    """Client-reported checkpoint passage during a run."""
+    checkpoint_id: int
+    timestamp: float
+    distance_from_checkpoint: float
+
+
 class RunCompleteRequest(BaseModel):
     distance_meters: int = Field(..., ge=0)
     duration_seconds: int = Field(..., ge=0)
@@ -167,6 +174,7 @@ class RunCompleteRequest(BaseModel):
 
     course_completion: CourseCompletionInfo | None = None
     filter_config: FilterConfig | None = None
+    checkpoint_passes: list[CheckpointPass] | None = None
 
     total_chunks: int = 0
     uploaded_chunk_sequences: list[int] = []
@@ -258,6 +266,7 @@ class RunHistoryItem(BaseModel):
     finished_at: datetime
     course: RunCourseInfo | None = None
     device_model: str | None = None
+    route_preview: list[list[float]] | None = None
 
 
 class RunHistoryResponse(BaseModel):
@@ -276,3 +285,39 @@ class RecentRun(BaseModel):
     started_at: datetime
     finished_at: datetime
     course: RunCourseInfo | None = None
+
+
+# --- Analytics ---
+
+class WeeklyStatItem(BaseModel):
+    week_start: str  # ISO date string "2026-02-24"
+    distance_meters: int
+    run_count: int
+    duration_seconds: int
+    avg_pace: int | None
+
+class PaceTrendItem(BaseModel):
+    date: str  # ISO datetime string
+    avg_pace: int  # seconds per km
+    distance_meters: int
+
+class ActivityDay(BaseModel):
+    date: str  # "2026-02-24"
+    distance_meters: int
+    run_count: int
+
+class BestEffortItem(BaseModel):
+    distance_label: str  # "1K", "5K", "10K", "Half", "Full"
+    target_meters: int
+    best_time_seconds: int | None = None
+    best_pace: int | None = None  # seconds per km
+    achieved_date: str | None = None
+    run_id: str | None = None
+
+class AnalyticsResponse(BaseModel):
+    weekly_stats: list[WeeklyStatItem]
+    pace_trend: list[PaceTrendItem]
+    activity_calendar: list[ActivityDay]
+    best_efforts: list[BestEffortItem]
+    weekly_goal_km: float  # target
+    weekly_current_km: float  # this week's actual

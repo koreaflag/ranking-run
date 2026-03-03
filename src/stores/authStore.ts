@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import type { AuthProvider, AuthResponse, UserProfile } from '../types/api';
 import { SECURE_STORE_KEYS } from '../utils/constants';
 import { authService } from '../services/authService';
+import i18n from '../i18n';
 
 interface AuthState {
   user: UserProfile | null;
@@ -13,7 +14,7 @@ interface AuthState {
   isNewUser: boolean;
   error: string | null;
 
-  login: (provider: AuthProvider, token: string, nonce?: string) => Promise<void>;
+  login: (provider: AuthProvider, token: string, nonce?: string) => Promise<boolean>;
   devLogin: (nickname?: string, email?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<boolean>;
@@ -32,7 +33,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isNewUser: false,
   error: null,
 
-  login: async (provider, token, nonce) => {
+  login: async (provider, token, nonce): Promise<boolean> => {
     set({ isLoading: true, error: null });
     try {
       const response: AuthResponse = await authService.login({
@@ -50,23 +51,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         response.refresh_token,
       );
 
-      set({
-        accessToken: response.access_token,
-        refreshToken: response.refresh_token,
-        isNewUser: response.user.is_new_user,
-        isLoading: false,
-      });
-
-      if (!response.user.is_new_user) {
-        const profile = await authService.getProfile();
+      if (response.user.is_new_user) {
         set({
+          accessToken: response.access_token,
+          refreshToken: response.refresh_token,
+          isNewUser: true,
+          isLoading: false,
+        });
+      } else {
+        let profile = null;
+        try {
+          profile = await authService.getProfile();
+        } catch {
+          // Profile fetch failed — set authenticated anyway so the user isn't stuck
+        }
+        set({
+          accessToken: response.access_token,
+          refreshToken: response.refresh_token,
+          isNewUser: false,
           user: profile,
           isAuthenticated: true,
+          isLoading: false,
         });
       }
+
+      return response.user.is_new_user;
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : '로그인에 실패했습니다.';
+        error instanceof Error ? error.message : i18n.t('auth.errors.loginFailed');
       set({ isLoading: false, error: message });
       throw error;
     }
@@ -91,6 +103,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         refreshToken: response.refresh_token,
         user: {
           id: response.user.id,
+          user_code: response.user.user_code ?? '',
           email: response.user.email ?? '',
           nickname: response.user.nickname ?? nickname ?? 'dev_user',
           avatar_url: null,
@@ -110,7 +123,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : '로그인에 실패했습니다.';
+        error instanceof Error ? error.message : i18n.t('auth.errors.loginFailed');
       set({ isLoading: false, error: message });
       throw error;
     }
@@ -153,76 +166,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
 
       return true;
-    } catch {
-      await get().logout();
+    } catch (error: unknown) {
+      // Only logout on definitive auth failures (4xx), NOT on network/timeout errors.
+      // Transient issues (network offline, server down) should not wipe credentials.
+      const isAuthFailure =
+        error instanceof Error &&
+        'status' in error &&
+        typeof (error as any).status === 'number' &&
+        (error as any).status >= 400 &&
+        (error as any).status < 500;
+      if (isAuthFailure) {
+        await get().logout();
+      }
       return false;
     }
   },
 
   loadStoredAuth: async () => {
     set({ isLoading: true });
-
-    // DEV mode: try real devLogin for valid JWT, fall back to offline stub
-    if (__DEV__) {
-      console.log('[Auth] DEV loadStoredAuth — checking stored tokens...');
-      // First check if we already have real tokens stored
-      const storedToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
-      if (storedToken && storedToken !== 'dev-token') {
-        console.log('[Auth] Found stored real token, validating...');
-        // Already have real tokens — validate via profile fetch
-        set({ accessToken: storedToken });
-        try {
-          const profile = await authService.getProfile();
-          const refreshToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
-          set({
-            user: profile,
-            refreshToken,
-            isAuthenticated: true,
-            isNewUser: false,
-            isLoading: false,
-          });
-          console.log('[Auth] Stored token valid, authenticated as:', profile.nickname);
-          return;
-        } catch (e) {
-          console.warn('[Auth] Stored token invalid:', e);
-          // Token expired — fall through to devLogin
-        }
-      }
-
-      // Call backend devLogin to get real JWT tokens
-      console.log('[Auth] Calling devLogin...');
-      try {
-        await get().devLogin('TestRunner', 'dev@runcrew.app');
-        console.log('[Auth] devLogin success — real JWT obtained');
-        return;
-      } catch (e) {
-        console.warn('[Auth] devLogin FAILED — backend unreachable:', e);
-        // Backend unreachable — use offline stub for UI-only testing
-        set({
-          user: {
-            id: 'dev-user-001',
-            email: 'dev@runcrew.app',
-            nickname: 'TestRunner',
-            avatar_url: null,
-            birthday: null,
-            height_cm: 175,
-            weight_kg: 70,
-            bio: null,
-            instagram_username: null,
-            country: null,
-            total_distance_meters: 0,
-            total_runs: 0,
-            created_at: new Date().toISOString(),
-          },
-          accessToken: 'dev-token',
-          refreshToken: 'dev-refresh-token',
-          isAuthenticated: true,
-          isNewUser: false,
-          isLoading: false,
-        });
-        return;
-      }
-    }
 
     try {
       const accessToken = await SecureStore.getItemAsync(
@@ -233,42 +194,56 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       );
 
       if (!accessToken || !refreshToken) {
-        // No stored tokens — try devLogin (임시: 소셜 로그인 완성 전까지)
-        try {
-          await get().devLogin('TestRunner', 'dev@runcrew.app');
-          return;
-        } catch {
-          set({ isLoading: false });
-          return;
-        }
+        set({ isLoading: false });
+        return;
       }
 
       set({ accessToken, refreshToken });
 
       try {
-        const profile = await authService.getProfile();
+        const timeout = new Promise<never>((_, rej) =>
+          setTimeout(() => rej(new Error('timeout')), 10000),
+        );
+        const profile = await Promise.race([
+          authService.getProfile(),
+          timeout,
+        ]);
         set({
           user: profile,
           isAuthenticated: true,
           isLoading: false,
         });
       } catch {
-        // Access token expired, try refresh
-        const refreshed = await get().refreshAuth();
-        if (refreshed) {
-          const profile = await authService.getProfile();
-          set({
-            user: profile,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } else {
-          // Refresh failed — try devLogin (임시: 소셜 로그인 완성 전까지)
-          try {
-            await get().devLogin('TestRunner', 'dev@runcrew.app');
-          } catch {
-            set({ isLoading: false });
+        // Access token expired or server unreachable, try refresh
+        try {
+          const refreshed = await get().refreshAuth();
+          if (refreshed) {
+            try {
+              const profile = await authService.getProfile();
+              set({
+                user: profile,
+                isAuthenticated: true,
+                isLoading: false,
+              });
+            } catch {
+              // Profile fetch failed after refresh — still authenticated,
+              // just don't have profile data yet. User can pull-to-refresh.
+              set({ isAuthenticated: true, isLoading: false });
+            }
+          } else {
+            // refreshAuth returned false — if tokens still exist, stay authenticated
+            // (transient network error won't have wiped them)
+            const currentToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
+            if (currentToken) {
+              set({ isAuthenticated: true, isLoading: false });
+            } else {
+              set({ isLoading: false });
+            }
           }
+        } catch {
+          // Network completely unavailable — keep tokens, mark as authenticated
+          // so user can use the app offline
+          set({ isAuthenticated: true, isLoading: false });
         }
       }
     } catch {
@@ -294,6 +269,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({
         user: {
           id: profile.id,
+          user_code: get().user?.user_code ?? '',
           email: '',
           nickname: profile.nickname,
           avatar_url: profile.avatar_url,
@@ -315,7 +291,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const message =
         error instanceof Error
           ? error.message
-          : '프로필 설정에 실패했습니다.';
+          : i18n.t('auth.errors.profileSetupFailed');
       set({ isLoading: false, error: message });
       throw error;
     }

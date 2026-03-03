@@ -8,6 +8,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 import { useCourseStore } from '../../stores/courseStore';
 import { formatRelativeTime } from '../../utils/format';
 import { useTheme } from '../../hooks/useTheme';
@@ -28,6 +29,7 @@ interface ReviewSectionProps {
 }
 
 export default function ReviewSection({ courseId, creatorId, currentUserId, onInputFocus }: ReviewSectionProps) {
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -53,9 +55,9 @@ export default function ReviewSection({ courseId, creatorId, currentUserId, onIn
     <View style={styles.section}>
       {/* Section Header */}
       <View style={styles.header}>
-        <Text style={styles.sectionTitle}>리뷰</Text>
+        <Text style={styles.sectionTitle}>{t('comment.title')}</Text>
         <Text style={styles.reviewCount}>
-          {selectedCourseReviewCount}개
+          {t('comment.count', { count: selectedCourseReviewCount })}
         </Text>
       </View>
 
@@ -103,6 +105,7 @@ function ReplyForm({
   reviewId: string;
   onSubmit: (courseId: string, reviewId: string, content: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -116,18 +119,18 @@ function ReplyForm({
       await onSubmit(courseId, reviewId, content.trim());
       setContent('');
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '알 수 없는 오류';
-      Alert.alert('앗...!', `답글 등록에 실패했습니다.\n(${msg})`);
+      const msg = err instanceof Error ? err.message : t('comment.unknownError');
+      Alert.alert(t('common.error'), `${t('comment.replyError')}\n(${msg})`);
     } finally {
       setIsSubmitting(false);
     }
-  }, [courseId, reviewId, content, onSubmit]);
+  }, [courseId, reviewId, content, onSubmit, t]);
 
   return (
     <View style={styles.replyFormContainer}>
       <TextInput
         style={styles.replyTextInput}
-        placeholder="답글을 입력하세요"
+        placeholder={t('comment.replyPlaceholder')}
         placeholderTextColor={colors.textTertiary}
         value={content}
         onChangeText={setContent}
@@ -146,7 +149,7 @@ function ReplyForm({
           disabled={isSubmitting || !content.trim()}
           activeOpacity={0.8}
         >
-          <Text style={styles.replySubmitButtonText}>등록</Text>
+          <Text style={styles.replySubmitButtonText}>{t('comment.submit')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -168,6 +171,7 @@ function ReviewForm({
   onCancel?: () => void;
   onInputFocus?: () => void;
 }) {
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -183,18 +187,18 @@ function ReviewForm({
       }
       onCancel?.();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '알 수 없는 오류';
-      Alert.alert('앗...!', `리뷰 저장에 실패했습니다.\n(${msg})`);
+      const msg = err instanceof Error ? err.message : t('comment.unknownError');
+      Alert.alert(t('common.error'), `${t('comment.submitError')}\n(${msg})`);
     } finally {
       setIsSubmitting(false);
     }
-  }, [courseId, content, onSubmit, initialContent, onCancel]);
+  }, [courseId, content, onSubmit, initialContent, onCancel, t]);
 
   return (
     <View style={styles.formCard}>
       <TextInput
         style={styles.textInput}
-        placeholder="코스에 대한 의견을 남겨주세요"
+        placeholder={t('comment.placeholder')}
         placeholderTextColor={colors.textTertiary}
         value={content}
         onChangeText={setContent}
@@ -210,7 +214,7 @@ function ReviewForm({
             onPress={onCancel}
             activeOpacity={0.7}
           >
-            <Text style={styles.cancelButtonText}>취소</Text>
+            <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -220,7 +224,7 @@ function ReviewForm({
           activeOpacity={0.8}
         >
           <Text style={styles.submitButtonText}>
-            {initialContent ? '수정' : '등록'}
+            {initialContent ? t('comment.edit') : t('comment.submit')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -243,6 +247,7 @@ function MyReviewCard({
   onDelete: (reviewId: string, courseId: string) => Promise<void>;
   onInputFocus?: () => void;
 }) {
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -250,18 +255,18 @@ function MyReviewCard({
 
   const handleDelete = useCallback(() => {
     Alert.alert(
-      '리뷰 삭제',
-      '정말 이 리뷰를 삭제하시겠습니까?',
+      t('comment.deleteTitle'),
+      t('comment.deleteMsg'),
       [
-        { text: '취소', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: '삭제',
+          text: t('common.delete'),
           style: 'destructive',
           onPress: () => onDelete(review.id, courseId),
         },
       ],
     );
-  }, [review.id, courseId, onDelete]);
+  }, [review.id, courseId, onDelete, t]);
 
   if (isEditing) {
     return (
@@ -278,13 +283,13 @@ function MyReviewCard({
   return (
     <View style={styles.myReviewCard}>
       <View style={styles.myReviewHeader}>
-        <Text style={styles.myReviewBadge}>내 리뷰</Text>
+        <Text style={styles.myReviewBadge}>{t('comment.myComment')}</Text>
         <View style={styles.myReviewActions}>
           <TouchableOpacity onPress={() => setIsEditing(true)} activeOpacity={0.7}>
-            <Text style={styles.actionText}>수정</Text>
+            <Text style={styles.actionText}>{t('comment.edit')}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={handleDelete} activeOpacity={0.7}>
-            <Text style={[styles.actionText, styles.deleteText]}>삭제</Text>
+            <Text style={[styles.actionText, styles.deleteText]}>{t('common.delete')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -305,6 +310,7 @@ function MyReviewCard({
 // ---- Creator Reply Display Block ----
 
 function CreatorReplyBlock({ reply }: { reply: string }) {
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -312,7 +318,7 @@ function CreatorReplyBlock({ reply }: { reply: string }) {
     <View style={styles.replyContainer}>
       <View style={styles.replyHeader}>
         <Ionicons name="return-down-forward" size={14} color={colors.primary} />
-        <Text style={styles.replyBadge}>코스 제작자</Text>
+        <Text style={styles.replyBadge}>{t('comment.creator')}</Text>
       </View>
       <Text style={styles.replyContent}>{reply}</Text>
     </View>
@@ -332,6 +338,7 @@ const ReviewCard = React.memo(function ReviewCard({
   isCreator: boolean;
   onReply: (courseId: string, reviewId: string, content: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -356,7 +363,7 @@ const ReviewCard = React.memo(function ReviewCard({
         </View>
         <View style={styles.reviewHeaderInfo}>
           <Text style={styles.reviewNickname}>
-            {review.author.nickname ?? '익명'}
+            {review.author.nickname ?? t('common.anonymous')}
           </Text>
         </View>
         <Text style={styles.reviewDate}>
@@ -378,7 +385,7 @@ const ReviewCard = React.memo(function ReviewCard({
           activeOpacity={0.7}
         >
           <Ionicons name="chatbubble-outline" size={14} color={colors.primary} />
-          <Text style={styles.replyButtonText}>답글</Text>
+          <Text style={styles.replyButtonText}>{t('comment.reply')}</Text>
         </TouchableOpacity>
       )}
       {/* Inline reply form */}

@@ -1,4 +1,4 @@
-"""Event endpoints: list events, join/leave, map markers."""
+"""Event endpoints: list events, join/leave, map markers, create."""
 
 from uuid import UUID
 
@@ -8,8 +8,11 @@ from fastapi import APIRouter, Depends, Query
 from app.core.container import Container
 from app.core.deps import CurrentUser, DbSession
 from app.schemas.event import (
+    EventCreateRequest,
     EventListResponse,
     EventMapMarker,
+    EventMemberListResponse,
+    EventMemberResponse,
     EventParticipantResponse,
     EventResponse,
 )
@@ -25,19 +28,44 @@ async def get_active_events(
     db: DbSession,
     page: int = Query(0, ge=0),
     per_page: int = Query(20, ge=1, le=100),
+    event_type: str | None = Query(None, pattern="^(challenge|crew|event)$"),
     event_service: EventService = Depends(Provide[Container.event_service]),
 ) -> EventListResponse:
-    """Get paginated list of active events."""
+    """Get paginated list of active events, optionally filtered by event_type."""
     events, total_count = await event_service.get_active_events(
         db=db,
         page=page,
         per_page=per_page,
         current_user_id=current_user.id,
+        event_type=event_type,
     )
     return EventListResponse(
         data=[EventResponse(**e) for e in events],
         total_count=total_count,
     )
+
+
+@router.post("", response_model=EventResponse, status_code=201)
+@inject
+async def create_event(
+    body: EventCreateRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+    event_service: EventService = Depends(Provide[Container.event_service]),
+) -> EventResponse:
+    """Create a new event."""
+    event = await event_service.create_event(
+        db=db,
+        user_id=current_user.id,
+        data=body.model_dump(),
+    )
+    # Return enriched event with participant info
+    enriched = await event_service.get_event_by_id(
+        db=db,
+        event_id=event.id,
+        current_user_id=current_user.id,
+    )
+    return EventResponse(**enriched)
 
 
 @router.get("/map-markers", response_model=list[EventMapMarker])
@@ -116,4 +144,22 @@ async def leave_event(
         db=db,
         event_id=event_id,
         user_id=current_user.id,
+    )
+
+
+@router.get("/{event_id}/participants", response_model=EventMemberListResponse)
+@inject
+async def get_event_participants(
+    event_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    event_service: EventService = Depends(Provide[Container.event_service]),
+) -> EventMemberListResponse:
+    """List all participants of an event/crew with their profile and progress."""
+    members, total_count = await event_service.get_event_participants(
+        db=db, event_id=event_id
+    )
+    return EventMemberListResponse(
+        data=[EventMemberResponse(**m) for m in members],
+        total_count=total_count,
     )

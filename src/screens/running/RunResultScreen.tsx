@@ -10,6 +10,7 @@ import {
   Dimensions,
   TouchableOpacity,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { useRunningStore } from '../../stores/runningStore';
 import { runService } from '../../services/runService';
@@ -22,7 +23,7 @@ import RouteMapView from '../../components/map/RouteMapView';
 import type { RouteMapViewHandle } from '../../components/map/RouteMapView';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import GlassCard from '../../components/common/GlassCard';
-import type { RunningStackParamList } from '../../types/navigation';
+import type { WorldStackParamList } from '../../types/navigation';
 import type { RunCompleteResponse, Split } from '../../types/api';
 import type { ThemeColors } from '../../utils/constants';
 import {
@@ -33,7 +34,7 @@ import {
 } from '../../utils/format';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 
-type ResultRoute = RouteProp<RunningStackParamList, 'RunResult'>;
+type ResultRoute = RouteProp<WorldStackParamList, 'RunResult'>;
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -52,6 +53,7 @@ function getRankBgColor(rank: number, c: ThemeColors): string {
 }
 
 export default function RunResultScreen() {
+  const { t } = useTranslation();
   const navigation = useNavigation();
   const route = useRoute<ResultRoute>();
   const { sessionId, alreadyCompleted } = route.params;
@@ -74,6 +76,7 @@ export default function RunResultScreen() {
     stopLocation,
     heartRate,
     cadence,
+    checkpointPasses,
     reset,
   } = useRunningStore();
 
@@ -137,6 +140,7 @@ export default function RunResultScreen() {
         },
         total_chunks: 0,
         uploaded_chunk_sequences: [] as number[],
+        ...(checkpointPasses.length > 0 ? { checkpoint_passes: checkpointPasses } : {}),
       };
 
       // 1) Save locally first (instant — prevents data loss)
@@ -182,40 +186,46 @@ export default function RunResultScreen() {
     submitted,
   ]);
 
-  const resetRunningStack = () => {
+  const resetToWorld = () => {
     reset();
     navigation.dispatch(
       CommonActions.reset({
         index: 0,
-        routes: [{ name: 'RunningMain' }],
+        routes: [{ name: 'World' }],
       }),
     );
   };
 
   const handleGoHome = () => {
-    resetRunningStack();
+    resetToWorld();
     setTimeout(() => {
       navigation.getParent()?.navigate('HomeTab');
     }, 0);
   };
 
   const handleRunAgain = () => {
-    resetRunningStack();
+    reset();
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'World' }, { name: 'RunningMain' }],
+      }),
+    );
   };
 
   const MIN_COURSE_DISTANCE_M = 500;
 
   const handleRegisterCourse = () => {
     if (distanceMeters < MIN_COURSE_DISTANCE_M) {
-      Alert.alert('알림', '코스 등록은 500m 이상 달려야 가능합니다.');
+      Alert.alert(t('common.notification'), t('running.result.minDistance'));
       return;
     }
     if (!result?.run_record_id) {
       Alert.alert(
-        '알림',
+        t('common.notification'),
         savedLocally
-          ? '기록이 로컬에 저장되었지만 서버 업로드가 완료되지 않았습니다. 서버 연결 후 다시 시도해주세요.'
-          : '기록 업로드가 완료되지 않았습니다. 잠시 후 다시 시도해주세요.',
+          ? t('running.result.localSavedNoUpload')
+          : t('running.result.uploadNotDone'),
       );
       return;
     }
@@ -228,7 +238,7 @@ export default function RunResultScreen() {
       elevationGainMeters,
       isLoop: loopDetected,
     };
-    resetRunningStack();
+    resetToWorld();
     setTimeout(() => {
       navigation.getParent()?.navigate('CourseTab', {
         screen: 'CourseCreate',
@@ -239,7 +249,7 @@ export default function RunResultScreen() {
 
   const handleWriteReview = () => {
     if (!courseId) return;
-    resetRunningStack();
+    resetToWorld();
     setTimeout(() => {
       navigation.getParent()?.navigate('CourseTab', {
         screen: 'CourseDetail',
@@ -259,7 +269,7 @@ export default function RunResultScreen() {
         {/* Minimal header */}
         <View style={styles.header}>
           <Text style={styles.headerLabel}>
-            {courseId ? '코스 러닝 완료' : alreadyCompleted ? 'Watch 러닝 완료' : '자유 러닝 완료'}
+            {courseId ? t('running.result.courseCompleted') : alreadyCompleted ? t('running.result.watchCompleted') : t('running.result.freeCompleted')}
           </Text>
         </View>
 
@@ -278,17 +288,17 @@ export default function RunResultScreen() {
               <View style={styles.statRow}>
                 <View style={styles.statCell}>
                   <Text style={styles.statValue}>{formatDuration(durationSeconds)}</Text>
-                  <Text style={styles.statLabel}>시간</Text>
+                  <Text style={styles.statLabel}>{t('running.metrics.time')}</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statCell}>
                   <Text style={styles.statValue}>{formatPace(avgPaceSecondsPerKm)}</Text>
-                  <Text style={styles.statLabel}>평균 페이스</Text>
+                  <Text style={styles.statLabel}>{t('running.metrics.avgPace')}</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statCell}>
                   <Text style={styles.statValue}>{calories}</Text>
-                  <Text style={styles.statLabel}>kcal</Text>
+                  <Text style={styles.statLabel}>{t('running.metrics.kcal')}</Text>
                 </View>
               </View>
               <View style={styles.statRowDivider} />
@@ -297,19 +307,19 @@ export default function RunResultScreen() {
                   <Text style={[styles.statValue, heartRate > 0 && { color: colors.error }]}>
                     {heartRate > 0 ? Math.round(heartRate) : '--'}
                   </Text>
-                  <Text style={styles.statLabel}>심박수</Text>
+                  <Text style={styles.statLabel}>{t('running.metrics.heartRate')}</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statCell}>
                   <Text style={styles.statValue}>{cadence > 0 ? cadence : '--'}</Text>
-                  <Text style={styles.statLabel}>케이던스</Text>
+                  <Text style={styles.statLabel}>{t('running.metrics.cadence')}</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statCell}>
                   <Text style={styles.statValue}>
                     {elevationGainMeters > 0 ? `+${Math.round(elevationGainMeters)}` : '--'}
                   </Text>
-                  <Text style={styles.statLabel}>고도(m)</Text>
+                  <Text style={styles.statLabel}>{t('running.metrics.elevation')}</Text>
                 </View>
               </View>
             </View>
@@ -321,9 +331,9 @@ export default function RunResultScreen() {
           <View style={styles.flagWarning}>
             <Ionicons name="warning" size={16} color={COLORS.white} />
             <View style={styles.flagTextArea}>
-              <Text style={styles.flagTitle}>비정상 속도 감지</Text>
+              <Text style={styles.flagTitle}>{t('running.result.speedAnomaly')}</Text>
               <Text style={styles.flagDesc}>
-                {result.flag_reason ?? '인간이 낼 수 없는 속도가 기록되어 랭킹에서 제외됩니다.'}
+                {result.flag_reason ?? t('running.result.speedAnomalyDesc')}
               </Text>
             </View>
           </View>
@@ -392,13 +402,13 @@ export default function RunResultScreen() {
                   </Text>
                 </Text>
                 <Text style={styles.rankTotal}>
-                  / {result.ranking.total_runners}명 중
+                  {t('running.result.rankingOf', { count: result.ranking.total_runners })}
                 </Text>
               </View>
             </View>
             {result.ranking.is_personal_best && (
               <View style={styles.pbBadge}>
-                <Text style={styles.pbText}>PB  개인 최고 기록</Text>
+                <Text style={styles.pbText}>{t('running.result.pbBadge')}</Text>
               </View>
             )}
           </View>
@@ -407,12 +417,12 @@ export default function RunResultScreen() {
         {/* Split Times */}
         {splits.length > 0 && (
           <View style={styles.splitsSection}>
-            <Text style={styles.sectionTitle}>구간 기록</Text>
+            <Text style={styles.sectionTitle}>{t('running.result.splits')}</Text>
             <View style={styles.splitsTable}>
               <View style={styles.splitHeader}>
-                <Text style={[styles.splitHeaderText, { textAlign: 'left' }]}>구간</Text>
-                <Text style={styles.splitHeaderText}>페이스</Text>
-                <Text style={[styles.splitHeaderText, { textAlign: 'right' }]}>시간</Text>
+                <Text style={[styles.splitHeaderText, { textAlign: 'left' }]}>{t('running.result.splitLap')}</Text>
+                <Text style={styles.splitHeaderText}>{t('running.result.splitPace')}</Text>
+                <Text style={[styles.splitHeaderText, { textAlign: 'right' }]}>{t('running.result.splitTime')}</Text>
               </View>
               {splits.map((split: Split, index: number) => (
                 <View
@@ -441,7 +451,7 @@ export default function RunResultScreen() {
         {/* Elevation Card */}
         {(elevationGainMeters > 0 || elevationLossMeters > 0) && (
           <View style={styles.elevationCard}>
-            <Text style={styles.sectionTitle}>고도 변화</Text>
+            <Text style={styles.sectionTitle}>{t('running.result.elevationChange')}</Text>
             <View style={styles.elevationRow}>
               <View style={styles.elevationItem}>
                 <Text style={styles.elevationArrowUp}>{'\u25B2'}</Text>
@@ -449,7 +459,7 @@ export default function RunResultScreen() {
                   <Text style={styles.elevationValue}>
                     +{Math.round(elevationGainMeters)}m
                   </Text>
-                  <Text style={styles.elevationLabel}>상승</Text>
+                  <Text style={styles.elevationLabel}>{t('running.result.elevationGain')}</Text>
                 </View>
               </View>
               <View style={styles.elevationDivider} />
@@ -459,7 +469,7 @@ export default function RunResultScreen() {
                   <Text style={styles.elevationValue}>
                     -{Math.round(elevationLossMeters)}m
                   </Text>
-                  <Text style={styles.elevationLabel}>하강</Text>
+                  <Text style={styles.elevationLabel}>{t('running.result.elevationLoss')}</Text>
                 </View>
               </View>
             </View>
@@ -470,27 +480,27 @@ export default function RunResultScreen() {
         {isSubmitting && (
           <View style={styles.uploadingRow}>
             <ActivityIndicator size="small" color={colors.textTertiary} />
-            <Text style={styles.uploadingText}>기록 업로드 중...</Text>
+            <Text style={styles.uploadingText}>{t('running.result.uploading')}</Text>
           </View>
         )}
         {!isSubmitting && submitted && !result && savedLocally && (
           <View style={styles.uploadingRow}>
             <Ionicons name="cloud-offline-outline" size={16} color={colors.textTertiary} />
-            <Text style={styles.uploadingText}>기록이 로컬에 저장됨 · 서버 연결 시 자동 업로드</Text>
+            <Text style={styles.uploadingText}>{t('running.result.offlineSaved')}</Text>
           </View>
         )}
 
         {/* Action Buttons — compact */}
         <View style={styles.actions}>
           <Button
-            title="다시 달리기"
+            title={t('running.result.runAgain')}
             onPress={handleRunAgain}
             fullWidth
             size="md"
           />
           {courseId && (
             <Button
-              title="리뷰 남기기"
+              title={t('running.result.writeReview')}
               variant="outline"
               onPress={handleWriteReview}
               fullWidth
@@ -500,10 +510,10 @@ export default function RunResultScreen() {
           {!courseId && (
             <Button
               title={distanceMeters < MIN_COURSE_DISTANCE_M
-                ? `코스 등록 (${MIN_COURSE_DISTANCE_M}m 이상 필요)`
+                ? t('running.result.registerCourseDisabled', { min: MIN_COURSE_DISTANCE_M })
                 : isSubmitting
-                  ? '업로드 완료 후 등록 가능'
-                  : '코스로 등록'}
+                  ? t('running.result.registerWaiting')
+                  : t('running.result.registerCourse')}
               variant="outline"
               onPress={handleRegisterCourse}
               fullWidth
@@ -512,7 +522,7 @@ export default function RunResultScreen() {
             />
           )}
           <Button
-            title="홈으로"
+            title={t('running.result.goHome')}
             variant="secondary"
             onPress={handleGoHome}
             fullWidth

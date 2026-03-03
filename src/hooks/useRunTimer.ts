@@ -8,11 +8,11 @@ import { useRunningStore } from '../stores/runningStore';
  */
 export function useRunTimer() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const { phase, isPaused, updateDuration, elapsedBeforePause, startTime } =
+  const { phase, isPaused, isAutoPaused, updateDuration, elapsedBeforePause, startTime } =
     useRunningStore();
 
   useEffect(() => {
-    if (phase === 'running' && !isPaused && startTime) {
+    if (phase === 'running' && !isPaused && !isAutoPaused && startTime) {
       intervalRef.current = setInterval(() => {
         const now = Date.now();
         const elapsed = (now - startTime) / 1000 + elapsedBeforePause;
@@ -26,5 +26,5 @@ export function useRunTimer() {
         intervalRef.current = null;
       }
     };
-  }, [phase, isPaused, startTime, elapsedBeforePause, updateDuration]);
+  }, [phase, isPaused, isAutoPaused, startTime, elapsedBeforePause, updateDuration]);
 }

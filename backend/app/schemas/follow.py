@@ -2,7 +2,24 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class FollowByCodeRequest(BaseModel):
+    """Follow a user by their unique code."""
+    user_code: str = Field(..., min_length=1, max_length=20)
+
+
+class UserSearchByCodeResponse(BaseModel):
+    """User found by code search."""
+    id: str
+    user_code: str
+    nickname: str | None
+    avatar_url: str | None
+    bio: str | None
+    total_distance_meters: int
+    total_runs: int
+    is_following: bool
 
 
 class FollowUserInfo(BaseModel):

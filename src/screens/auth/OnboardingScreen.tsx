@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../stores/authStore';
@@ -21,6 +22,7 @@ import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constan
 import { useTheme } from '../../hooks/useTheme';
 
 export default function OnboardingScreen() {
+  const { t } = useTranslation();
   const colors = useTheme();
   const { completeOnboarding, isLoading } = useAuthStore();
   const [nickname, setNickname] = useState('');
@@ -32,16 +34,16 @@ export default function OnboardingScreen() {
   const isBusy = isLoading || isUploading;
 
   const handlePickAvatar = () => {
-    Alert.alert('프로필 사진', '사진을 어디서 가져올까요?', [
+    Alert.alert(t('auth.onboarding.profilePhoto'), t('auth.onboarding.photoSource'), [
       {
-        text: '카메라',
+        text: t('common.camera'),
         onPress: () => pickImage('camera'),
       },
       {
-        text: '앨범에서 선택',
+        text: t('common.library'),
         onPress: () => pickImage('library'),
       },
-      { text: '취소', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
     ]);
   };
 
@@ -52,7 +54,7 @@ export default function OnboardingScreen() {
         : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permissionResult.granted) {
-      Alert.alert('권한 필요', '사진에 접근하려면 권한을 허용해 주세요.');
+      Alert.alert(t('common.permissionTitle'), t('common.permissionPhoto'));
       return;
     }
 
@@ -77,7 +79,7 @@ export default function OnboardingScreen() {
 
   const handleComplete = async () => {
     if (!isValidNickname) {
-      Alert.alert('닉네임 확인', '닉네임은 2~12자로 입력해 주세요.');
+      Alert.alert(t('auth.onboarding.nicknameCheckTitle'), t('auth.onboarding.nicknameCheckMsg'));
       return;
     }
 
@@ -90,10 +92,10 @@ export default function OnboardingScreen() {
           const response = await authService.uploadAvatar(avatarUri);
           uploadedUrl = response.url;
         } catch {
-          Alert.alert('앗...!', '프로필 사진 없이 계속할까요?', [
-            { text: '취소', style: 'cancel' },
+          Alert.alert(t('common.error'), t('auth.onboarding.avatarFail'), [
+            { text: t('common.cancel'), style: 'cancel' },
             {
-              text: '계속',
+              text: t('auth.onboarding.continue'),
               onPress: async () => {
                 setIsUploading(false);
                 await completeOnboarding(nickname);
@@ -108,7 +110,7 @@ export default function OnboardingScreen() {
 
       await completeOnboarding(nickname, uploadedUrl);
     } catch {
-      Alert.alert('앗...!', '다시 시도해 주세요.', [{ text: '확인' }]);
+      Alert.alert(t('common.error'), t('common.errorRetry'), [{ text: t('common.confirm') }]);
     }
   };
 
@@ -122,9 +124,9 @@ export default function OnboardingScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={[styles.title, { color: colors.text }]}>프로필 설정</Text>
+          <Text style={[styles.title, { color: colors.text }]}>{t('auth.onboarding.title')}</Text>
           <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
-            RUNVS에서 사용할 프로필을 만들어 주세요
+            {t('auth.onboarding.subtitle')}
           </Text>
         </View>
 
@@ -147,13 +149,13 @@ export default function OnboardingScreen() {
             </View>
           </TouchableOpacity>
           <Text style={[styles.avatarHint, { color: colors.textTertiary }]}>
-            탭하여 프로필 사진 설정
+            {t('auth.onboarding.avatarHint')}
           </Text>
         </View>
 
         {/* Nickname Input */}
         <View style={styles.inputSection}>
-          <Text style={[styles.inputLabel, { color: colors.text }]}>닉네임</Text>
+          <Text style={[styles.inputLabel, { color: colors.text }]}>{t('auth.onboarding.nickname')}</Text>
           <TextInput
             style={[
               styles.input,
@@ -162,7 +164,7 @@ export default function OnboardingScreen() {
             ]}
             value={nickname}
             onChangeText={setNickname}
-            placeholder="2~12자로 입력해 주세요"
+            placeholder={t('auth.onboarding.nicknamePlaceholder')}
             placeholderTextColor={colors.textTertiary}
             maxLength={12}
             autoFocus
@@ -174,7 +176,7 @@ export default function OnboardingScreen() {
           <View style={styles.inputFooter}>
             {nickname.length > 0 && !isValidNickname ? (
               <Text style={[styles.errorText, { color: colors.error }]}>
-                닉네임은 2자 이상 입력해 주세요
+                {t('auth.onboarding.nicknameError')}
               </Text>
             ) : (
               <View />
@@ -200,7 +202,7 @@ export default function OnboardingScreen() {
             {isBusy ? (
               <ActivityIndicator size="small" color={colors.white} />
             ) : (
-              <Text style={styles.ctaText}>시작하기</Text>
+              <Text style={styles.ctaText}>{t('auth.onboarding.start')}</Text>
             )}
           </TouchableOpacity>
         </View>

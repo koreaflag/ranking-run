@@ -10,12 +10,14 @@ from app.core.deps import CurrentUser, DbSession
 from app.schemas.follow import (
     ActivityFeedItem,
     ActivityFeedResponse,
+    FollowByCodeRequest,
     FollowListResponse,
     FollowResponse,
     FollowStatusResponse,
     FollowUserInfo,
     FriendRunningInfo,
     FriendsRunningResponse,
+    UserSearchByCodeResponse,
 )
 from app.services.follow_service import FollowService
 
@@ -142,6 +144,40 @@ async def get_follow_status(
         target_user_id=user_id,
     )
     return FollowStatusResponse(**status)
+
+
+@router.get("/follows/search-by-code/{user_code}", response_model=UserSearchByCodeResponse)
+@inject
+async def search_by_code(
+    user_code: str,
+    current_user: CurrentUser,
+    db: DbSession,
+    follow_service: FollowService = Depends(Provide[Container.follow_service]),
+) -> UserSearchByCodeResponse:
+    """Search for a user by their unique code."""
+    from fastapi import HTTPException
+
+    result = await follow_service.search_by_code(
+        db=db, user_code=user_code, current_user_id=current_user.id,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return UserSearchByCodeResponse(**result)
+
+
+@router.post("/follows/by-code", response_model=FollowResponse, status_code=201)
+@inject
+async def follow_by_code(
+    body: FollowByCodeRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+    follow_service: FollowService = Depends(Provide[Container.follow_service]),
+) -> FollowResponse:
+    """Follow a user by their unique code."""
+    follow = await follow_service.follow_by_code(
+        db=db, follower_id=current_user.id, user_code=body.user_code,
+    )
+    return _to_follow_response_for_following(follow)
 
 
 @router.get("/follows/friends-running", response_model=FriendsRunningResponse)

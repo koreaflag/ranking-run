@@ -33,5 +33,9 @@ class ConflictError(AppError):
     status_code = 409
 
 
+class BadRequestError(AppError):
+    status_code = 400
+
+
 class ValidationError(AppError):
     status_code = 422
