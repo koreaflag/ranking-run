@@ -164,7 +164,7 @@ class RunCompleteRequest(BaseModel):
     calories: int | None = None
     finished_at: datetime
 
-    route_geometry: GeoJSONLineString
+    route_geometry: GeoJSONLineString | None = None
     elevation_gain_meters: int = 0
     elevation_loss_meters: int = 0
     elevation_profile: list[float] = []
@@ -198,6 +198,8 @@ class RunCompleteResponse(BaseModel):
     ranking: RankingInfo | None = None
     is_flagged: bool = False
     flag_reason: str | None = None
+    route_match_percent: float | None = None
+    max_deviation_meters: float | None = None
     user_stats_update: UserStatsUpdate
     missing_chunk_sequences: list[int] = []
 

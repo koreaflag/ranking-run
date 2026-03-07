@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, PermissionDeniedError
@@ -11,7 +11,7 @@ from app.models.community_post import (
     CommunityPost,
     CommunityPostLike,
 )
-from app.models.crew import CrewMember
+from app.models.crew import Crew, CrewMember
 
 
 class CommunityService:
@@ -57,8 +57,14 @@ class CommunityService:
         post_ids = [p.id for p in posts]
         liked_set = await self._get_user_likes(db, post_ids, current_user_id)
 
+        # Batch-load grade levels for crew posts
+        grade_map: dict[UUID, int] = {}
+        if crew_id and posts:
+            user_ids = list({p.user_id for p in posts})
+            grade_map = await self._get_crew_grade_map(db, crew_id, user_ids)
+
         return [
-            self._post_to_dict(p, is_liked=p.id in liked_set)
+            self._post_to_dict(p, is_liked=p.id in liked_set, grade_map=grade_map)
             for p in posts
         ], total_count
 
@@ -78,20 +84,37 @@ class CommunityService:
         Returns:
             Post dict with author info.
         """
+        crew_id_val = UUID(data["crew_id"]) if data.get("crew_id") else None
         post = CommunityPost(
             user_id=user_id,
             title=data["title"],
             content=data["content"],
             post_type=data.get("post_type", "general"),
             event_id=UUID(data["event_id"]) if data.get("event_id") else None,
-            crew_id=UUID(data["crew_id"]) if data.get("crew_id") else None,
+            crew_id=crew_id_val,
             image_url=data.get("image_url"),
+            image_urls=data.get("image_urls"),
         )
         db.add(post)
         await db.flush()
         await db.refresh(post)
 
-        return self._post_to_dict(post, is_liked=False)
+        # Update crew last_activity_at
+        if crew_id_val:
+            await db.execute(
+                update(Crew)
+                .where(Crew.id == crew_id_val)
+                .values(last_activity_at=func.now())
+            )
+
+        # Load grade level for the author in crew context
+        grade_map: dict[UUID, int] = {}
+        if crew_id_val:
+            grade_map = await self._get_crew_grade_map(
+                db, crew_id_val, [user_id]
+            )
+
+        return self._post_to_dict(post, is_liked=False, grade_map=grade_map)
 
     async def get_post_detail(
         self,
@@ -132,9 +155,19 @@ class CommunityService:
         )
         comments = comments_result.scalars().all()
 
-        post_dict = self._post_to_dict(post, is_liked=is_liked)
+        # Batch-load grade levels for crew posts
+        grade_map: dict[UUID, int] = {}
+        if post.crew_id:
+            all_user_ids = list(
+                {post.user_id} | {c.user_id for c in comments}
+            )
+            grade_map = await self._get_crew_grade_map(
+                db, post.crew_id, all_user_ids
+            )
+
+        post_dict = self._post_to_dict(post, is_liked=is_liked, grade_map=grade_map)
         post_dict["recent_comments"] = [
-            self._comment_to_dict(c) for c in comments
+            self._comment_to_dict(c, grade_map=grade_map) for c in comments
         ]
 
         return post_dict
@@ -171,7 +204,7 @@ class CommunityService:
                 message="본인 게시글만 수정할 수 있습니다",
             )
 
-        for field in ("title", "content", "image_url"):
+        for field in ("title", "content", "image_url", "image_urls"):
             if field in data and data[field] is not None:
                 setattr(post, field, data[field])
 
@@ -179,7 +212,12 @@ class CommunityService:
         await db.refresh(post)
 
         liked_set = await self._get_user_likes(db, [post.id], user_id)
-        return self._post_to_dict(post, is_liked=post.id in liked_set)
+        grade_map: dict[UUID, int] = {}
+        if post.crew_id:
+            grade_map = await self._get_crew_grade_map(
+                db, post.crew_id, [user_id]
+            )
+        return self._post_to_dict(post, is_liked=post.id in liked_set, grade_map=grade_map)
 
     async def delete_post(
         self,
@@ -272,7 +310,17 @@ class CommunityService:
         )
         comments = result.scalars().all()
 
-        return [self._comment_to_dict(c) for c in comments], total_count
+        # Batch-load grade levels if this is a crew post
+        grade_map: dict[UUID, int] = {}
+        post_row = await db.execute(
+            select(CommunityPost.crew_id).where(CommunityPost.id == post_id)
+        )
+        crew_id = post_row.scalar_one_or_none()
+        if crew_id and comments:
+            user_ids = list({c.user_id for c in comments})
+            grade_map = await self._get_crew_grade_map(db, crew_id, user_ids)
+
+        return [self._comment_to_dict(c, grade_map=grade_map) for c in comments], total_count
 
     async def create_comment(
         self,
@@ -309,7 +357,14 @@ class CommunityService:
         await db.flush()
         await db.refresh(comment)
 
-        return self._comment_to_dict(comment)
+        grade_map: dict[UUID, int] = {}
+        if post.crew_id:
+            grade_map = await self._get_crew_grade_map(
+                db, post.crew_id, [user_id]
+            )
+        result_dict = self._comment_to_dict(comment, grade_map=grade_map)
+        result_dict["post_author_id"] = str(post.user_id)
+        return result_dict
 
     async def delete_comment(
         self,
@@ -319,9 +374,11 @@ class CommunityService:
     ) -> None:
         """Delete a comment and decrement the post's comment_count.
 
+        Author, crew owner, or crew admin can delete.
+
         Raises:
             NotFoundError: Comment does not exist.
-            PermissionDeniedError: User is not the author.
+            PermissionDeniedError: User lacks permission.
         """
         result = await db.execute(
             select(CommunityComment).where(CommunityComment.id == comment_id)
@@ -334,10 +391,29 @@ class CommunityService:
             )
 
         if comment.user_id != user_id:
-            raise PermissionDeniedError(
-                code="PERMISSION_DENIED",
-                message="본인 댓글만 삭제할 수 있습니다",
+            # Check if user is crew admin/owner for this post's crew
+            post_result = await db.execute(
+                select(CommunityPost.crew_id).where(
+                    CommunityPost.id == comment.post_id
+                )
             )
+            crew_id = post_result.scalar_one_or_none()
+            allowed = False
+            if crew_id:
+                member_result = await db.execute(
+                    select(CrewMember.role).where(
+                        CrewMember.crew_id == crew_id,
+                        CrewMember.user_id == user_id,
+                    )
+                )
+                role = member_result.scalar_one_or_none()
+                if role in ("owner", "admin"):
+                    allowed = True
+            if not allowed:
+                raise PermissionDeniedError(
+                    code="PERMISSION_DENIED",
+                    message="댓글을 삭제할 권한이 없습니다",
+                )
 
         # Decrement post comment_count
         post_result = await db.execute(
@@ -357,7 +433,7 @@ class CommunityService:
         db: AsyncSession,
         post_id: UUID,
         user_id: UUID,
-    ) -> tuple[bool, int]:
+    ) -> tuple[bool, int, UUID]:
         """Toggle a like on a post.
 
         Returns:
@@ -394,7 +470,7 @@ class CommunityService:
             post.like_count = func.greatest(CommunityPost.like_count - 1, 0)
             await db.flush()
             await db.refresh(post)
-            return False, post.like_count
+            return False, post.like_count, post.user_id
         else:
             # Like
             like = CommunityPostLike(post_id=post_id, user_id=user_id)
@@ -402,7 +478,7 @@ class CommunityService:
             post.like_count = CommunityPost.like_count + 1
             await db.flush()
             await db.refresh(post)
-            return True, post.like_count
+            return True, post.like_count, post.user_id
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -427,7 +503,12 @@ class CommunityService:
         return {row[0] for row in result.all()}
 
     @staticmethod
-    def _post_to_dict(post: CommunityPost, *, is_liked: bool) -> dict:
+    def _post_to_dict(
+        post: CommunityPost,
+        *,
+        is_liked: bool,
+        grade_map: dict | None = None,
+    ) -> dict:
         """Convert a CommunityPost ORM object to a response dict."""
         user = post.user
         return {
@@ -437,6 +518,7 @@ class CommunityService:
                 "nickname": user.nickname if user else None,
                 "avatar_url": user.avatar_url if user else None,
                 "crew_name": user.crew_name if user else None,
+                "crew_grade_level": (grade_map or {}).get(post.user_id),
             },
             "title": post.title,
             "content": post.content,
@@ -444,6 +526,7 @@ class CommunityService:
             "event_id": str(post.event_id) if post.event_id else None,
             "crew_id": str(post.crew_id) if post.crew_id else None,
             "image_url": post.image_url,
+            "image_urls": post.image_urls,
             "like_count": post.like_count,
             "comment_count": post.comment_count,
             "is_liked": is_liked,
@@ -452,7 +535,11 @@ class CommunityService:
         }
 
     @staticmethod
-    def _comment_to_dict(comment: CommunityComment) -> dict:
+    def _comment_to_dict(
+        comment: CommunityComment,
+        *,
+        grade_map: dict | None = None,
+    ) -> dict:
         """Convert a CommunityComment ORM object to a response dict."""
         user = comment.user
         return {
@@ -463,7 +550,25 @@ class CommunityService:
                 "nickname": user.nickname if user else None,
                 "avatar_url": user.avatar_url if user else None,
                 "crew_name": user.crew_name if user else None,
+                "crew_grade_level": (grade_map or {}).get(comment.user_id),
             },
             "content": comment.content,
             "created_at": comment.created_at,
         }
+
+    @staticmethod
+    async def _get_crew_grade_map(
+        db: AsyncSession,
+        crew_id: UUID,
+        user_ids: list[UUID],
+    ) -> dict[UUID, int]:
+        """Batch-load crew grade levels for a list of user IDs."""
+        if not user_ids:
+            return {}
+        result = await db.execute(
+            select(CrewMember.user_id, CrewMember.grade_level).where(
+                CrewMember.crew_id == crew_id,
+                CrewMember.user_id.in_(user_ids),
+            )
+        )
+        return {row[0]: row[1] for row in result.all()}

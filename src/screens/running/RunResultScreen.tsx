@@ -9,22 +9,24 @@ import {
   Alert,
   Dimensions,
   TouchableOpacity,
+  NativeModules,
+  Platform,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { useRunningStore } from '../../stores/runningStore';
 import { runService } from '../../services/runService';
-import { savePendingRunRecord, removePendingRunRecord } from '../../services/pendingSyncService';
+import { savePendingRunRecord, removePendingRunRecord, clearPendingChunksForSession, syncPendingData } from '../../services/pendingSyncService';
 import { useTheme } from '../../hooks/useTheme';
 import { useCompassHeading } from '../../hooks/useCompassHeading';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import Button from '../../components/common/Button';
 import RouteMapView from '../../components/map/RouteMapView';
 import type { RouteMapViewHandle } from '../../components/map/RouteMapView';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import GlassCard from '../../components/common/GlassCard';
 import type { WorldStackParamList } from '../../types/navigation';
-import type { RunCompleteResponse, Split } from '../../types/api';
+import type { RunCompleteResponse, Split, RawGPSPointAPI } from '../../types/api';
 import type { ThemeColors } from '../../utils/constants';
 import {
   formatDistance,
@@ -77,6 +79,10 @@ export default function RunResultScreen() {
     heartRate,
     cadence,
     checkpointPasses,
+    chunkSequence,
+    uploadedChunkSequences,
+    deviationLog,
+    filteredLocations,
     reset,
   } = useRunningStore();
 
@@ -96,6 +102,24 @@ export default function RunResultScreen() {
     [],
   );
 
+  // Compute off-course deviation segments for result map visualization
+  const OFF_COURSE_THRESHOLD = 30;
+  const deviationSegments = useMemo(() => {
+    if (!deviationLog.length || !courseId) return [];
+    const segments: Array<[number, number]> = [];
+    let start = -1;
+    for (const { index, deviation } of deviationLog) {
+      if (deviation > OFF_COURSE_THRESHOLD) {
+        if (start < 0) start = index;
+      } else if (start >= 0) {
+        segments.push([start, index]);
+        start = -1;
+      }
+    }
+    if (start >= 0) segments.push([start, deviationLog[deviationLog.length - 1].index]);
+    return segments;
+  }, [deviationLog, courseId]);
+
   // Submit run: save locally first, then try server in background
   // Skip when the run was already completed (e.g., watch standalone runs)
   useEffect(() => {
@@ -107,39 +131,117 @@ export default function RunResultScreen() {
       setIsSubmitting(true);
 
       const pendingId = `local-run-${Date.now()}`;
+      const storeState = useRunningStore.getState();
+      const hasServerSession = sessionId && !sessionId.startsWith('local_');
+
+      // Upload remaining GPS data as a final chunk before completing
+      // This ensures ALL raw GPS data reaches the server (CLAUDE.md rule)
+      let finalChunkSequence = chunkSequence;
+      let finalUploadedSequences = [...uploadedChunkSequences];
+      const remainingPoints = storeState.filteredLocations;
+
+      if (hasServerSession && remainingPoints.length > 0) {
+        const rawGPSPoints: RawGPSPointAPI[] = remainingPoints.map((p) => ({
+          lat: p.latitude,
+          lng: p.longitude,
+          alt: p.altitude,
+          speed: p.speed,
+          bearing: p.bearing,
+          accuracy: 10,
+          timestamp: Math.round(p.timestamp),
+        }));
+
+        try {
+          await runService.uploadChunk(sessionId, {
+            session_id: sessionId,
+            sequence: finalChunkSequence,
+            chunk_type: 'final',
+            raw_gps_points: rawGPSPoints,
+            chunk_summary: {
+              distance_meters: Math.round(distanceMeters - storeState.lastChunkDistance),
+              duration_seconds: Math.round((rawGPSPoints[rawGPSPoints.length - 1].timestamp - rawGPSPoints[0].timestamp) / 1000),
+              avg_pace_seconds_per_km: Math.round(avgPaceSecondsPerKm),
+              elevation_change_meters: Math.round(elevationGainMeters - elevationLossMeters),
+              point_count: rawGPSPoints.length,
+              start_timestamp: Math.round(rawGPSPoints[0].timestamp),
+              end_timestamp: Math.round(rawGPSPoints[rawGPSPoints.length - 1].timestamp),
+            },
+            cumulative: {
+              total_distance_meters: Math.round(distanceMeters),
+              total_duration_seconds: Math.round(durationSeconds),
+              avg_pace_seconds_per_km: Math.round(avgPaceSecondsPerKm),
+            },
+            completed_splits: splits,
+            pause_intervals: storeState.pauseIntervals.map((pi) => ({
+              paused_at: pi.paused_at,
+              resumed_at: pi.resumed_at,
+            })),
+          });
+          finalUploadedSequences.push(finalChunkSequence);
+          finalChunkSequence++;
+          console.log(`[RunResult] Final chunk uploaded (${rawGPSPoints.length} pts)`);
+        } catch (e) {
+          console.warn('[RunResult] Final chunk upload failed:', e);
+          // Still increment — completeRun will reference total_chunks
+          finalChunkSequence++;
+        }
+      }
+
+      // RTS backward smoother: use future data to correct past GPS estimates
+      let finalRouteCoords: [number, number, number][] = routePoints.length >= 2
+        ? routePoints.map((p) => [p.longitude, p.latitude, 0])
+        : [[127.0, 37.5, 0], [127.0001, 37.5001, 0]];
+      let finalDistance = distanceMeters;
+
+      if (Platform.OS === 'ios' && NativeModules.GPSTrackerModule) {
+        try {
+          const smoothed = await NativeModules.GPSTrackerModule.getSmoothedRoute();
+          if (smoothed?.route?.length >= 2) {
+            finalRouteCoords = smoothed.route.map((p: any) => [p.longitude, p.latitude, p.altitude ?? 0]);
+            finalDistance = smoothed.distance > 0 ? smoothed.distance : distanceMeters;
+            console.log(`[RunResult] RTS smoothed: ${smoothed.route.length} pts, ${Math.round(finalDistance)}m`);
+          }
+        } catch (e) {
+          console.warn('[RunResult] RTS smoothing failed, using original route:', e);
+        }
+      }
+
       const runPayload = {
-        distance_meters: Math.round(distanceMeters),
+        distance_meters: Math.round(finalDistance),
         duration_seconds: Math.round(durationSeconds),
         total_elapsed_seconds: Math.round(durationSeconds),
-        avg_pace_seconds_per_km: Math.round(avgPaceSecondsPerKm),
+        avg_pace_seconds_per_km: Math.round(
+          finalDistance > 0 ? (durationSeconds / (finalDistance / 1000)) : avgPaceSecondsPerKm,
+        ),
         best_pace_seconds_per_km: Math.round(
           splits.length > 0
             ? Math.min(...splits.map((s) => s.pace_seconds_per_km))
             : avgPaceSecondsPerKm,
         ),
-        avg_speed_ms: distanceMeters / (durationSeconds || 1),
+        avg_speed_ms: finalDistance / (durationSeconds || 1),
         max_speed_ms: 0,
         calories: Math.round(calories),
         finished_at: new Date().toISOString(),
         route_geometry: {
           type: 'LineString' as const,
-          coordinates: (routePoints.length >= 2
-            ? routePoints.map((p) => [p.longitude, p.latitude, 0])
-            : [[127.0, 37.5, 0], [127.0001, 37.5001, 0]]) as [number, number, number][],
+          coordinates: finalRouteCoords as [number, number, number][],
         },
         elevation_gain_meters: Math.round(elevationGainMeters),
         elevation_loss_meters: Math.round(elevationLossMeters),
-        elevation_profile: [] as number[],
+        elevation_profile: filteredLocations.map(loc => Math.round(loc.altitude)),
         splits,
-        pause_intervals: [] as { paused_at: string; resumed_at: string }[],
+        pause_intervals: storeState.pauseIntervals.map((pi) => ({
+          paused_at: pi.paused_at,
+          resumed_at: pi.resumed_at,
+        })),
         filter_config: {
           kalman_q: 3.0,
           kalman_r_base: 10.0,
           outlier_speed_threshold: 12.0,
           outlier_accuracy_threshold: 50.0,
         },
-        total_chunks: 0,
-        uploaded_chunk_sequences: [] as number[],
+        total_chunks: finalChunkSequence,
+        uploaded_chunk_sequences: finalUploadedSequences,
         ...(checkpointPasses.length > 0 ? { checkpoint_passes: checkpointPasses } : {}),
       };
 
@@ -163,10 +265,14 @@ export default function RunResultScreen() {
         setSubmitted(true);
         // Server succeeded — remove local pending data
         await removePendingRunRecord(pendingId).catch(() => {});
+        await clearPendingChunksForSession(sessionId).catch(() => {});
       } catch (error) {
         console.warn('[RunResult] completeRun failed:', sessionId, error);
-        // Server failed — local data is safe, will retry on next app launch
+        // Server failed — local data is safe, schedule background retry
         setSubmitted(true);
+        setTimeout(() => {
+          syncPendingData().catch(() => {});
+        }, 5000);
       } finally {
         setIsSubmitting(false);
       }
@@ -184,6 +290,9 @@ export default function RunResultScreen() {
     elevationGainMeters,
     elevationLossMeters,
     submitted,
+    alreadyCompleted,
+    chunkSequence,
+    uploadedChunkSequences,
   ]);
 
   const resetToWorld = () => {
@@ -199,7 +308,7 @@ export default function RunResultScreen() {
   const handleGoHome = () => {
     resetToWorld();
     setTimeout(() => {
-      navigation.getParent()?.navigate('HomeTab');
+      (navigation as any).navigate('HomeTab');
     }, 0);
   };
 
@@ -240,10 +349,7 @@ export default function RunResultScreen() {
     };
     resetToWorld();
     setTimeout(() => {
-      navigation.getParent()?.navigate('CourseTab', {
-        screen: 'CourseCreate',
-        params,
-      });
+      (navigation as any).navigate('CourseTab', { screen: 'CourseCreate', params });
     }, 0);
   };
 
@@ -251,10 +357,7 @@ export default function RunResultScreen() {
     if (!courseId) return;
     resetToWorld();
     setTimeout(() => {
-      navigation.getParent()?.navigate('CourseTab', {
-        screen: 'CourseDetail',
-        params: { courseId, openReview: true },
-      });
+      (navigation as any).navigate('CourseTab', { screen: 'CourseDetail', params: { courseId, openReview: true } });
     }, 0);
   };
 
@@ -350,6 +453,7 @@ export default function RunResultScreen() {
             customUserLocation={myLocation ?? undefined}
             customUserHeading={headingValue}
             onUserLocationChange={handleUserLocationChange}
+            deviationSegments={deviationSegments.length > 0 ? deviationSegments : undefined}
             style={styles.mapPreview}
           />
           <TouchableOpacity
@@ -414,39 +518,79 @@ export default function RunResultScreen() {
           </View>
         )}
 
-        {/* Split Times */}
-        {splits.length > 0 && (
-          <View style={styles.splitsSection}>
-            <Text style={styles.sectionTitle}>{t('running.result.splits')}</Text>
-            <View style={styles.splitsTable}>
-              <View style={styles.splitHeader}>
-                <Text style={[styles.splitHeaderText, { textAlign: 'left' }]}>{t('running.result.splitLap')}</Text>
-                <Text style={styles.splitHeaderText}>{t('running.result.splitPace')}</Text>
-                <Text style={[styles.splitHeaderText, { textAlign: 'right' }]}>{t('running.result.splitTime')}</Text>
+        {/* Course Adherence Card */}
+        {result?.route_match_percent != null && courseId && (
+          <View style={styles.adherenceCard}>
+            <Text style={styles.sectionTitle}>{t('running.result.courseAdherence')}</Text>
+            <View style={styles.adherenceRow}>
+              <View style={styles.adherenceItem}>
+                <Text style={styles.adherenceValue}>{Math.round(result.route_match_percent)}%</Text>
+                <Text style={styles.adherenceLabel}>{t('running.result.routeMatch')}</Text>
               </View>
-              {splits.map((split: Split, index: number) => (
-                <View
-                  key={split.split_number}
-                  style={[
-                    styles.splitRow,
-                    index % 2 === 0 && styles.splitRowAlt,
-                  ]}
-                >
-                  <View style={styles.splitLapCell}>
-                    <Text style={styles.splitKm}>{split.split_number}</Text>
-                    <Text style={styles.splitKmUnit}>km</Text>
-                  </View>
-                  <Text style={styles.splitPace}>
-                    {formatPace(split.pace_seconds_per_km)}
-                  </Text>
-                  <Text style={styles.splitTime}>
-                    {formatDuration(split.duration_seconds)}
-                  </Text>
+              {result.max_deviation_meters != null && (
+                <View style={styles.adherenceItem}>
+                  <Text style={styles.adherenceValue}>{Math.round(result.max_deviation_meters)}m</Text>
+                  <Text style={styles.adherenceLabel}>{t('running.result.maxDeviation')}</Text>
                 </View>
-              ))}
+              )}
             </View>
+            {deviationSegments.length > 0 && (
+              <View style={styles.deviationLegend}>
+                <View style={[styles.legendDot, { backgroundColor: '#FF3B30' }]} />
+                <Text style={styles.legendText}>{t('running.result.offCourseSegments')}</Text>
+              </View>
+            )}
           </View>
         )}
+
+        {/* Split Times */}
+        {splits.length > 0 && (() => {
+          const avgPace = splits.reduce((sum, s) => sum + s.pace_seconds_per_km, 0) / splits.length;
+          return (
+            <View style={styles.splitsSection}>
+              <Text style={styles.sectionTitle}>{t('running.result.splits')}</Text>
+              <View style={styles.splitsTable}>
+                <View style={styles.splitHeader}>
+                  <Text style={[styles.splitHeaderText, { textAlign: 'left' }]}>{t('running.result.splitLap')}</Text>
+                  <Text style={styles.splitHeaderText}>{t('running.result.splitPace')}</Text>
+                  <Text style={styles.splitHeaderText}>{t('running.result.splitDelta')}</Text>
+                  <Text style={[styles.splitHeaderText, { textAlign: 'right' }]}>{t('running.result.splitTime')}</Text>
+                </View>
+                {splits.map((split: Split, index: number) => {
+                  const delta = split.pace_seconds_per_km - avgPace;
+                  const absDelta = Math.abs(delta);
+                  const deltaSign = delta > 0 ? '+' : '-';
+                  const deltaSec = Math.round(absDelta);
+                  const deltaStr = deltaSec === 0 ? '-' : `${deltaSign}${deltaSec}s`;
+                  const deltaColor = delta < -1 ? colors.success : delta > 3 ? colors.error : colors.textSecondary;
+                  return (
+                    <View
+                      key={split.split_number}
+                      style={[
+                        styles.splitRow,
+                        index % 2 === 0 && styles.splitRowAlt,
+                      ]}
+                    >
+                      <View style={styles.splitLapCell}>
+                        <Text style={styles.splitKm}>{split.split_number}</Text>
+                        <Text style={styles.splitKmUnit}>km</Text>
+                      </View>
+                      <Text style={styles.splitPace}>
+                        {formatPace(split.pace_seconds_per_km)}
+                      </Text>
+                      <Text style={[styles.splitPace, { color: deltaColor }]}>
+                        {deltaStr}
+                      </Text>
+                      <Text style={styles.splitTime}>
+                        {formatDuration(split.duration_seconds)}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          );
+        })()}
 
         {/* Elevation Card */}
         {(elevationGainMeters > 0 || elevationLossMeters > 0) && (
@@ -737,6 +881,45 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '800',
     color: c.white,
     letterSpacing: 1,
+  },
+
+  // -- Course Adherence --
+  adherenceCard: {
+    marginTop: SPACING.md,
+    paddingHorizontal: SPACING.xxl,
+    gap: SPACING.sm,
+  },
+  adherenceRow: {
+    flexDirection: 'row',
+    gap: SPACING.xl,
+  },
+  adherenceItem: {
+    alignItems: 'center' as const,
+  },
+  adherenceValue: {
+    fontSize: FONT_SIZES.xxl,
+    fontWeight: '800' as const,
+    color: c.text,
+  },
+  adherenceLabel: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textSecondary,
+    marginTop: 2,
+  },
+  deviationLegend: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: SPACING.xs,
+    marginTop: SPACING.xs,
+  },
+  legendDot: {
+    width: 10,
+    height: 4,
+    borderRadius: 2,
+  },
+  legendText: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textSecondary,
   },
 
   // -- Split Times --

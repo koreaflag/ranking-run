@@ -14,7 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -32,7 +32,7 @@ class CommunityPost(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
-    title: Mapped[str] = mapped_column(String(100), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(100), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     post_type: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="general"
@@ -48,6 +48,7 @@ class CommunityPost(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
     )
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_urls: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     like_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0"
     )

@@ -14,21 +14,26 @@ import {
   Platform,
   Modal,
   RefreshControl,
+  InteractionManager,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  StatusBar,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import type { HomeStackParamList } from '../../types/navigation';
-import type { WeeklySummary, RecentRun, AnnouncementItem } from '../../types/api';
+import type { WeeklySummary, RecentRun, AnnouncementItem, FavoriteCourseItem, CrewChallengeItem, CrewItem } from '../../types/api';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useCourseStore } from '../../stores/courseStore';
 import { userService } from '../../services/userService';
 import { announcementService } from '../../services/announcementService';
+import { crewChallengeService } from '../../services/crewChallengeService';
+import { crewService } from '../../services/crewService';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import {
   formatDistance,
@@ -46,6 +51,12 @@ import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
 
 const heroImage = require('../../assets/home-hero.jpg');
+
+// Module-level cache: survives tab switches (cleared on app restart)
+let _cachedWeekly: WeeklySummary | null = null;
+let _cachedRuns: RecentRun[] = [];
+let _cachedAnnouncements: AnnouncementItem[] = [];
+let _cachedRaids: Array<{ crew: CrewItem; raid: CrewChallengeItem }> = [];
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ---- Onboarding Guide ----
@@ -103,26 +114,66 @@ export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
   const hapticEnabled = useSettingsStore((s) => s.hapticFeedback);
 
-  // --- Data ---
-  const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(null);
-  const [recentRuns, setRecentRuns] = useState<RecentRun[]>([]);
-  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
+  // --- Data (initialized from module cache for instant display on tab switch) ---
+  const [weeklySummary, setWeeklySummary] = useState<WeeklySummary | null>(_cachedWeekly);
+  const [recentRuns, setRecentRuns] = useState<RecentRun[]>(_cachedRuns);
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>(_cachedAnnouncements);
+  const [myCrewRaids, setMyCrewRaids] = useState<Array<{ crew: CrewItem; raid: CrewChallengeItem }>>(_cachedRaids);
   const [refreshing, setRefreshing] = useState(false);
+  const favoriteCourses = useCourseStore((s) => s.favoriteCourses);
+  const fetchFavoriteCourses = useCourseStore((s) => s.fetchFavoriteCourses);
 
-  const loadData = useCallback(async () => {
+  // Primary data: loads immediately (above the fold)
+  const loadPrimaryData = useCallback(async () => {
     try {
-      const [weekly, runs, annRes] = await Promise.all([
+      const [weekly, runs] = await Promise.all([
         userService.getWeeklySummary().catch(() => null),
         userService.getRecentRuns(3).catch(() => []),
-        announcementService.getAnnouncements(10).catch(() => ({ data: [] })),
+        fetchFavoriteCourses().catch(() => {}),
       ]);
-      setWeeklySummary(weekly);
-      setRecentRuns(runs);
-      setAnnouncements(annRes.data ?? []);
+      setWeeklySummary(weekly); _cachedWeekly = weekly;
+      setRecentRuns(runs); _cachedRuns = runs;
+    } catch {
+      // partial failures ok
+    }
+  }, [fetchFavoriteCourses]);
+
+  // Secondary data: deferred (below the fold)
+  const loadSecondaryData = useCallback(async () => {
+    try {
+      const [annRes, crews] = await Promise.all([
+        announcementService.getAnnouncements(10).catch(() => ({ data: [] })),
+        crewService.getMyCrews().catch((): CrewItem[] => []),
+      ]);
+      const ann = annRes.data ?? [];
+      setAnnouncements(ann); _cachedAnnouncements = ann;
+      if (crews.length > 0) {
+        const raidResults = await Promise.all(
+          crews.map(async (crew: CrewItem) => {
+            try {
+              const raid = await crewChallengeService.getActiveChallenge(crew.id);
+              if (raid) return { crew, raid };
+            } catch { /* ignore */ }
+            return null;
+          }),
+        );
+        const raids = raidResults.filter((r): r is { crew: CrewItem; raid: CrewChallengeItem } => r !== null);
+        setMyCrewRaids(raids); _cachedRaids = raids;
+      } else {
+        setMyCrewRaids([]); _cachedRaids = [];
+      }
     } catch {
       // partial failures ok
     }
   }, []);
+
+  const loadData = useCallback(async () => {
+    await loadPrimaryData();
+    // Defer secondary data until animations/interactions settle
+    InteractionManager.runAfterInteractions(() => {
+      loadSecondaryData();
+    });
+  }, [loadPrimaryData, loadSecondaryData]);
 
   useEffect(() => {
     loadData();
@@ -130,9 +181,9 @@ export default function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData();
+    await Promise.all([loadPrimaryData(), loadSecondaryData()]);
     setRefreshing(false);
-  }, [loadData]);
+  }, [loadPrimaryData, loadSecondaryData]);
 
   // --- Location permission ---
   useEffect(() => {
@@ -190,13 +241,22 @@ export default function HomeScreen() {
     [],
   );
 
-  // --- Derived data ---
-  const weeklyKm = weeklySummary ? metersToKm(weeklySummary.total_distance_meters, 1) : '0';
-  const weeklyChange = weeklySummary?.compared_to_last_week_percent ?? 0;
-  const weeklyChangeSign = weeklyChange > 0 ? '+' : '';
-  const weeklyChangeColor = weeklyChange > 0 ? colors.success : weeklyChange < 0 ? colors.error : colors.textTertiary;
+  // --- Derived data (memoized) ---
+  const weeklyDerived = useMemo(() => {
+    const km = weeklySummary ? metersToKm(weeklySummary.total_distance_meters, 1) : '0';
+    const change = weeklySummary?.compared_to_last_week_percent ?? 0;
+    const changeSign = change > 0 ? '+' : '';
+    const changeColor = change > 0 ? colors.success : change < 0 ? colors.error : colors.textTertiary;
+    return { km, change, changeSign, changeColor };
+  }, [weeklySummary, colors.success, colors.error, colors.textTertiary]);
 
-  const nickname = user?.nickname || t('mypage.defaultNickname');
+  const nickname = useMemo(() => user?.nickname || t('mypage.defaultNickname'), [user?.nickname, t]);
+
+  const todayDateLabel = useMemo(
+    () => new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [], // static for the lifetime of the screen mount
+  );
 
   return (
     <BlurredBackground>
@@ -224,7 +284,7 @@ export default function HomeScreen() {
               {t('home.greeting', { name: nickname })}
             </Text>
             <Text style={styles.greetingSubText}>
-              {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+              {todayDateLabel}
             </Text>
           </View>
 
@@ -242,16 +302,16 @@ export default function HomeScreen() {
                     <Ionicons name="calendar" size={14} color="#FFFFFF" />
                     <Text style={styles.weeklyCardTitle}>{t('home.weeklySummary')}</Text>
                   </View>
-                  {weeklyChange !== 0 && (
-                    <Text style={[styles.weeklyChangeText, { color: weeklyChange > 0 ? '#34D399' : '#F87171' }]}>
-                      {weeklyChangeSign}{Math.round(weeklyChange)}%
+                  {weeklyDerived.change !== 0 && (
+                    <Text style={[styles.weeklyChangeText, { color: weeklyDerived.change > 0 ? '#34D399' : '#F87171' }]}>
+                      {weeklyDerived.changeSign}{Math.round(weeklyDerived.change)}%
                     </Text>
                   )}
                 </View>
 
                 {/* Big distance */}
                 <View style={styles.heroDistanceRow}>
-                  <Text style={styles.weeklyHeroDistance}>{weeklyKm}</Text>
+                  <Text style={styles.weeklyHeroDistance}>{weeklyDerived.km}</Text>
                   <Text style={styles.weeklyHeroUnit}>km</Text>
                 </View>
 
@@ -347,6 +407,97 @@ export default function HomeScreen() {
                           )}
                         </View>
                       )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Favorite Courses */}
+          {favoriteCourses.length > 0 && (
+            <View style={styles.favSection}>
+              <View style={styles.favHeader}>
+                <View style={styles.cardTitleWithIcon}>
+                  <Ionicons name="heart" size={14} color={colors.primary} />
+                  <Text style={styles.favTitle}>{t('home.favoriteCourses')}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('CourseList')}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.seeAllText}>{t('home.viewAll')}</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.favScroll}
+              >
+                {favoriteCourses.map((course: FavoriteCourseItem) => (
+                  <TouchableOpacity
+                    key={course.id}
+                    style={styles.favCard}
+                    activeOpacity={0.7}
+                    onPress={() => navigation.navigate('CourseDetail', { courseId: course.id })}
+                  >
+                    {course.thumbnail_url ? (
+                      <Image source={{ uri: course.thumbnail_url }} style={styles.favThumbnail} />
+                    ) : (
+                      <View style={[styles.favThumbnail, styles.favThumbnailPlaceholder]}>
+                        <Ionicons name="map-outline" size={24} color={colors.textTertiary} />
+                      </View>
+                    )}
+                    <View style={styles.favInfo}>
+                      <Text style={styles.favName} numberOfLines={1}>{course.title}</Text>
+                      <Text style={styles.favMeta}>
+                        {formatDistance(course.distance_meters)} · {course.creator_nickname}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* My Crew Raids */}
+          {myCrewRaids.length > 0 && (
+            <View style={styles.favSection}>
+              <View style={styles.favHeader}>
+                <View style={styles.cardTitleWithIcon}>
+                  <Ionicons name="flash" size={14} color={colors.primary} />
+                  <Text style={styles.favTitle}>{t('home.myCrewRaids')}</Text>
+                </View>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.favScroll}
+              >
+                {myCrewRaids.map(({ crew, raid }) => {
+                  const progress = raid.total_participants > 0
+                    ? Math.min(100, (raid.completed_count / raid.total_participants) * 100)
+                    : 0;
+                  return (
+                    <TouchableOpacity
+                      key={crew.id}
+                      style={styles.raidCard}
+                      activeOpacity={0.7}
+                      onPress={() => navigation.navigate('CrewDetail', { crewId: crew.id })}
+                    >
+                      <Text style={styles.raidCardCrewName} numberOfLines={1}>{crew.name}</Text>
+                      {raid.course_name && (
+                        <Text style={styles.raidCardCourseName} numberOfLines={1}>
+                          {raid.course_name}
+                        </Text>
+                      )}
+                      <View style={styles.raidCardProgressBg}>
+                        <View style={[styles.raidCardProgressFill, { width: `${progress}%` }]} />
+                      </View>
+                      <Text style={styles.raidCardProgressText}>
+                        {raid.completed_count}/{raid.total_participants}
+                      </Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -609,6 +760,7 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     container: {
       flex: 1,
+      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
     },
     scrollView: {
       flex: 1,
@@ -822,6 +974,98 @@ const createStyles = (c: ThemeColors) =>
       fontSize: FONT_SIZES.xs,
       fontWeight: '500',
       color: c.textSecondary,
+    },
+
+    // Favorite courses
+    favSection: {
+      marginBottom: SPACING.md,
+    },
+    favHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: SPACING.xxl,
+      marginBottom: SPACING.sm,
+    },
+    favTitle: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '700',
+      color: c.text,
+    },
+    favScroll: {
+      paddingHorizontal: SPACING.xxl,
+      gap: SPACING.sm,
+    },
+    favCard: {
+      width: 160,
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      overflow: 'hidden',
+    },
+    favThumbnail: {
+      width: 160,
+      height: 90,
+    },
+    favThumbnailPlaceholder: {
+      backgroundColor: c.surface,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    favInfo: {
+      padding: SPACING.sm + 2,
+      gap: 2,
+    },
+    favName: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.text,
+    },
+    favMeta: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '500',
+      color: c.textTertiary,
+    },
+
+    // Crew raid cards
+    raidCard: {
+      width: 170,
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: SPACING.md,
+      gap: SPACING.xs,
+    },
+    raidCardCrewName: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '800',
+      color: c.text,
+    },
+    raidCardCourseName: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '500',
+      color: c.textTertiary,
+    },
+    raidCardProgressBg: {
+      height: 6,
+      backgroundColor: c.surface,
+      borderRadius: 3,
+      overflow: 'hidden',
+      marginTop: SPACING.xs,
+    },
+    raidCardProgressFill: {
+      height: '100%',
+      backgroundColor: c.primary,
+      borderRadius: 3,
+    },
+    raidCardProgressText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '600',
+      color: c.textSecondary,
+      textAlign: 'right',
+      fontVariant: ['tabular-nums'],
     },
 
     // See all link

@@ -7,7 +7,7 @@ import {
   Alert,
   StyleSheet,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
 import { useCourseStore } from '../../stores/courseStore';
 import { formatRelativeTime } from '../../utils/format';

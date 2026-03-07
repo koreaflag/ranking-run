@@ -15,10 +15,11 @@ import {
   Keyboard,
   Modal,
   FlatList,
+  StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuthStore } from '../../stores/authStore';
@@ -243,6 +244,7 @@ export default function ProfileEditScreen() {
       instagram_username: instagram.trim() || null,
       country,
       activity_region: activityRegion.trim() || null,
+      crew_name: newCrewName,
     };
 
     // Queue for sync
@@ -702,6 +704,7 @@ const createStyles = (c: ThemeColors) =>
     container: {
       flex: 1,
       backgroundColor: c.background,
+      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
     },
     header: {
       flexDirection: 'row',
@@ -731,7 +734,7 @@ const createStyles = (c: ThemeColors) =>
     content: {
       padding: SPACING.xxl,
       gap: SPACING.xl,
-      paddingBottom: SPACING.xxxl + SPACING.xl,
+      paddingBottom: Platform.OS === 'android' ? 120 : SPACING.xxxl + SPACING.xl,
     },
 
     // Avatar

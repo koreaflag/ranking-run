@@ -80,7 +80,7 @@ export function useGPSTracker() {
     const statusSub = emitter.addListener(
       GPS_EVENTS.GPS_STATUS_CHANGE,
       (event: GPSStatusChangeEvent) => {
-        updateGPSStatus(event.status);
+        updateGPSStatus(event.status, event.accuracy);
       },
     );
 

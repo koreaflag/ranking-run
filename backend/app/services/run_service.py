@@ -13,7 +13,12 @@ from app.models.course import Course
 from app.models.run_chunk import RunChunk
 from app.models.run_record import RunRecord
 from app.models.run_session import RunSession
+from app.services.map_matching_service import MapMatchingService
 from app.services.speed_anomaly_service import analyze_run
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_checkpoints(
@@ -240,6 +245,23 @@ class RunService:
 
         session.status = "completed"
         await db.flush()
+
+        # Server-side map matching: snap route to road/path network
+        if route_wkb and route_geo_data:
+            coords = route_geo_data.get("coordinates", [])
+            if len(coords) >= 2:
+                try:
+                    matcher = MapMatchingService()
+                    matched_coords = await matcher.match_route(coords)
+                    await matcher.close()
+                    if matched_coords and len(matched_coords) >= 2:
+                        matched_line = LineString([(c[0], c[1]) for c in matched_coords])
+                        run_record.route_geometry = from_shape(matched_line, srid=4326)
+                        logger.info(
+                            f"[RunService] Map matched route: {len(coords)} → {len(matched_coords)} pts"
+                        )
+                except Exception as e:
+                    logger.warning(f"[RunService] Map matching failed, keeping original: {e}")
 
         total_chunks = complete_data.get("total_chunks", 0)
 

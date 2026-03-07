@@ -12,6 +12,7 @@ class PostAuthor(BaseModel):
     nickname: str | None = None
     avatar_url: str | None = None
     crew_name: str | None = None
+    crew_grade_level: int | None = None
 
 
 class CommunityCommentResponse(BaseModel):
@@ -29,12 +30,13 @@ class CommunityPostResponse(BaseModel):
 
     id: str
     author: PostAuthor
-    title: str
+    title: str | None = None
     content: str
     post_type: str
     event_id: str | None = None
     crew_id: str | None = None
     image_url: str | None = None
+    image_urls: list[str] | None = None
     like_count: int
     comment_count: int
     is_liked: bool = False
@@ -52,7 +54,7 @@ class CommunityPostListResponse(BaseModel):
 class CommunityPostCreateRequest(BaseModel):
     """Request body for creating a community post."""
 
-    title: str = Field(..., min_length=1, max_length=100)
+    title: str | None = Field(None, max_length=100)
     content: str = Field(..., min_length=1, max_length=5000)
     post_type: str = Field(
         "general",
@@ -61,6 +63,7 @@ class CommunityPostCreateRequest(BaseModel):
     event_id: str | None = None
     crew_id: str | None = None
     image_url: str | None = None
+    image_urls: list[str] | None = None
 
 
 class CommunityPostUpdateRequest(BaseModel):
@@ -69,6 +72,7 @@ class CommunityPostUpdateRequest(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=100)
     content: str | None = Field(None, min_length=1, max_length=5000)
     image_url: str | None = None
+    image_urls: list[str] | None = None
 
 
 class CommunityPostDetailResponse(BaseModel):
@@ -76,12 +80,13 @@ class CommunityPostDetailResponse(BaseModel):
 
     id: str
     author: PostAuthor
-    title: str
+    title: str | None = None
     content: str
     post_type: str
     event_id: str | None = None
     crew_id: str | None = None
     image_url: str | None = None
+    image_urls: list[str] | None = None
     like_count: int
     comment_count: int
     is_liked: bool = False

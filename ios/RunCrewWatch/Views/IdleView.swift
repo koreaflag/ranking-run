@@ -192,6 +192,8 @@ private struct SettingsSummary: View {
             return String(format: "%.1fkm", viewModel.standaloneGoalDistance)
         case "time":
             return "\(viewModel.standaloneGoalTime)분"
+        case "program":
+            return String(format: "%.1fkm/%d분", viewModel.standaloneGoalDistance, viewModel.standaloneGoalTargetTime)
         default:
             return "자유"
         }
@@ -219,6 +221,9 @@ private struct SettingsPage: View {
                     GoalTypeChip(label: "시간", type: "time", current: viewModel.standaloneGoalType) {
                         viewModel.setGoalType("time")
                     }
+                    GoalTypeChip(label: "목표", type: "program", current: viewModel.standaloneGoalType) {
+                        viewModel.setGoalType("program")
+                    }
                 }
 
                 if viewModel.standaloneGoalType == "distance" {
@@ -243,6 +248,38 @@ private struct SettingsPage: View {
                             viewModel.setGoalTime(min(300, viewModel.standaloneGoalTime + 5))
                         }
                     )
+                } else if viewModel.standaloneGoalType == "program" {
+                    VStack(spacing: 6) {
+                        ValueStepper(
+                            value: String(format: "%.1f", viewModel.standaloneGoalDistance),
+                            unit: "km",
+                            onDecrease: {
+                                viewModel.setGoalDistance(max(0.5, viewModel.standaloneGoalDistance - 0.5))
+                            },
+                            onIncrease: {
+                                viewModel.setGoalDistance(min(100.0, viewModel.standaloneGoalDistance + 0.5))
+                            }
+                        )
+                        ValueStepper(
+                            value: "\(viewModel.standaloneGoalTargetTime)",
+                            unit: "분",
+                            onDecrease: {
+                                viewModel.setGoalTargetTime(max(5, viewModel.standaloneGoalTargetTime - 1))
+                            },
+                            onIncrease: {
+                                viewModel.setGoalTargetTime(min(300, viewModel.standaloneGoalTargetTime + 1))
+                            }
+                        )
+                        // Computed required pace
+                        if viewModel.standaloneGoalDistance > 0 && viewModel.standaloneGoalTargetTime > 0 {
+                            let paceSeconds = Int(Double(viewModel.standaloneGoalTargetTime * 60) / viewModel.standaloneGoalDistance * 1000)
+                            let paceMin = paceSeconds / 60
+                            let paceSec = paceSeconds % 60
+                            Text("필요 페이스: \(paceMin)'\(String(format: "%02d", paceSec))\" /km")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(appOrange)
+                        }
+                    }
                 }
 
                 Divider().background(Color.white.opacity(0.1))

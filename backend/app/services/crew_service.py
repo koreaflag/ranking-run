@@ -64,6 +64,7 @@ class CrewService:
             crew_id=crew.id,
             user_id=user_id,
             role="owner",
+            grade_level=5,
         )
         db.add(member)
         await db.flush()
@@ -139,6 +140,7 @@ class CrewService:
             "region", "max_members",
             "is_public", "badge_color", "badge_icon",
             "recurring_schedule", "meeting_point", "requires_approval",
+            "grade_config",
         ):
             if field in data and data[field] is not None:
                 setattr(crew, field, data[field])
@@ -279,9 +281,11 @@ class CrewService:
             crew_id=crew_id,
             user_id=user_id,
             role="member",
+            grade_level=1,
         )
         db.add(member)
         crew.member_count = Crew.member_count + 1
+        crew.last_activity_at = func.now()
         await db.flush()
         await db.refresh(crew)
 
@@ -342,6 +346,7 @@ class CrewService:
             crew_id=crew_id,
             user_id=target_user.id,
             role="member",
+            grade_level=1,
         )
         db.add(member)
         crew.member_count = Crew.member_count + 1
@@ -457,6 +462,10 @@ class CrewService:
             raise NotFoundError(code="NOT_FOUND", message="해당 멤버를 찾을 수 없습니다")
 
         target.role = new_role
+        if new_role == "admin":
+            target.grade_level = 4
+        elif new_role == "member":
+            target.grade_level = 1
         await db.flush()
         await db.refresh(target)
 
@@ -478,15 +487,10 @@ class CrewService:
         )
         total_count = count_result.scalar_one()
 
-        role_order = case(
-            (CrewMember.role == "owner", 0),
-            (CrewMember.role == "admin", 1),
-            else_=2,
-        )
         result = await db.execute(
             select(CrewMember)
             .where(CrewMember.crew_id == crew_id)
-            .order_by(role_order, CrewMember.joined_at.asc())
+            .order_by(CrewMember.grade_level.desc(), CrewMember.joined_at.asc())
             .offset(page * per_page)
             .limit(per_page)
         )
@@ -518,6 +522,117 @@ class CrewService:
             await db.flush()
 
         return crew.name
+
+    # ------------------------------------------------------------------
+    # Grade management
+    # ------------------------------------------------------------------
+
+    async def update_member_grade(
+        self,
+        db: AsyncSession,
+        crew_id: UUID,
+        target_user_id: UUID,
+        actor_user_id: UUID,
+        new_grade_level: int,
+    ) -> dict:
+        await self._get_crew_or_404(db, crew_id)
+        actor = await self._get_membership(db, crew_id, actor_user_id)
+        if not actor:
+            raise PermissionDeniedError(
+                code="PERMISSION_DENIED", message="크루 멤버가 아닙니다"
+            )
+
+        if actor.grade_level <= new_grade_level:
+            raise PermissionDeniedError(
+                code="PERMISSION_DENIED",
+                message="자기보다 높은 등급으로 변경할 수 없습니다",
+            )
+
+        if target_user_id == actor_user_id:
+            raise BadRequestError(
+                code="CANNOT_CHANGE_OWN_GRADE",
+                message="자신의 등급은 변경할 수 없습니다",
+            )
+
+        target = await self._get_membership(db, crew_id, target_user_id)
+        if not target:
+            raise NotFoundError(
+                code="NOT_FOUND", message="해당 멤버를 찾을 수 없습니다"
+            )
+
+        if actor.grade_level <= target.grade_level:
+            raise PermissionDeniedError(
+                code="PERMISSION_DENIED",
+                message="동급 이상의 멤버는 변경할 수 없습니다",
+            )
+
+        target.grade_level = new_grade_level
+        # Sync role for backward compatibility
+        if new_grade_level >= 4:
+            target.role = "admin"
+        else:
+            target.role = "member"
+
+        await db.flush()
+        await db.refresh(target)
+        return self._member_to_dict(target)
+
+    async def get_management_stats(
+        self,
+        db: AsyncSession,
+        crew_id: UUID,
+        user_id: UUID,
+    ) -> dict:
+        member = await self._get_membership(db, crew_id, user_id)
+        if not member or member.role not in ("owner", "admin"):
+            raise PermissionDeniedError(
+                code="PERMISSION_DENIED",
+                message="크루 관리 권한이 없습니다",
+            )
+
+        crew = await self._get_crew_or_404(db, crew_id)
+
+        # Members by grade
+        grade_result = await db.execute(
+            select(CrewMember.grade_level, func.count())
+            .where(CrewMember.crew_id == crew_id)
+            .group_by(CrewMember.grade_level)
+        )
+        members_by_grade = {row[0]: row[1] for row in grade_result.all()}
+
+        # Pending requests
+        pending_result = await db.execute(
+            select(func.count())
+            .select_from(CrewJoinRequest)
+            .where(
+                CrewJoinRequest.crew_id == crew_id,
+                CrewJoinRequest.status == "pending",
+            )
+        )
+        pending_count = pending_result.scalar() or 0
+
+        # Recent joins (7 days)
+        from datetime import datetime, timedelta, timezone
+
+        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+
+        joins_result = await db.execute(
+            select(func.count())
+            .select_from(CrewMember)
+            .where(
+                CrewMember.crew_id == crew_id,
+                CrewMember.joined_at >= seven_days_ago,
+            )
+        )
+        recent_joins = joins_result.scalar() or 0
+
+        return {
+            "total_members": crew.member_count,
+            "members_by_grade": members_by_grade,
+            "pending_requests": pending_count,
+            "recent_joins_7d": recent_joins,
+            "recent_leaves_7d": 0,  # Would need tracking table for leaves
+        }
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -586,9 +701,11 @@ class CrewService:
             "recurring_schedule": crew.recurring_schedule,
             "meeting_point": crew.meeting_point,
             "requires_approval": crew.requires_approval,
+            "grade_config": crew.grade_config,
             "is_member": is_member,
             "my_role": my_role,
             "join_request_status": join_request_status,
+            "last_activity_at": crew.last_activity_at,
             "created_at": crew.created_at,
             "updated_at": crew.updated_at,
         }
@@ -601,5 +718,6 @@ class CrewService:
             "nickname": user.nickname if user else None,
             "avatar_url": user.avatar_url if user else None,
             "role": member.role,
+            "grade_level": member.grade_level,
             "joined_at": member.joined_at,
         }

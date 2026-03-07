@@ -12,7 +12,8 @@ class RunSessionViewModel: ObservableObject {
     // Standalone run settings (persisted via UserDefaults)
     @Published var standaloneGoalType: String
     @Published var standaloneGoalDistance: Double
-    @Published var standaloneGoalTime: Int
+    @Published var standaloneGoalTime: Int       // minutes (for time goal type)
+    @Published var standaloneGoalTargetTime: Int  // minutes (for program goal type)
     @Published var isIndoorRun: Bool
     @Published var isAutoPauseEnabled: Bool
     @Published var isVoiceGuidanceEnabled: Bool
@@ -65,6 +66,8 @@ class RunSessionViewModel: ObservableObject {
         self.standaloneGoalDistance = savedDist > 0 ? savedDist : 5.0
         let savedTime = defaults.integer(forKey: "standaloneGoalTime")
         self.standaloneGoalTime = savedTime > 0 ? savedTime : 30
+        let savedTargetTime = defaults.integer(forKey: "standaloneGoalTargetTime")
+        self.standaloneGoalTargetTime = savedTargetTime > 0 ? savedTargetTime : 20
         self.isIndoorRun = defaults.bool(forKey: "isIndoorRun")
         self.isAutoPauseEnabled = defaults.object(forKey: "isAutoPauseEnabled") == nil ? true : defaults.bool(forKey: "isAutoPauseEnabled")
         self.isVoiceGuidanceEnabled = defaults.object(forKey: "isVoiceGuidanceEnabled") == nil ? true : defaults.bool(forKey: "isVoiceGuidanceEnabled")
@@ -296,6 +299,27 @@ class RunSessionViewModel: ObservableObject {
         state.cadence = 0
         state.isAutoPaused = false
 
+        // Set program running goal if applicable
+        if standaloneGoalType == "program" {
+            state.goalType = "program"
+            state.goalValue = standaloneGoalDistance * 1000 // km → meters
+            state.programTargetDistance = standaloneGoalDistance * 1000
+            state.programTargetTime = Double(standaloneGoalTargetTime * 60) // minutes → seconds
+            let distKm = standaloneGoalDistance
+            state.programRequiredPace = distKm > 0 ? Int(Double(standaloneGoalTargetTime * 60) / distKm) : 0
+            state.programTimeDelta = 0
+            state.programStatus = "on_pace"
+        } else if standaloneGoalType == "distance" {
+            state.goalType = "distance"
+            state.goalValue = standaloneGoalDistance * 1000
+        } else if standaloneGoalType == "time" {
+            state.goalType = "time"
+            state.goalValue = Double(standaloneGoalTime * 60)
+        } else {
+            state.goalType = ""
+            state.goalValue = 0
+        }
+
         if standaloneIsIndoor {
             setupStandalonePedometerCallbacks()
             state.gpsStatus = "indoor"
@@ -367,6 +391,21 @@ class RunSessionViewModel: ObservableObject {
         }
         summary["durationSeconds"] = state.duration
 
+        // Attach program goal data if this was a program run
+        summary["goalType"] = standaloneGoalType
+        if standaloneGoalType == "distance" {
+            summary["goalValue"] = standaloneGoalDistance * 1000 // km → meters
+        } else if standaloneGoalType == "time" {
+            summary["goalValue"] = standaloneGoalTime * 60 // min → seconds
+        } else if standaloneGoalType == "program" {
+            summary["goalValue"] = standaloneGoalDistance * 1000
+            summary["programTargetDistance"] = standaloneGoalDistance * 1000
+            summary["programTargetTime"] = standaloneGoalTargetTime * 60 // min → seconds
+            summary["programStatus"] = state.programStatus
+            summary["programTimeDelta"] = state.programTimeDelta
+            summary["metronomeBPM"] = state.metronomeBPM
+        }
+
         handlePhaseTransition(from: oldPhase, to: "completed")
 
         // Save locally
@@ -390,6 +429,25 @@ class RunSessionViewModel: ObservableObject {
                   let start = self.standaloneStartTime else { return }
             let elapsed = Date().timeIntervalSince(start) - self.standalonePausedDuration
             self.state.duration = max(0, Int(elapsed))
+
+            // Self-calculate pace target for standalone program running
+            if self.state.programTargetDistance > 0 && self.state.programTargetTime > 0 && self.state.distance > 200 {
+                let projectedFinish = (self.state.programTargetDistance / self.state.distance) * elapsed
+                let timeDelta = self.state.programTargetTime - projectedFinish
+                let oldStatus = self.state.programStatus
+                self.state.programTimeDelta = timeDelta
+
+                let newStatus: String
+                if timeDelta > 30 { newStatus = "ahead" }
+                else if timeDelta >= -30 { newStatus = "on_pace" }
+                else if timeDelta >= -60 { newStatus = "behind" }
+                else { newStatus = "critical" }
+
+                if newStatus != oldStatus {
+                    self.state.programStatus = newStatus
+                    HapticManager.shared.paceAlert(status: newStatus, timeDelta: timeDelta)
+                }
+            }
         }
     }
 
@@ -611,6 +669,42 @@ class RunSessionViewModel: ObservableObject {
             }
         }
 
+        // Run goal
+        if let goalType = message[WatchMessageKeys.goalType] as? String {
+            state.goalType = goalType
+        }
+        if let goalValue = message[WatchMessageKeys.goalValue] as? Double {
+            state.goalValue = goalValue
+        } else if let goalValue = message[WatchMessageKeys.goalValue] as? Int {
+            state.goalValue = Double(goalValue)
+        }
+
+        // Program running (pace target) fields
+        if let v = message[WatchMessageKeys.programTargetDistance] as? Double { state.programTargetDistance = v }
+        else if let v = message[WatchMessageKeys.programTargetDistance] as? Int { state.programTargetDistance = Double(v) }
+        if let v = message[WatchMessageKeys.programTargetTime] as? Double { state.programTargetTime = v }
+        else if let v = message[WatchMessageKeys.programTargetTime] as? Int { state.programTargetTime = Double(v) }
+        if let v = message[WatchMessageKeys.programTimeDelta] as? Double { state.programTimeDelta = v }
+        if let v = message[WatchMessageKeys.programRequiredPace] as? Int { state.programRequiredPace = v }
+        else if let v = message[WatchMessageKeys.programRequiredPace] as? Double { state.programRequiredPace = Int(v) }
+        if let v = message[WatchMessageKeys.programStatus] as? String {
+            // Haptic + voice on status change
+            if !v.isEmpty && v != state.programStatus && state.phase == "running" {
+                HapticManager.shared.paceAlert(status: v, timeDelta: state.programTimeDelta)
+            }
+            state.programStatus = v
+        }
+        if let v = message[WatchMessageKeys.metronomeBPM] as? Int {
+            let oldBPM = state.metronomeBPM
+            state.metronomeBPM = v
+            // Start/stop cadence haptic based on BPM changes
+            if v > 0 && oldBPM != v && state.phase == "running" {
+                HapticManager.shared.startCadenceHaptic(bpm: v)
+            } else if v == 0 && oldBPM > 0 {
+                HapticManager.shared.stopCadenceHaptic()
+            }
+        }
+
         // Course navigation fields
         if let isCourseRun = message[WatchMessageKeys.isCourseRun] as? Bool {
             state.isCourseRun = isCourseRun
@@ -743,6 +837,16 @@ class RunSessionViewModel: ObservableObject {
             anchorDuration = 0
             anchorTime = .distantPast
 
+            // Reset goal fields so previous standalone settings don't leak into phone-initiated runs
+            state.goalType = ""
+            state.goalValue = 0
+            state.programTargetDistance = 0
+            state.programTargetTime = 0
+            state.programTimeDelta = 0
+            state.programRequiredPace = 0
+            state.programStatus = ""
+            state.metronomeBPM = 0
+
             // Auto-transition: the watch knows exactly when the countdown ends
             // (phone sent countdownStartedAt + countdownTotal). Schedule an automatic
             // transition to "running" so the UI doesn't depend on WCSession latency.
@@ -772,12 +876,14 @@ class RunSessionViewModel: ObservableObject {
 
         case "paused":
             HapticManager.shared.paused()
+            HapticManager.shared.stopCadenceHaptic()
             stopDurationTimer()
             if !isStandaloneMode { startStatePollTimer() }  // Keep polling while paused
 
         case "completed":
             cancelCountdownAutoTransition()
             HapticManager.shared.runCompleted()
+            HapticManager.shared.stopCadenceHaptic()
             stopDurationTimer()
             stopHeartRateMonitoring()
             stopStatePollTimer()
@@ -1186,6 +1292,11 @@ class RunSessionViewModel: ObservableObject {
         UserDefaults.standard.set(minutes, forKey: "standaloneGoalTime")
     }
 
+    func setGoalTargetTime(_ minutes: Int) {
+        standaloneGoalTargetTime = minutes
+        UserDefaults.standard.set(minutes, forKey: "standaloneGoalTargetTime")
+    }
+
     func setIndoorRun(_ value: Bool) {
         isIndoorRun = value
         UserDefaults.standard.set(value, forKey: "isIndoorRun")
@@ -1199,6 +1310,7 @@ class RunSessionViewModel: ObservableObject {
     func setVoiceGuidance(_ value: Bool) {
         isVoiceGuidanceEnabled = value
         UserDefaults.standard.set(value, forKey: "isVoiceGuidanceEnabled")
+        // HapticManager reads directly from UserDefaults, so it's already synced
     }
 
     func setVoiceFrequency(_ km: Double) {

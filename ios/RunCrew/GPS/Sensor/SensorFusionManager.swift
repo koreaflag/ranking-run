@@ -57,33 +57,43 @@ class SensorFusionManager {
         return motionTracker.accelerationMagnitude
     }
 
-    /// Dead reckoning: estimate position when GPS is lost
+    /// Dead reckoning: estimate position when GPS is lost.
+    /// Prefers Apple-calibrated pedometer distance, falls back to cadence × stride.
     func estimatePosition(from lastKnownLat: Double,
                            lastKnownLon: Double,
                            lastKnownBearing: Double,
                            gpsLostSince: Date) -> (lat: Double, lon: Double, distance: Double)? {
         guard isGPSLost else { return nil }
 
-        // Use pedometer distance + motion heading for dead reckoning
         let heading = motionTracker.getHeading() ?? (lastKnownBearing * .pi / 180.0)
 
         let now = Date()
+        let timeSinceLost = now.timeIntervalSince(gpsLostSince)
+        guard timeSinceLost > 0, timeSinceLost < 90 else { return nil }
+
         var estimatedDistance: Double = 0
 
-        // Synchronous query isn't ideal, so use accumulated pedometer distance as approximation
-        let timeSinceLost = now.timeIntervalSince(gpsLostSince)
-        guard timeSinceLost > 0, timeSinceLost < 60 else { return nil } // Max 60s dead reckoning
+        // Priority 1: Apple-calibrated pedometer distance
+        if pedometerTracker.isDistanceAvailable {
+            let semaphore = DispatchSemaphore(value: 0)
+            var pedDistance: Double?
+            pedometerTracker.queryDistance(from: gpsLostSince, to: now) { dist in
+                pedDistance = dist
+                semaphore.signal()
+            }
+            if semaphore.wait(timeout: .now() + 0.1) == .success,
+               let dist = pedDistance, dist > 0 {
+                estimatedDistance = dist
+            }
+        }
 
-        // Approximate distance from pedometer cadence
-        if pedometerTracker.currentCadence > 0 {
-            // Average stride ≈ 0.75m, adjusted by cadence
-            let strideLength = 0.75
-            estimatedDistance = pedometerTracker.currentCadence * timeSinceLost * strideLength
+        // Priority 2: cadence-based estimation (fallback)
+        if estimatedDistance == 0 && pedometerTracker.currentCadence > 0 {
+            estimatedDistance = pedometerTracker.currentCadence * timeSinceLost * 0.75
         }
 
         guard estimatedDistance > 0 else { return nil }
 
-        // Calculate new position
         let dLat = estimatedDistance * cos(heading) / 111320.0
         let dLon = estimatedDistance * sin(heading) / (111320.0 * cos(lastKnownLat * .pi / 180.0))
 

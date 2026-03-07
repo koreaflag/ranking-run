@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import React
 
@@ -295,6 +296,17 @@ class GPSTrackerModule: RCTEventEmitter {
     }
 
     @objc
+    func getSmoothedRoute(_ resolve: @escaping RCTPromiseResolveBlock,
+                           rejecter reject: @escaping RCTPromiseRejectBlock) {
+        guard let engine = locationEngine else {
+            resolve(["route": [], "distance": 0] as [String: Any])
+            return
+        }
+        let result = engine.getSmoothedRoute()
+        resolve(["route": result.route, "distance": result.distance] as [String: Any])
+    }
+
+    @objc
     func getCurrentStatus(_ resolve: @escaping RCTPromiseResolveBlock,
                            rejecter reject: @escaping RCTPromiseRejectBlock) {
         let status = locationEngine?.getCurrentStatus() ?? "disabled"
@@ -329,8 +341,41 @@ class GPSTrackerModule: RCTEventEmitter {
         }
     }
 
+    @objc
     func isLowPowerModeEnabled(_ resolve: @escaping RCTPromiseResolveBlock,
                                 rejecter reject: @escaping RCTPromiseRejectBlock) {
         resolve(ProcessInfo.processInfo.isLowPowerModeEnabled)
+    }
+
+    /// Configure AVAudioSession for TTS speech playback.
+    /// Sets .playback category with .duckOthers so speech plays through the mute switch
+    /// and ducks background music/podcasts during announcements.
+    @objc
+    func configureAudioForSpeech(_ resolve: @escaping RCTPromiseResolveBlock,
+                                  rejecter reject: @escaping RCTPromiseRejectBlock) {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .voicePrompt, options: [.duckOthers])
+            try session.setActive(true)
+            resolve(nil)
+        } catch {
+            NSLog("[GPSTrackerModule] configureAudioForSpeech error: %@", error.localizedDescription)
+            resolve(nil)  // Don't reject — speech should still attempt
+        }
+    }
+
+    /// Restore audio session after speech. Unduck other audio and return to
+    /// mixWithOthers so silent background audio can keep running.
+    @objc
+    func restoreAudioAfterSpeech(_ resolve: @escaping RCTPromiseResolveBlock,
+                                  rejecter reject: @escaping RCTPromiseRejectBlock) {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            resolve(nil)
+        } catch {
+            resolve(nil)
+        }
     }
 }

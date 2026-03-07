@@ -13,7 +13,8 @@ class AltimeterTracker {
     // Elevation gain/loss tracking
     private(set) var totalElevationGain: Double = 0
     private(set) var totalElevationLoss: Double = 0
-    private var lastAltitude: Double?
+    private var lastCommittedAltitude: Double? // baseline for threshold comparison
+    private var lastRawAltitude: Double?        // tracks actual latest reading
     private let elevationChangeThreshold: Double = 1.0 // meters, ignore small fluctuations
 
     var isAvailable: Bool { CMAltimeter.isRelativeAltitudeAvailable() }
@@ -30,7 +31,8 @@ class AltimeterTracker {
         relativeAltitude = 0
         totalElevationGain = 0
         totalElevationLoss = 0
-        lastAltitude = nil
+        lastCommittedAltitude = nil
+        lastRawAltitude = nil
 
         altimeter.startRelativeAltitudeUpdates(to: queue) { [weak self] data, error in
             guard let self = self, let data = data, error == nil else { return }
@@ -46,9 +48,14 @@ class AltimeterTracker {
     private func processAltimeterData(_ data: CMAltitudeData) {
         let newAltitude = data.relativeAltitude.doubleValue
         pressure = data.pressure.doubleValue
+        lastRawAltitude = newAltitude
 
-        // Track elevation gain/loss
-        if let last = lastAltitude {
+        // Track elevation gain/loss using committed baseline.
+        // When the change from baseline crosses threshold, commit the gain/loss
+        // and move the baseline to the current reading.
+        // When direction reverses (was ascending, now descending or vice versa),
+        // update baseline to prevent stale reference from accumulating errors.
+        if let last = lastCommittedAltitude {
             let change = newAltitude - last
             if abs(change) >= elevationChangeThreshold {
                 if change > 0 {
@@ -56,10 +63,10 @@ class AltimeterTracker {
                 } else {
                     totalElevationLoss += abs(change)
                 }
-                lastAltitude = newAltitude
+                lastCommittedAltitude = newAltitude
             }
         } else {
-            lastAltitude = newAltitude
+            lastCommittedAltitude = newAltitude
         }
 
         relativeAltitude = newAltitude

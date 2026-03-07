@@ -21,6 +21,7 @@ class DevLoginRequest(BaseModel):
 class LoginUserInfo(BaseModel):
     """User info returned as part of auth response."""
     id: str
+    user_code: str
     email: str | None
     nickname: str | None = None
     is_new_user: bool

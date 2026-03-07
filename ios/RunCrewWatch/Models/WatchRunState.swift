@@ -38,6 +38,18 @@ struct WatchRunState {
     var cpTotal: Int = 0                  // total checkpoints
     var cpJustPassed: Bool = false        // just passed a checkpoint (for haptic)
 
+    // Run goal (from phone)
+    var goalType: String = ""             // "distance"/"time"/"pace"/"program"/""
+    var goalValue: Double = 0             // meters for distance, seconds for time, sec/km for pace
+
+    // Program running (pace target)
+    var programTargetDistance: Double = 0  // meters
+    var programTargetTime: Double = 0     // seconds
+    var programTimeDelta: Double = 0      // seconds (+ = ahead, - = behind)
+    var programRequiredPace: Int = 0      // seconds/km
+    var programStatus: String = ""        // "ahead"/"on_pace"/"behind"/"critical"
+    var metronomeBPM: Int = 0             // 0 = off
+
     // Countdown sync (from phone)
     var countdownStartedAt: Double = 0    // ms since epoch (JS Date.now())
     var countdownTotal: Int = 3           // total countdown seconds

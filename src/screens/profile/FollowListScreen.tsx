@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
@@ -72,7 +72,7 @@ export default function FollowListScreen() {
       // Load current user's following to know who we already follow
       if (currentUser) {
         try {
-          const myFollowing = await userService.getFollowing(currentUser.id, 0, 200);
+          const myFollowing = await userService.getFollowing(currentUser.id, 0, 100);
           setFollowingSet(new Set(myFollowing.data.map((f) => f.user.id)));
         } catch {
           // ignore
@@ -193,6 +193,7 @@ export default function FollowListScreen() {
         ) : (
           <FlatList
             data={items}
+            extraData={followingSet}
             keyExtractor={(item) => item.id}
             renderItem={renderItem}
             contentContainerStyle={styles.listContent}

@@ -94,6 +94,8 @@ async def get_my_profile(current_user: CurrentUser) -> UserResponse:
         bio=current_user.bio,
         instagram_username=current_user.instagram_username,
         activity_region=current_user.activity_region,
+        country=current_user.country,
+        crew_name=current_user.crew_name,
         total_distance_meters=current_user.total_distance_meters,
         total_runs=current_user.total_runs,
         created_at=current_user.created_at,
@@ -177,6 +179,12 @@ async def update_profile(
         current_user.instagram_username = body.instagram_username
     if body.activity_region is not None:
         current_user.activity_region = body.activity_region
+    # country: update when explicitly sent (including null to clear)
+    if "country" in body.model_fields_set:
+        current_user.country = body.country
+    # crew_name: update when explicitly sent (including null to clear)
+    if "crew_name" in body.model_fields_set:
+        current_user.crew_name = body.crew_name
 
     await db.flush()
 
@@ -190,6 +198,7 @@ async def update_profile(
         bio=current_user.bio,
         instagram_username=current_user.instagram_username,
         activity_region=current_user.activity_region,
+        country=current_user.country,
     )
 
 
@@ -223,8 +232,8 @@ async def get_my_runs(
     current_user: CurrentUser,
     db: DbSession,
     page: int = Query(0, ge=0),
-    per_page: int = Query(20, ge=1, le=100),
-    limit: int | None = Query(None, ge=1, le=100),
+    per_page: int = Query(20, ge=1, le=500),
+    limit: int | None = Query(None, ge=1, le=500),
     order_by: Literal["finished_at", "distance_meters", "duration_seconds"] = Query("finished_at"),
     order: Literal["asc", "desc"] = Query("desc"),
 ) -> RunHistoryResponse:

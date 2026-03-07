@@ -61,6 +61,18 @@ struct WatchMessageKeys {
     static let cpTotal = "cpTotal"
     static let cpJustPassed = "cpJustPassed"
 
+    // Run goal (from phone)
+    static let goalType = "goalType"    // "distance"/"time"/"pace"/"program"/""
+    static let goalValue = "goalValue"  // meters for distance, seconds for time, sec/km for pace
+
+    // Program running (pace target)
+    static let programTargetDistance = "programTargetDistance"
+    static let programTargetTime = "programTargetTime"
+    static let programTimeDelta = "programTimeDelta"
+    static let programRequiredPace = "programRequiredPace"
+    static let programStatus = "programStatus"
+    static let metronomeBPM = "metronomeBPM"
+
     // Countdown sync
     static let countdownStartedAt = "countdownStartedAt"
     static let countdownTotal = "countdownTotal"

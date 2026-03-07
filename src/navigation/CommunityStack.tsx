@@ -12,6 +12,8 @@ import UserProfileScreen from '../screens/profile/UserProfileScreen';
 import FindFriendsScreen from '../screens/mypage/FindFriendsScreen';
 import CrewBoardScreen from '../screens/community/CrewBoardScreen';
 import CrewEditScreen from '../screens/crew/CrewEditScreen';
+import CrewManageScreen from '../screens/crew/CrewManageScreen';
+import CrewNotificationsScreen from '../screens/crew/CrewNotificationsScreen';
 import CommunityPostEditScreen from '../screens/community/CommunityPostEditScreen';
 import FollowListScreen from '../screens/profile/FollowListScreen';
 import FriendsScreen from '../screens/profile/FriendsScreen';
@@ -40,6 +42,8 @@ export default function CommunityStack() {
       <Stack.Screen name="FindFriends" component={FindFriendsScreen} />
       <Stack.Screen name="CrewBoard" component={CrewBoardScreen} />
       <Stack.Screen name="CrewEdit" component={CrewEditScreen} />
+      <Stack.Screen name="CrewManage" component={CrewManageScreen} />
+      <Stack.Screen name="CrewNotifications" component={CrewNotificationsScreen} />
       <Stack.Screen name="CommunityPostEdit" component={CommunityPostEditScreen} />
       <Stack.Screen name="FollowList" component={FollowListScreen} />
       <Stack.Screen name="Friends" component={FriendsScreen} />

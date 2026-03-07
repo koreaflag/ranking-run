@@ -9,7 +9,7 @@ import {
   TextInput,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
@@ -20,6 +20,7 @@ import { useCrewStore } from '../../stores/crewStore';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
+import { formatRelativeTime } from '../../utils/format';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'CrewSearch'>;
 
@@ -93,6 +94,11 @@ export default function CrewSearchScreen() {
               </>
             )}
           </View>
+          {item.last_activity_at && (
+            <Text style={styles.crewActivityText}>
+              {t('format.lastActive', { time: formatRelativeTime(item.last_activity_at) })}
+            </Text>
+          )}
         </View>
         {item.is_member && (
           <View style={styles.joinedBadge}>
@@ -289,6 +295,12 @@ const createStyles = (c: ThemeColors) =>
       fontSize: FONT_SIZES.xs,
       color: c.textTertiary,
       marginHorizontal: 1,
+    },
+    crewActivityText: {
+      fontSize: FONT_SIZES.xs - 1,
+      fontWeight: '400',
+      color: c.textTertiary,
+      marginTop: 1,
     },
     joinedBadge: {
       paddingHorizontal: SPACING.sm,

@@ -33,6 +33,7 @@ class CrewUpdateRequest(BaseModel):
     recurring_schedule: str | None = Field(None, max_length=200)
     meeting_point: str | None = Field(None, max_length=200)
     requires_approval: bool | None = None
+    grade_config: dict | None = None
 
 
 class CrewOwnerInfo(BaseModel):
@@ -57,9 +58,11 @@ class CrewResponse(BaseModel):
     recurring_schedule: str | None = None
     meeting_point: str | None = None
     requires_approval: bool = False
+    grade_config: dict | None = None
     is_member: bool = False
     my_role: str | None = None
     join_request_status: str | None = None
+    last_activity_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -74,6 +77,7 @@ class CrewMemberResponse(BaseModel):
     nickname: str | None = None
     avatar_url: str | None = None
     role: str
+    grade_level: int = 1
     joined_at: datetime
 
 
@@ -120,3 +124,15 @@ class JoinRequestListResponse(BaseModel):
 class MyJoinRequestResponse(BaseModel):
     status: str | None = None
     request_id: str | None = None
+
+
+class CrewGradeUpdateRequest(BaseModel):
+    grade_level: int = Field(..., ge=1, le=4)
+
+
+class CrewManagementStats(BaseModel):
+    total_members: int
+    members_by_grade: dict[int, int]
+    pending_requests: int
+    recent_joins_7d: int
+    recent_leaves_7d: int

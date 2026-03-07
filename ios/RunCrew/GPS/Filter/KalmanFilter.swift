@@ -8,11 +8,20 @@ class KalmanFilter {
     private var isInitialized = false
     private var converter: CoordinateConverter?
     private var lastTimestamp: TimeInterval = 0
+    private var lastValidResult: (lat: Double, lon: Double, alt: Double, speed: Double, bearing: Double)?
 
     // Process noise base values (higher = more responsive to actual movement)
-    private let processNoisePosition: Double = 1.0
-    private let processNoiseVelocity: Double = 4.0
+    private let processNoisePosition: Double = 0.5
+    private let processNoiseVelocity: Double = 3.0
     private var dynamicProcessNoise: Double = 1.0
+
+    // RTS Smoother: store intermediate states for backward pass
+    // measTimestamp/measSpeed/measBearing carry original GPS metadata
+    // so smoothRoute() output is self-contained (no need to align with filteredLocations)
+    private var history: [(predicted: [Double], predictedP: [[Double]],
+                           filtered: [Double], filteredP: [[Double]],
+                           F: [[Double]],
+                           measTimestamp: Double, measSpeed: Double, measBearing: Double)] = []
 
     init() {
         state = [0, 0, 0, 0, 0, 0]
@@ -26,6 +35,8 @@ class KalmanFilter {
         covariance = Self.identity(6, scale: 100.0)
         lastTimestamp = timestamp
         isInitialized = true
+        // Clear history on init/reinit to prevent mixing coordinate systems
+        history.removeAll()
     }
 
     /// Update dynamic process noise based on Core Motion acceleration variance
@@ -41,6 +52,11 @@ class KalmanFilter {
                                               speed: Double, bearing: Double) {
         guard isInitialized, let converter = converter else {
             initialize(lat: lat, lon: lon, alt: alt, timestamp: timestamp)
+            // Passthrough entry: keeps history aligned with filteredLocations
+            history.append((predicted: state, predictedP: covariance,
+                            filtered: state, filteredP: covariance,
+                            F: Self.identity(6),
+                            measTimestamp: timestamp, measSpeed: speed, measBearing: bearing))
             return (lat, lon, alt, speed, bearing)
         }
 
@@ -48,6 +64,10 @@ class KalmanFilter {
         guard dt > 0, dt < 30 else {
             // Reset if time gap too large
             initialize(lat: lat, lon: lon, alt: alt, timestamp: timestamp)
+            history.append((predicted: state, predictedP: covariance,
+                            filtered: state, filteredP: covariance,
+                            F: Self.identity(6),
+                            measTimestamp: timestamp, measSpeed: speed, measBearing: bearing))
             return (lat, lon, alt, speed, bearing)
         }
         lastTimestamp = timestamp
@@ -80,6 +100,11 @@ class KalmanFilter {
         let I = Self.identity(6)
         covariance = matMul(matSub(I, matMul(K, H)), predictedP)
 
+        // Store for RTS backward pass (with original GPS metadata)
+        history.append((predicted: predictedState, predictedP: predictedP,
+                         filtered: state, filteredP: covariance, F: F,
+                         measTimestamp: timestamp, measSpeed: speed, measBearing: bearing))
+
         return convertStateToLatLng()
     }
 
@@ -87,23 +112,83 @@ class KalmanFilter {
         return sqrt(state[3] * state[3] + state[4] * state[4])
     }
 
+    /// RTS Backward Smoother: uses future data to correct past estimates.
+    /// Returns smoothed positions with original GPS metadata (self-contained).
+    func smoothRoute() -> [(lat: Double, lon: Double, alt: Double,
+                             timestamp: Double, speed: Double, bearing: Double)] {
+        guard history.count >= 2, let converter = converter else {
+            return []
+        }
+
+        let N = history.count
+        var smoothedStates = Array(repeating: [Double](repeating: 0, count: 6), count: N)
+        var smoothedP = Array(repeating: Self.identity(6), count: N)
+
+        // Initialize backward pass with last filtered state
+        smoothedStates[N - 1] = history[N - 1].filtered
+        smoothedP[N - 1] = history[N - 1].filteredP
+
+        // Backward pass: k = N-2 down to 0
+        for k in stride(from: N - 2, through: 0, by: -1) {
+            let filtS = history[k].filtered
+            let filtP = history[k].filteredP
+            let predS = history[k + 1].predicted
+            let predP = history[k + 1].predictedP
+            let Fk = history[k + 1].F
+
+            // G_k = P_filtered[k] * F[k+1]^T * inv(P_predicted[k+1])
+            guard let predPInv = invert(predP) else {
+                smoothedStates[k] = filtS
+                smoothedP[k] = filtP
+                continue
+            }
+            let G = matMul(matMul(filtP, transpose(Fk)), predPInv)
+
+            // smoothed_state[k] = filtered[k] + G * (smoothed[k+1] - predicted[k+1])
+            let diff = vecSub(smoothedStates[k + 1], predS)
+            smoothedStates[k] = vecAdd(filtS, matVecMul(G, diff))
+
+            // smoothed_P[k] = filtered_P[k] + G * (smoothed_P[k+1] - predicted_P[k+1]) * G^T
+            let pDiff = matSub(smoothedP[k + 1], predP)
+            smoothedP[k] = matAdd(filtP, matMul(matMul(G, pDiff), transpose(G)))
+        }
+
+        // Convert smoothed states to lat/lng with original metadata
+        return smoothedStates.enumerated().map { (i, s) in
+            let latLng = converter.toLatLng(x: s[0], y: s[1])
+            return (latLng.lat, latLng.lon, s[2],
+                    history[i].measTimestamp, history[i].measSpeed, history[i].measBearing)
+        }
+    }
+
+    func clearHistory() {
+        history.removeAll()
+    }
+
     func reset() {
         isInitialized = false
         state = [0, 0, 0, 0, 0, 0]
         covariance = Self.identity(6, scale: 100.0)
         converter = nil
+        lastValidResult = nil
+        history.removeAll()
     }
 
     // MARK: - Private Helpers
 
     private func convertStateToLatLng() -> (lat: Double, lon: Double, alt: Double,
                                              speed: Double, bearing: Double) {
-        guard let converter = converter else { return (0, 0, 0, 0, 0) }
+        guard let converter = converter else {
+            // Return last valid result instead of (0,0) to prevent route corruption
+            return lastValidResult ?? (0, 0, 0, 0, 0)
+        }
         let latLng = converter.toLatLng(x: state[0], y: state[1])
         let speed = sqrt(state[3] * state[3] + state[4] * state[4])
         var bearing = atan2(state[3], state[4]).toDegrees() // vx=east, vy=north
         bearing = (bearing + 360).truncatingRemainder(dividingBy: 360)
-        return (latLng.lat, latLng.lon, state[2], speed, bearing)
+        let result = (latLng.lat, latLng.lon, state[2], speed, bearing)
+        lastValidResult = result
+        return result
     }
 
     private func toMeasurement(lat: Double, lon: Double, alt: Double,
@@ -149,7 +234,9 @@ class KalmanFilter {
 
     private func measurementNoiseMatrix(horizontalAccuracy: Double,
                                          speedAccuracy: Double) -> [[Double]] {
-        let posVar = horizontalAccuracy * horizontalAccuracy
+        // Urban canyon inflation: when accuracy > 20m, multipath likely — trust GPS less
+        let inflated = horizontalAccuracy > 20 ? horizontalAccuracy * 2.5 : horizontalAccuracy
+        let posVar = inflated * inflated
         let spdVar: Double
         if speedAccuracy < -100 {
             // GPS speed unknown (CLLocation.speed == -1) — effectively ignore

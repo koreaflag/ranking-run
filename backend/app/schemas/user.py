@@ -45,6 +45,7 @@ class ProfileUpdateRequest(BaseModel):
     instagram_username: str | None = Field(None, max_length=30)
     activity_region: str | None = Field(None, max_length=100)
     country: str | None = Field(None, max_length=50)
+    crew_name: str | None = Field(None, max_length=50)
 
 
 class ProfileResponse(BaseModel):

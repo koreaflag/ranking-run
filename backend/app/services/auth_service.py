@@ -294,6 +294,7 @@ class AuthService:
             "expires_in": self._settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             "user": {
                 "id": str(user.id),
+                "user_code": user.user_code,
                 "email": user.email,
                 "provider": provider,
                 "is_new_user": is_new_user,

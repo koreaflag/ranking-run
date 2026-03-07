@@ -29,17 +29,78 @@ struct RunningView: View {
             divider
 
             // Distance — center hero (largest element)
-            HStack(alignment: .lastTextBaseline, spacing: 2) {
-                Text(viewModel.formattedDistance())
-                    .font(.system(size: 40, weight: .heavy, design: .monospaced))
-                    .foregroundColor(appOrange)
-                Text("km")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.gray)
+            if viewModel.state.goalType == "distance" && viewModel.state.goalValue > 0 {
+                // Goal distance mode: show progress
+                let goalKm = viewModel.state.goalValue / 1000.0
+                let currentKm = viewModel.state.distance / 1000.0
+                let progress = min(1.0, currentKm / goalKm)
+                VStack(spacing: 1) {
+                    HStack(alignment: .lastTextBaseline, spacing: 2) {
+                        Text(viewModel.formattedDistance())
+                            .font(.system(size: 36, weight: .heavy, design: .monospaced))
+                            .foregroundColor(appOrange)
+                        Text("/\(String(format: "%.1f", goalKm))km")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.gray)
+                    }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: 4)
+                            Capsule()
+                                .fill(progress >= 1.0 ? Color.green : appOrange)
+                                .frame(width: geo.size.width * CGFloat(progress), height: 4)
+                        }
+                    }
+                    .frame(height: 4)
+                    .padding(.horizontal, 16)
+                }
+                .padding(.vertical, 2)
+            } else if viewModel.state.goalType == "time" && viewModel.state.goalValue > 0 {
+                // Goal time mode: show time progress
+                let goalSec = Int(viewModel.state.goalValue)
+                let progress = min(1.0, Double(viewModel.state.duration) / Double(goalSec))
+                let goalMin = goalSec / 60
+                VStack(spacing: 1) {
+                    HStack(alignment: .lastTextBaseline, spacing: 2) {
+                        Text(viewModel.formattedDistance())
+                            .font(.system(size: 36, weight: .heavy, design: .monospaced))
+                            .foregroundColor(appOrange)
+                        Text("km")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.gray)
+                    }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(height: 4)
+                            Capsule()
+                                .fill(progress >= 1.0 ? Color.green : appOrange)
+                                .frame(width: geo.size.width * CGFloat(progress), height: 4)
+                        }
+                    }
+                    .frame(height: 4)
+                    .padding(.horizontal, 16)
+                    Text("목표 \(goalMin)분")
+                        .font(.system(size: 9))
+                        .foregroundColor(.gray)
+                }
+                .padding(.vertical, 2)
+            } else {
+                // No goal — standard display
+                HStack(alignment: .lastTextBaseline, spacing: 2) {
+                    Text(viewModel.formattedDistance())
+                        .font(.system(size: 40, weight: .heavy, design: .monospaced))
+                        .foregroundColor(appOrange)
+                    Text("km")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.gray)
+                }
+                .padding(.vertical, 2)
             }
-            .padding(.vertical, 2)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("거리 \(viewModel.formattedDistance()) 킬로미터")
+
 
             divider
 

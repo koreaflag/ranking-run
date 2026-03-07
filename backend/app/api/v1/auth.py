@@ -66,6 +66,7 @@ async def dev_login(body: DevLoginRequest, db: DbSession) -> AuthResponse:
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=LoginUserInfo(
             id=str(user.id),
+            user_code=user.user_code,
             email=user.email,
             nickname=user.nickname,
             is_new_user=is_new,

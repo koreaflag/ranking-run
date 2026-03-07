@@ -20,6 +20,9 @@ from app.models.community_post import CommunityPost, CommunityComment, Community
 from app.models.friend_request import FriendRequest
 from app.models.crew_join_request import CrewJoinRequest
 from app.models.announcement import Announcement
+from app.models.group_run import GroupRun, GroupRunMember
+from app.models.group_ranking import GroupRanking
+from app.models.crew_challenge import CrewChallenge, CrewChallengeRecord, CrewCourseRanking
 
 __all__ = [
     "Base",
@@ -52,4 +55,10 @@ __all__ = [
     "FriendRequest",
     "CrewJoinRequest",
     "Announcement",
+    "GroupRun",
+    "GroupRunMember",
+    "GroupRanking",
+    "CrewChallenge",
+    "CrewChallengeRecord",
+    "CrewCourseRanking",
 ]

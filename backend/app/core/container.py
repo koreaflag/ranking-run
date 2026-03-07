@@ -23,6 +23,10 @@ from app.services.notification_service import NotificationService
 from app.services.map_matching_service import MapMatchingService
 from app.services.announcement_service import AnnouncementService
 from app.services.crew_join_request_service import CrewJoinRequestService
+from app.services.group_ranking_service import GroupRankingService
+from app.services.group_run_service import GroupRunService
+from app.services.crew_challenge_service import CrewChallengeService
+from app.services.crew_ranking_service import CrewRankingService
 from app.services.strava_service import StravaService
 
 
@@ -54,6 +58,8 @@ class Container(containers.DeclarativeContainer):
             "app.api.v1.notifications",
             "app.api.v1.announcements",
             "app.api.v1.crew_join_requests",
+            "app.api.v1.group_runs",
+            "app.api.v1.crew_challenges",
             "app.api.v1.strava",
             "app.api.v1.users",
         ],
@@ -75,6 +81,10 @@ class Container(containers.DeclarativeContainer):
     follow_service = providers.Factory(FollowService)
     friend_request_service = providers.Factory(FriendRequestService)
     gear_service = providers.Factory(GearService)
+    crew_challenge_service = providers.Factory(CrewChallengeService)
+    crew_ranking_service = providers.Factory(CrewRankingService)
+    group_ranking_service = providers.Factory(GroupRankingService)
+    group_run_service = providers.Factory(GroupRunService)
     import_service = providers.Factory(ImportService)
     like_service = providers.Factory(LikeService)
     map_matching_service = providers.Singleton(MapMatchingService)

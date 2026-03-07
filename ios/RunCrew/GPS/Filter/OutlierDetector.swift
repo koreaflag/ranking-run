@@ -8,7 +8,7 @@ class OutlierDetector {
     private let maxRecentSpeeds = 10
 
     // Thresholds
-    private let maxHorizontalAccuracy: Double = 50.0  // meters (allow noisier fixes; Kalman filter handles smoothing)
+    private let maxHorizontalAccuracy: Double = 25.0  // meters (reject urban multipath noise)
     private let maxSpeed: Double = 15.0                // m/s (~54 km/h)
     private let maxAcceleration: Double = 8.0          // m/s²
     private let maxTimestampAge: TimeInterval = 5.0    // seconds (fresher data only)
@@ -38,6 +38,7 @@ class OutlierDetector {
             let distance = location.distance(from: lastValid)
             let timeDelta = location.timestamp.timeIntervalSince(lastValid.timestamp)
 
+            // Reject backwards or zero time deltas (clock adjustments, duplicate timestamps)
             guard timeDelta > 0 else { return nil }
 
             let calculatedSpeed = distance / timeDelta

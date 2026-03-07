@@ -14,7 +14,7 @@ import {
   Image,
   ActionSheetIOS,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
@@ -40,12 +40,13 @@ export default function CommunityPostEditScreen() {
 
   const { postId, title: initialTitle, content: initialContent, imageUrl, postType } = route.params;
 
-  const [title, setTitle] = useState(initialTitle);
+  const [title, setTitle] = useState(initialTitle ?? '');
   const [content, setContent] = useState(initialContent);
   const [imageUri, setImageUri] = useState<string | null>(imageUrl ?? null);
   const [submitting, setSubmitting] = useState(false);
 
-  const canSubmit = title.trim().length > 0 && content.trim().length > 0 && !submitting;
+  const hasTitleField = !!initialTitle || initialTitle === '';
+  const canSubmit = (hasTitleField ? title.trim().length > 0 : true) && content.trim().length > 0 && !submitting;
 
   const pickImage = useCallback(async (useCamera: boolean) => {
     const permission = useCamera

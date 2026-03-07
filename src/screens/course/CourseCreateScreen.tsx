@@ -15,7 +15,7 @@ import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-naviga
 import { courseService } from '../../services/courseService';
 import { useCourseStore } from '../../stores/courseStore';
 import { savePendingCourse, removePendingCourse } from '../../services/pendingSyncService';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import Button from '../../components/common/Button';
 import RouteMapView from '../../components/map/RouteMapView';
 import { formatDistance } from '../../utils/format';

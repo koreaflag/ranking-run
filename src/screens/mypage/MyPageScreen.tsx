@@ -10,11 +10,13 @@ import {
   Alert,
   Image,
   Linking,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../stores/authStore';
 import type { MyPageStackParamList } from '../../types/navigation';
@@ -71,6 +73,12 @@ function getTimeOfDay(iso: string, t: (key: string) => string): string {
 
 type Nav = NativeStackNavigationProp<MyPageStackParamList, 'MyPage'>;
 
+// Module-level cache: survives tab switches
+let _cachedStats: UserStats | null = null;
+let _cachedRuns: RunHistoryItem[] = [];
+let _cachedAnalytics: AnalyticsData | null = null;
+let _cachedSocial = { following: 0, followers: 0, likes: 0 };
+
 export default function MyPageScreen() {
   const navigation = useNavigation<Nav>();
   const { t } = useTranslation();
@@ -78,12 +86,12 @@ export default function MyPageScreen() {
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [stats, setStats] = useState<UserStats | null>(null);
-  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
-  const [allRuns, setAllRuns] = useState<RunHistoryItem[]>([]);
+  const [stats, setStats] = useState<UserStats | null>(_cachedStats);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(_cachedAnalytics);
+  const [allRuns, setAllRuns] = useState<RunHistoryItem[]>(_cachedRuns);
   const [selectedPeriod, setSelectedPeriod] = useState<StatsPeriod>('month');
   const [refreshing, setRefreshing] = useState(false);
-  const [socialCounts, setSocialCounts] = useState<{ following: number; followers: number; likes: number }>({ following: 0, followers: 0, likes: 0 });
+  const [socialCounts, setSocialCounts] = useState<{ following: number; followers: number; likes: number }>(_cachedSocial);
 
   const loadData = useCallback(async () => {
     try {
@@ -93,10 +101,11 @@ export default function MyPageScreen() {
         userService.getSocialCounts().catch(() => ({ followers_count: 0, following_count: 0, total_likes_received: 0 })),
         userService.getAnalytics().catch(() => null),
       ]);
-      setStats(statsData);
-      setAllRuns(runsData.data);
-      setSocialCounts({ following: socialData.following_count, followers: socialData.followers_count, likes: socialData.total_likes_received });
-      setAnalytics(analyticsData);
+      setStats(statsData); _cachedStats = statsData;
+      setAllRuns(runsData.data); _cachedRuns = runsData.data;
+      const social = { following: socialData.following_count, followers: socialData.followers_count, likes: socialData.total_likes_received };
+      setSocialCounts(social); _cachedSocial = social;
+      setAnalytics(analyticsData); _cachedAnalytics = analyticsData;
     } catch {
       // Partial failures are acceptable
     }
@@ -637,16 +646,16 @@ export default function MyPageScreen() {
         <View style={styles.section}>
           <TouchableOpacity
             style={styles.menuButton}
-            onPress={() => navigation.navigate('RunHistory')}
+            onPress={() => navigation.navigate('Friends')}
             activeOpacity={0.7}
           >
             <View style={styles.menuButtonLeft}>
               <View style={styles.menuIconCircle}>
-                <Ionicons name="timer-outline" size={20} color={colors.primary} />
+                <Ionicons name="people-outline" size={20} color={colors.primary} />
               </View>
               <View>
-                <Text style={styles.menuButtonTitle}>{t('mypage.runHistory')}</Text>
-                <Text style={styles.menuButtonDesc}>{t('mypage.menuRunHistoryDesc')}</Text>
+                <Text style={styles.menuButtonTitle}>{t('friend.title')}</Text>
+                <Text style={styles.menuButtonDesc}>{t('friend.menuDesc')}</Text>
               </View>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
@@ -664,40 +673,6 @@ export default function MyPageScreen() {
               <View>
                 <Text style={styles.menuButtonTitle}>{t('mypage.menuGear')}</Text>
                 <Text style={styles.menuButtonDesc}>{t('mypage.menuGearDesc')}</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={() => navigation.navigate('ImportActivity')}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuButtonLeft}>
-              <View style={styles.menuIconCircle}>
-                <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
-              </View>
-              <View>
-                <Text style={styles.menuButtonTitle}>{t('mypage.menuImport')}</Text>
-                <Text style={styles.menuButtonDesc}>{t('mypage.menuImportDesc')}</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={() => navigation.navigate('StravaConnect')}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuButtonLeft}>
-              <View style={[styles.menuIconCircle, { backgroundColor: '#FC4C0220' }]}>
-                <Text style={{ color: '#FC4C02', fontWeight: '900', fontSize: 10 }}>STR</Text>
-              </View>
-              <View>
-                <Text style={styles.menuButtonTitle}>{t('mypage.menuStrava')}</Text>
-                <Text style={styles.menuButtonDesc}>{t('mypage.menuStravaDesc')}</Text>
               </View>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
@@ -733,7 +708,10 @@ export default function MyPageScreen() {
 // ============================================================
 
 const createStyles = (c: ThemeColors) => StyleSheet.create({
-  container: { flex: 1 },
+  container: {
+    flex: 1,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
+  },
   scrollView: { flex: 1 },
   content: {
     paddingBottom: SPACING.xxxl + SPACING.xl,

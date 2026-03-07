@@ -15,9 +15,10 @@ import {
   TextInput,
   Switch,
   Image,
+  Dimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -27,10 +28,12 @@ import ScreenHeader from '../../components/common/ScreenHeader';
 import RouteMapView from '../../components/map/RouteMapView';
 import ReviewSection from '../../components/course/ReviewSection';
 import DifficultyBadge from '../../components/course/DifficultyBadge';
+import ElevationProfileChart from '../../components/charts/ElevationProfileChart';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import type { CourseStackParamList } from '../../types/navigation';
-import type { RankingEntry, CourseCheckpoint } from '../../types/api';
+import type { RankingEntry, CourseCheckpoint, CrewCourseRankingEntry } from '../../types/api';
+import { crewChallengeService } from '../../services/crewChallengeService';
 import type { CheckpointMarkerData } from '../../components/map/RouteMapView';
 import {
   formatDistance,
@@ -64,25 +67,31 @@ export default function CourseDetailScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const currentUser = useAuthStore((s) => s.user);
 
-  const {
-    selectedCourse,
-    selectedCourseStats,
-    selectedCourseRankings,
-    selectedCourseMyBest,
-    isLoadingDetail,
-    error,
-    fetchCourseDetail,
-    clearDetail,
-    favoriteIds,
-    toggleFavorite,
-    fetchFavoriteCourses,
-    selectedCourseLikeCount,
-    selectedCourseIsLiked,
-    toggleLike,
-    deleteMyCourse,
-  } = useCourseStore();
+  const selectedCourse = useCourseStore(s => s.selectedCourse);
+  const selectedCourseStats = useCourseStore(s => s.selectedCourseStats);
+  const selectedCourseRankings = useCourseStore(s => s.selectedCourseRankings);
+  const selectedCourseCrewRankings = useCourseStore(s => s.selectedCourseCrewRankings);
+  const selectedCourseMyCrewRankings = useCourseStore(s => s.selectedCourseMyCrewRankings);
+  const selectedCourseMyBest = useCourseStore(s => s.selectedCourseMyBest);
+  const isLoadingDetail = useCourseStore(s => s.isLoadingDetail);
+  const error = useCourseStore(s => s.error);
+  const fetchCourseDetail = useCourseStore(s => s.fetchCourseDetail);
+  const clearDetail = useCourseStore(s => s.clearDetail);
+  const favoriteIds = useCourseStore(s => s.favoriteIds);
+  const toggleFavorite = useCourseStore(s => s.toggleFavorite);
+  const fetchFavoriteCourses = useCourseStore(s => s.fetchFavoriteCourses);
+  const selectedCourseLikeCount = useCourseStore(s => s.selectedCourseLikeCount);
+  const selectedCourseIsLiked = useCourseStore(s => s.selectedCourseIsLiked);
+  const toggleLike = useCourseStore(s => s.toggleLike);
+  const deleteMyCourse = useCourseStore(s => s.deleteMyCourse);
 
-  const isFavorited = favoriteIds.includes(courseId);
+  // Ranking tab state: 'individual' or 'crew'
+  const [rankingTab, setRankingTab] = useState<'individual' | 'crew'>('individual');
+
+  const pendingSelectForRaid = useCourseStore((s) => s.pendingSelectForRaid);
+  const [isStartingRaid, setIsStartingRaid] = useState(false);
+
+  const isFavorited = useMemo(() => favoriteIds.includes(courseId), [favoriteIds, courseId]);
 
   // Edit modal state
   const [showEditModal, setShowEditModal] = useState(false);
@@ -103,7 +112,7 @@ export default function CourseDetailScreen() {
     setShowEditModal(true);
   }, [selectedCourse]);
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = useCallback(async () => {
     if (!selectedCourse || editTitle.trim().length < 1) {
       Alert.alert(t('course.detail.titleCheck'), t('course.detail.enterTitle'));
       return;
@@ -127,7 +136,7 @@ export default function CourseDetailScreen() {
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [selectedCourse, editTitle, editDescription, editPublic, editCourseType, editLapCount, courseId, fetchCourseDetail, t]);
 
   // Tap animation scales
   const likeScale = useRef(new Animated.Value(1)).current;
@@ -170,14 +179,26 @@ export default function CourseDetailScreen() {
     }));
   }, [selectedCourse]);
 
-  const handleRunThisCourse = () => {
+  // Convert GeoJSON coordinates to route points for map display (must be before early returns)
+  const routePoints = useMemo(() =>
+    selectedCourse?.route_geometry?.coordinates?.map(
+      ([lng, lat]: [number, number, number]) => ({
+        latitude: lat,
+        longitude: lng,
+      }),
+    ) ?? [],
+    [selectedCourse?.route_geometry],
+  );
+
+  const handleRunThisCourse = useCallback(() => {
     // Set pending course so WorldScreen focuses on it with 3D preview
     useCourseStore.getState().setPendingFocusCourseId(courseId);
-    // Navigate to WorldTab → World screen (pops any stacked screens like CourseDetail)
-    (navigation as any).getParent()?.navigate('WorldTab', { screen: 'World' });
-  };
+    // navigate() automatically traverses up the hierarchy:
+    // CourseStack (no 'WorldTab') → Tab navigator (has 'WorldTab') → switches tab
+    (navigation as any).navigate('WorldTab', { screen: 'World' });
+  }, [courseId, navigation]);
 
-  const handleDeleteCourse = () => {
+  const handleDeleteCourse = useCallback(() => {
     Alert.alert(
       t('course.detail.deleteTitle'),
       t('course.detail.deleteMsg'),
@@ -198,7 +219,34 @@ export default function CourseDetailScreen() {
         },
       ],
     );
-  };
+  }, [courseId, deleteMyCourse, navigation, t]);
+
+  const handleNavigateToCrewDetail = useCallback((crewId: string) => {
+    navigation.navigate('CrewDetail', { crewId });
+  }, [navigation]);
+
+  const handleReviewInputFocus = useCallback(() => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 300);
+  }, []);
+
+  const handleStartRaid = useCallback(async () => {
+    if (!pendingSelectForRaid || isStartingRaid) return;
+    setIsStartingRaid(true);
+    try {
+      const crewId = pendingSelectForRaid;
+      await crewChallengeService.createChallenge(crewId, courseId);
+      useCourseStore.getState().setPendingSelectForRaid(null);
+      Alert.alert(t('raid.raidStarted'), t('raid.raidStartedDesc'));
+      // Navigate back to CrewDetail in HomeTab
+      (navigation as any).navigate('HomeTab', { screen: 'CrewDetail', params: { crewId } });
+    } catch {
+      Alert.alert(t('common.errorTitle'), t('common.error'));
+    } finally {
+      setIsStartingRaid(false);
+    }
+  }, [pendingSelectForRaid, isStartingRaid, courseId, navigation, t]);
 
   if (isLoadingDetail) {
     return (
@@ -233,14 +281,6 @@ export default function CourseDetailScreen() {
 
   const course = selectedCourse;
   const stats = selectedCourseStats;
-
-  // Convert GeoJSON coordinates to route points for map display
-  const routePoints = course.route_geometry?.coordinates?.map(
-    ([lng, lat]: [number, number, number]) => ({
-      latitude: lat,
-      longitude: lng,
-    }),
-  ) ?? [];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -375,6 +415,18 @@ export default function CourseDetailScreen() {
           </View>
         </View>
 
+        {/* Elevation Profile Chart */}
+        {course.elevation_profile && course.elevation_profile.length > 2 && (
+          <View style={styles.statsCard}>
+            <Text style={styles.sectionTitle}>{t('course.detail.elevationProfile')}</Text>
+            <ElevationProfileChart
+              elevationProfile={course.elevation_profile}
+              width={Dimensions.get('window').width - 32}
+              height={120}
+            />
+          </View>
+        )}
+
         {/* Course Stats */}
         {stats && (
           <View style={styles.statsCard}>
@@ -458,35 +510,96 @@ export default function CourseDetailScreen() {
           </View>
         )}
 
-        {/* Leaderboard with rank badges */}
-        {selectedCourseRankings.length > 0 && (
-          <View style={styles.rankingSection}>
-            <View style={styles.rankingHeader}>
-              <Text style={styles.sectionTitle}>{t('course.detail.leaderboard')}</Text>
-              <Text style={styles.rankingCount}>
-                TOP {selectedCourseRankings.length}
-              </Text>
-            </View>
-            {selectedCourseRankings.map((entry: RankingEntry) => (
-              <RankingRow
-                key={`${entry.rank}-${entry.user.id}`}
-                entry={entry}
-                isMe={entry.user.id === currentUser?.id}
-              />
-            ))}
+        {/* Leaderboard with Individual / Crew tabs */}
+        <View style={styles.rankingSection}>
+          <View style={styles.rankingHeader}>
+            <Text style={styles.sectionTitle}>{t('course.detail.leaderboard')}</Text>
+            <Text style={styles.rankingCount}>
+              {rankingTab === 'individual'
+                ? `TOP ${selectedCourseRankings.length}`
+                : `${selectedCourseCrewRankings.length} ${t('ranking.crew')}`}
+            </Text>
           </View>
-        )}
+
+          {/* Tab Selector */}
+          <View style={styles.rankingTabRow}>
+            <TouchableOpacity
+              style={[styles.rankingTabBtn, rankingTab === 'individual' && styles.rankingTabBtnActive]}
+              onPress={() => setRankingTab('individual')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.rankingTabText, rankingTab === 'individual' && styles.rankingTabTextActive]}>
+                {t('ranking.individual')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.rankingTabBtn, rankingTab === 'crew' && styles.rankingTabBtnActive]}
+              onPress={() => setRankingTab('crew')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.rankingTabText, rankingTab === 'crew' && styles.rankingTabTextActive]}>
+                {t('ranking.crew')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Individual Rankings */}
+          {rankingTab === 'individual' && (
+            selectedCourseRankings.length > 0 ? (
+              selectedCourseRankings.map((entry: RankingEntry) => (
+                <RankingRow
+                  key={`${entry.rank}-${entry.user.id}`}
+                  entry={entry}
+                  isMe={entry.user.id === currentUser?.id}
+                />
+              ))
+            ) : (
+              <View style={styles.groupRankEmpty}>
+                <Ionicons name="trophy-outline" size={32} color={colors.textTertiary} />
+                <Text style={styles.groupRankEmptyText}>{t('course.detail.noRankings')}</Text>
+              </View>
+            )
+          )}
+
+          {/* Crew Rankings */}
+          {rankingTab === 'crew' && (
+            <>
+              {selectedCourseCrewRankings.length === 0 && selectedCourseMyCrewRankings.length === 0 ? (
+                <View style={styles.groupRankEmpty}>
+                  <Ionicons name="people-outline" size={32} color={colors.textTertiary} />
+                  <Text style={styles.groupRankEmptyText}>{t('ranking.noCrewRankings')}</Text>
+                </View>
+              ) : (
+                <>
+                  {/* My crews first (if not already in main list) */}
+                  {selectedCourseMyCrewRankings.map((entry) => (
+                    <CrewRankingRow
+                      key={`my-${entry.crew_id}`}
+                      entry={entry}
+                      isMyCrew
+                      onPress={() => handleNavigateToCrewDetail(entry.crew_id)}
+                    />
+                  ))}
+                  {selectedCourseCrewRankings.map((entry) => (
+                    <CrewRankingRow
+                      key={entry.crew_id}
+                      entry={entry}
+                      isMyCrew={false}
+                      onPress={() => handleNavigateToCrewDetail(entry.crew_id)}
+                    />
+                  ))}
+                </>
+              )}
+            </>
+          )}
+        </View>
 
         {/* Reviews */}
         <ReviewSection
           courseId={courseId}
           creatorId={course.creator.id}
           currentUserId={currentUser?.id}
-          onInputFocus={() => {
-            setTimeout(() => {
-              scrollViewRef.current?.scrollToEnd({ animated: true });
-            }, 300);
-          }}
+          onInputFocus={handleReviewInputFocus}
         />
       </ScrollView>
       </KeyboardAvoidingView>
@@ -589,41 +702,126 @@ export default function CourseDetailScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* Bottom CTA: Competition challenge */}
+      {/* Bottom CTA: Raid or Competition challenge */}
       <View style={styles.bottomCta}>
-        {/* Show gap to 1st place if user has a record */}
-        {stats && selectedCourseMyBest && (
-          <View style={styles.challengeInfo}>
-            <Text style={styles.challengeLabel}>{t('course.detail.firstRecord')}</Text>
-            <Text style={styles.challengeRecord}>
-              {formatDuration(stats.best_duration_seconds)}
+        {pendingSelectForRaid ? (
+          <TouchableOpacity
+            style={styles.startRaidBtn}
+            onPress={handleStartRaid}
+            activeOpacity={0.8}
+            disabled={isStartingRaid}
+          >
+            {isStartingRaid ? (
+              <ActivityIndicator size="small" color={colors.white} style={{ marginRight: SPACING.sm }} />
+            ) : (
+              <Ionicons
+                name="flash"
+                size={20}
+                color={colors.white}
+                style={{ marginRight: SPACING.sm }}
+              />
+            )}
+            <Text style={styles.startRaidBtnText}>
+              {t('raid.startRaid')}
             </Text>
-            <Text style={styles.challengeGap}>
-              {t('course.detail.gap', { gap: formatDuration(selectedCourseMyBest.duration_seconds - stats.best_duration_seconds) })}
-            </Text>
-          </View>
+          </TouchableOpacity>
+        ) : (
+          <>
+            {/* Show gap to 1st place if user has a record */}
+            {stats && selectedCourseMyBest && (
+              <View style={styles.challengeInfo}>
+                <Text style={styles.challengeLabel}>{t('course.detail.firstRecord')}</Text>
+                <Text style={styles.challengeRecord}>
+                  {formatDuration(stats.best_duration_seconds)}
+                </Text>
+                <Text style={styles.challengeGap}>
+                  {t('course.detail.gap', { gap: formatDuration(selectedCourseMyBest.duration_seconds - stats.best_duration_seconds) })}
+                </Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={styles.ctaButton}
+              onPress={handleRunThisCourse}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="globe-outline"
+                size={20}
+                color={colors.white}
+                style={{ marginRight: SPACING.sm }}
+              />
+              <Text style={styles.ctaButtonText}>
+                {t('course.detail.viewInWorld')}
+              </Text>
+            </TouchableOpacity>
+          </>
         )}
-        <TouchableOpacity
-          style={styles.ctaButton}
-          onPress={handleRunThisCourse}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name="globe-outline"
-            size={20}
-            color={colors.white}
-            style={{ marginRight: SPACING.sm }}
-          />
-          <Text style={styles.ctaButtonText}>
-            {t('course.detail.viewInWorld')}
-          </Text>
-        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
-// ---- Sub-component ----
+// ---- Sub-components ----
+
+const CrewRankingRow = React.memo(function CrewRankingRow({
+  entry,
+  isMyCrew = false,
+  onPress,
+}: {
+  entry: CrewCourseRankingEntry;
+  isMyCrew?: boolean;
+  onPress?: () => void;
+}) {
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { t } = useTranslation();
+
+  const RANK_COLORS = [colors.gold, colors.silver, colors.bronze];
+  const isTop3 = entry.rank <= 3;
+  const rankColor = isTop3 ? RANK_COLORS[entry.rank - 1] : colors.surfaceLight;
+
+  return (
+    <TouchableOpacity
+      style={[styles.rankingRow, isMyCrew && styles.rankingRowMe]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Text style={[styles.rankNum, { color: isTop3 ? rankColor : colors.textSecondary }]}>
+        {entry.rank}
+      </Text>
+
+      {/* Crew logo */}
+      <View style={styles.groupAvatarStack}>
+        {entry.crew_logo_url ? (
+          <Image source={{ uri: entry.crew_logo_url }} style={styles.groupAvatarImg} />
+        ) : (
+          <View style={styles.groupAvatarCircle}>
+            <Ionicons name="people" size={12} color={colors.textTertiary} />
+          </View>
+        )}
+      </View>
+
+      <View style={styles.rankInfo}>
+        <Text style={[styles.rankNickname, isMyCrew && styles.rankNicknameMe]}>
+          {entry.crew_name}
+          {isMyCrew ? '  (ME)' : ''}
+        </Text>
+        <Text style={styles.rankCrewName}>
+          {entry.completed_count}/{entry.total_participants}
+        </Text>
+      </View>
+
+      <View style={styles.rankStats}>
+        <Text style={styles.rankPace}>
+          {formatDuration(entry.avg_duration_seconds)}
+        </Text>
+        <Text style={styles.rankDuration}>
+          {t('ranking.avgTime')}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
 
 const RankingRow = React.memo(function RankingRow({ entry, isMe = false }: { entry: RankingEntry; isMe?: boolean }) {
   const colors = useTheme();
@@ -986,6 +1184,86 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     color: c.textTertiary,
     fontVariant: ['tabular-nums'],
+  },
+
+  // -- Ranking Tabs --
+  rankingTabRow: {
+    flexDirection: 'row',
+    backgroundColor: c.surfaceLight,
+    borderRadius: BORDER_RADIUS.md,
+    padding: 2,
+    marginBottom: SPACING.sm,
+  },
+  rankingTabBtn: {
+    flex: 1,
+    paddingVertical: SPACING.sm,
+    alignItems: 'center',
+    borderRadius: BORDER_RADIUS.sm,
+  },
+  rankingTabBtnActive: {
+    backgroundColor: c.card,
+    ...SHADOWS.sm,
+  },
+  rankingTabText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: c.textSecondary,
+  },
+  rankingTabTextActive: {
+    color: c.text,
+    fontWeight: '700',
+  },
+
+  // -- Crew Rankings --
+  groupRankEmpty: {
+    alignItems: 'center',
+    paddingVertical: SPACING.xxl,
+    gap: SPACING.sm,
+  },
+  groupRankEmptyText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '600',
+    color: c.textSecondary,
+  },
+  groupAvatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: SPACING.sm,
+  },
+  groupAvatarCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: c.surfaceLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: c.card,
+  },
+  groupAvatarImg: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+  },
+  groupAvatarMore: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: c.textSecondary,
+  },
+  startRaidBtn: {
+    flexDirection: 'row',
+    backgroundColor: c.accent,
+    borderRadius: BORDER_RADIUS.lg,
+    paddingVertical: SPACING.lg + 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOWS.md,
+  },
+  startRaidBtnText: {
+    fontSize: FONT_SIZES.xl,
+    fontWeight: '800',
+    color: c.white,
+    letterSpacing: 0.5,
   },
 
   // -- Bottom CTA: Competition challenge --

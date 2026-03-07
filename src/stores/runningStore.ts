@@ -31,9 +31,13 @@ interface RunningState {
 
   // GPS
   gpsStatus: GPSStatus;
+  gpsAccuracy: number | null;
   currentLocation: LocationUpdateEvent | null;
   routePoints: Array<{ latitude: number; longitude: number }>;
   filteredLocations: FilteredLocation[];
+
+  // Course deviation log (for result screen visualization)
+  deviationLog: Array<{ index: number; deviation: number }>;
 
   // Splits
   splits: Split[];
@@ -50,6 +54,9 @@ interface RunningState {
   // Chunk tracking
   chunkSequence: number;
   lastChunkTimestamp: number;
+  lastChunkDistance: number;
+  lastChunkPointIndex: number;
+  uploadedChunkSequences: number[];
 
   // Loop detection (free running only)
   startPoint: { latitude: number; longitude: number } | null;
@@ -73,13 +80,19 @@ interface RunningState {
   isAutoPaused: boolean;
 
   // Run goal
-  runGoal: { type: 'distance' | 'time' | 'pace' | null; value: number | null };
+  runGoal: {
+    type: 'distance' | 'time' | 'pace' | 'program' | null;
+    value: number | null;
+    targetTime?: number | null;
+    cadenceBPM?: number | null;
+  };
 
   // Actions
   startSession: (sessionId: string, courseId: string | null) => void;
   updateSessionId: (serverSessionId: string) => void;
   updateLocation: (event: LocationUpdateEvent) => void;
-  updateGPSStatus: (status: GPSStatus) => void;
+  updateGPSStatus: (status: GPSStatus, accuracy?: number | null) => void;
+  addDeviationPoint: (index: number, deviation: number) => void;
   updateDuration: (seconds: number) => void;
   pause: () => void;
   resume: () => void;
@@ -87,12 +100,13 @@ interface RunningState {
   reset: () => void;
   addSplit: (split: Split) => void;
   incrementChunkSequence: () => void;
+  markChunkUploaded: (sequence: number, pointIndex: number, distance: number) => void;
   setPhase: (phase: RunningPhase) => void;
   updateHeartRate: (bpm: number) => void;
   setWatchConnected: (connected: boolean) => void;
   setCheckpointPasses: (passes: CheckpointPass[]) => void;
   setAutoPaused: (paused: boolean) => void;
-  setRunGoal: (goal: { type: 'distance' | 'time' | 'pace' | null; value: number | null }) => void;
+  setRunGoal: (goal: { type: 'distance' | 'time' | 'pace' | 'program' | null; value: number | null; targetTime?: number | null; cadenceBPM?: number | null }) => void;
 }
 
 export const useRunningStore = create<RunningState>((set, get) => ({
@@ -111,9 +125,11 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   cadence: 0,
 
   gpsStatus: 'searching',
+  gpsAccuracy: null,
   currentLocation: null,
   routePoints: [],
   filteredLocations: [],
+  deviationLog: [],
 
   splits: [],
   currentSplitDistance: 0,
@@ -126,6 +142,9 @@ export const useRunningStore = create<RunningState>((set, get) => ({
 
   chunkSequence: 0,
   lastChunkTimestamp: 0,
+  lastChunkDistance: 0,
+  lastChunkPointIndex: 0,
+  uploadedChunkSequences: [],
 
   startPoint: null,
   distanceToStart: 0,
@@ -140,7 +159,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   startTime: null,
   elapsedBeforePause: 0,
   isAutoPaused: false,
-  runGoal: { type: null, value: null },
+  runGoal: { type: null, value: null, targetTime: null, cadenceBPM: null },
 
   startSession: (sessionId, courseId) => {
     set({
@@ -159,6 +178,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       currentLocation: null,
       routePoints: [],
       filteredLocations: [],
+      deviationLog: [],
       splits: [],
       currentSplitDistance: 0,
       pauseIntervals: [],
@@ -167,6 +187,9 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       watchConnected: false,
       chunkSequence: 0,
       lastChunkTimestamp: Date.now(),
+      lastChunkDistance: 0,
+      lastChunkPointIndex: 0,
+      uploadedChunkSequences: [],
       startTime: Date.now(),
       elapsedBeforePause: 0,
       startPoint: null,
@@ -193,6 +216,25 @@ export const useRunningStore = create<RunningState>((set, get) => ({
     const currentPos = { latitude: event.latitude, longitude: event.longitude };
     const newRoutePoints = [...state.routePoints, currentPos];
 
+    // Build filtered location for chunk upload (rich GPS data for server)
+    // After chunk upload trims filteredLocations, fall back to lastChunkDistance
+    // so distanceFromPrevious stays incremental (not cumulative from 0).
+    const prevDistance = state.filteredLocations.length > 0
+      ? state.filteredLocations[state.filteredLocations.length - 1].cumulativeDistance
+      : state.lastChunkDistance;
+    const newFilteredLocation: FilteredLocation = {
+      latitude: event.latitude,
+      longitude: event.longitude,
+      altitude: event.altitude,
+      speed: event.speed,
+      bearing: event.bearing,
+      timestamp: event.timestamp,
+      distanceFromPrevious: event.distanceFromStart - prevDistance,
+      cumulativeDistance: event.distanceFromStart,
+      isInterpolated: false,
+    };
+    const newFilteredLocations = [...state.filteredLocations, newFilteredLocation];
+
     // --- Auto-pause: freeze timer when stationary ---
     const { autoPause } = useSettingsStore.getState();
     let { isAutoPaused } = state;
@@ -202,7 +244,9 @@ export const useRunningStore = create<RunningState>((set, get) => ({
     // Grace period: don't auto-pause within the first 15 seconds of a run.
     // Prevents immediate pause when standing still at start (common during testing
     // and real use — user may not be moving right after countdown ends).
-    const gracePeriodOver = state.durationSeconds >= 15;
+    // Use startTime-based elapsed to avoid dependency on async durationSeconds updates.
+    const elapsed = startTime ? (Date.now() - startTime) / 1000 + elapsedBeforePause : elapsedBeforePause;
+    const gracePeriodOver = elapsed >= 15;
 
     if (autoPause && gracePeriodOver) {
       if (!event.isMoving && !isAutoPaused) {
@@ -234,11 +278,11 @@ export const useRunningStore = create<RunningState>((set, get) => ({
     // Use distance / speed integral instead: track "moving time" separately
     // is complex, so use the simple fix: if not moving, keep previous avgPace.
     const distance = event.distanceFromStart;
-    const elapsed = state.durationSeconds;
+    const elapsedDuration = state.durationSeconds;
     let avgPace = state.avgPaceSecondsPerKm;
     if (event.speed > 0.3 && distance > 0) {
       // Only update avg pace when actually moving
-      avgPace = (elapsed / distance) * 1000;
+      avgPace = (elapsedDuration / distance) * 1000;
     } else if (distance <= 0) {
       avgPace = 0;
     }
@@ -285,6 +329,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       currentPaceSecondsPerKm: currentPace,
       avgPaceSecondsPerKm: avgPace,
       routePoints: newRoutePoints,
+      filteredLocations: newFilteredLocations,
       calories: caloriesBurned,
       cadence: event.cadence ?? state.cadence,
       elevationGainMeters: event.elevationGain ?? state.elevationGainMeters,
@@ -304,8 +349,23 @@ export const useRunningStore = create<RunningState>((set, get) => ({
     });
   },
 
-  updateGPSStatus: (status) => {
-    set({ gpsStatus: status });
+  updateGPSStatus: (status, accuracy) => {
+    set({ gpsStatus: status, ...(accuracy !== undefined ? { gpsAccuracy: accuracy ?? null } : {}) });
+  },
+
+  addDeviationPoint: (index, deviation) => {
+    const OFF_THRESHOLD = 30;
+    const log = get().deviationLog;
+    const isOff = deviation > OFF_THRESHOLD;
+    const lastEntry = log.length > 0 ? log[log.length - 1] : null;
+    const wasOff = lastEntry ? lastEntry.deviation > OFF_THRESHOLD : false;
+
+    // RLE: only store state transitions (on↔off) or every 10th point
+    if (isOff !== wasOff || index % 10 === 0) {
+      set((state) => ({
+        deviationLog: [...state.deviationLog, { index, deviation }],
+      }));
+    }
   },
 
   updateDuration: (seconds) => {
@@ -316,10 +376,15 @@ export const useRunningStore = create<RunningState>((set, get) => ({
     const state = get();
     if (state.phase !== 'running' || state.isPaused) return;
 
+    // Record pause timestamp and freeze timer atomically
+    const now = new Date().toISOString();
     set({
       isPaused: true,
       phase: 'paused',
       elapsedBeforePause: state.durationSeconds,
+      startTime: null,
+      // Start a new pause interval (resumed_at will be filled on resume)
+      pauseIntervals: [...state.pauseIntervals, { paused_at: now, resumed_at: '' }],
     });
   },
 
@@ -327,8 +392,14 @@ export const useRunningStore = create<RunningState>((set, get) => ({
     const state = get();
     if (state.phase !== 'paused') return;
 
+    // Finalize the last pause interval with the resume timestamp
+    const now = new Date().toISOString();
     const pauseIntervals = [...state.pauseIntervals];
-    // The pause interval will be finalized when we have the resume timestamp
+    if (pauseIntervals.length > 0) {
+      const last = pauseIntervals[pauseIntervals.length - 1];
+      pauseIntervals[pauseIntervals.length - 1] = { ...last, resumed_at: now };
+    }
+
     set({
       isPaused: false,
       phase: 'running',
@@ -344,7 +415,17 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       : state.routePoints.length > 0
         ? state.routePoints[state.routePoints.length - 1]
         : null;
-    set({ phase: 'completed', isPaused: false, stopLocation: stopLoc });
+
+    // Finalize any open pause interval (user stopped while paused)
+    const pauseIntervals = [...state.pauseIntervals];
+    if (pauseIntervals.length > 0) {
+      const last = pauseIntervals[pauseIntervals.length - 1];
+      if (!last.resumed_at) {
+        pauseIntervals[pauseIntervals.length - 1] = { ...last, resumed_at: new Date().toISOString() };
+      }
+    }
+
+    set({ phase: 'completed', isPaused: false, stopLocation: stopLoc, pauseIntervals });
   },
 
   reset: () => {
@@ -373,6 +454,9 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       watchConnected: false,
       chunkSequence: 0,
       lastChunkTimestamp: 0,
+      lastChunkDistance: 0,
+      lastChunkPointIndex: 0,
+      uploadedChunkSequences: [],
       startPoint: null,
       distanceToStart: 0,
       isApproachingStart: false,
@@ -384,7 +468,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       startTime: null,
       elapsedBeforePause: 0,
       isAutoPaused: false,
-      runGoal: { type: null, value: null },
+      runGoal: { type: null, value: null, targetTime: null, cadenceBPM: null },
     });
   },
 
@@ -398,6 +482,18 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   incrementChunkSequence: () => {
     set((state) => ({
       chunkSequence: state.chunkSequence + 1,
+      lastChunkTimestamp: Date.now(),
+    }));
+  },
+
+  markChunkUploaded: (sequence, pointIndex, distance) => {
+    set((state) => ({
+      uploadedChunkSequences: [...state.uploadedChunkSequences, sequence],
+      // Trim already-uploaded points to prevent unbounded memory growth
+      // on long runs. Reset index to 0 since the array is sliced.
+      filteredLocations: state.filteredLocations.slice(pointIndex),
+      lastChunkPointIndex: 0,
+      lastChunkDistance: distance,
       lastChunkTimestamp: Date.now(),
     }));
   },

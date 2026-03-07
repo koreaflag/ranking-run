@@ -1,9 +1,10 @@
 """Community endpoints: posts, comments, likes."""
 
+import logging
 from uuid import UUID
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
 from app.core.container import Container
 from app.core.deps import CurrentUser, DbSession
@@ -19,6 +20,9 @@ from app.schemas.community import (
     CommunityPostUpdateRequest,
 )
 from app.services.community_service import CommunityService
+from app.services.notification_service import NotificationService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/community", tags=["community"])
 
@@ -165,8 +169,12 @@ async def create_comment(
     body: CommunityCommentCreateRequest,
     current_user: CurrentUser,
     db: DbSession,
+    bg: BackgroundTasks,
     community_service: CommunityService = Depends(
         Provide[Container.community_service]
+    ),
+    notification_service: NotificationService = Depends(
+        Provide[Container.notification_service]
     ),
 ) -> CommunityCommentResponse:
     """Create a comment on a post."""
@@ -176,6 +184,21 @@ async def create_comment(
         user_id=current_user.id,
         content=body.content,
     )
+
+    # Notify post author (skip if commenter is author)
+    post_author_id = comment.get("post_author_id")
+    if post_author_id and str(post_author_id) != str(current_user.id):
+        try:
+            await notification_service.send_to_user(
+                db,
+                UUID(str(post_author_id)),
+                title=current_user.nickname or "누군가",
+                body="님이 댓글을 남겼습니다",
+                data={"type": "post_comment", "post_id": str(post_id)},
+            )
+        except Exception:
+            logger.warning("Failed to send comment notification for post %s", post_id)
+
     return CommunityCommentResponse(**comment)
 
 
@@ -209,9 +232,26 @@ async def toggle_like(
     community_service: CommunityService = Depends(
         Provide[Container.community_service]
     ),
+    notification_service: NotificationService = Depends(
+        Provide[Container.notification_service]
+    ),
 ) -> CommunityLikeResponse:
     """Toggle a like on a community post."""
-    is_liked, like_count = await community_service.toggle_like(
+    is_liked, like_count, post_author_id = await community_service.toggle_like(
         db=db, post_id=post_id, user_id=current_user.id
     )
+
+    # Notify post author on like (not unlike, not self)
+    if is_liked and post_author_id and str(post_author_id) != str(current_user.id):
+        try:
+            await notification_service.send_to_user(
+                db,
+                post_author_id,
+                title=current_user.nickname or "누군가",
+                body="님이 회원님의 게시글을 좋아합니다",
+                data={"type": "post_like", "post_id": str(post_id)},
+            )
+        except Exception:
+            logger.warning("Failed to send like notification for post %s", post_id)
+
     return CommunityLikeResponse(is_liked=is_liked, like_count=like_count)

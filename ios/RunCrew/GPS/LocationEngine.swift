@@ -16,6 +16,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
     private var previousCumulativeDistance: Double = 0
     private var lastFilteredLocation: FilteredLocation?
     private var coldStartTimer: Timer?
+    private var gpsLostTimer: Timer?
     private var gpsLostTime: Date?
     private var baseAltitude: Double?
 
@@ -123,6 +124,8 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         batteryOptimizer?.reset()
         coldStartTimer?.invalidate()
         coldStartTimer = nil
+        gpsLostTimer?.invalidate()
+        gpsLostTimer = nil
         stopBackgroundExecution()
 
         DispatchQueue.main.async { [weak self] in
@@ -136,11 +139,18 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
     func pauseTracking() {
         session.pause()
+        // Cancel cold start timer during pause to prevent false GPS lock
+        coldStartTimer?.invalidate()
+        coldStartTimer = nil
     }
 
     func resumeTracking() {
         session.resume()
         batteryOptimizer?.reset()
+        // Restart cold start timer if GPS was still acquiring
+        if session.state == .starting {
+            startColdStartTimer()
+        }
     }
 
     /// Start heading-only updates (no GPS tracking). Used for compass on WorldScreen.
@@ -169,6 +179,61 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
     func getFilteredRoute() -> [[String: Any]] {
         return session.filteredLocations.map { $0.toDictionary() }
+    }
+
+    /// RTS Backward Smoother: post-run route correction using future data.
+    /// Returns smoothed route and recalculated total distance.
+    func getSmoothedRoute() -> (route: [[String: Any]], distance: Double) {
+        let smoothed = kalmanFilter.smoothRoute()
+        guard smoothed.count >= 2 else {
+            // Not enough data — return original route
+            return (route: session.filteredLocations.map { $0.toDictionary() },
+                    distance: cumulativeDistance)
+        }
+
+        // Sanity: if reinit cleared history mid-run, smoothed covers only partial route.
+        // Fall back to original route to avoid reporting truncated distance.
+        let origCount = session.filteredLocations.count
+        if origCount > 10 && smoothed.count < origCount / 2 {
+            kalmanFilter.clearHistory()
+            return (route: session.filteredLocations.map { $0.toDictionary() },
+                    distance: cumulativeDistance)
+        }
+
+        // Rebuild route from self-contained smoothed data (no index alignment needed)
+        var result: [[String: Any]] = []
+        var totalDist: Double = 0
+
+        for i in 0..<smoothed.count {
+            let s = smoothed[i]
+            var distFromPrev: Double = 0
+
+            if i > 0 {
+                let prev = smoothed[i - 1]
+                distFromPrev = GeoMath.distance(
+                    lat1: prev.lat, lon1: prev.lon,
+                    lat2: s.lat, lon2: s.lon
+                )
+                // Apply same minimum threshold as live tracking
+                if distFromPrev < 0.3 { distFromPrev = 0 }
+                totalDist += distFromPrev
+            }
+
+            result.append([
+                "latitude": s.lat,
+                "longitude": s.lon,
+                "altitude": s.alt,
+                "speed": s.speed,
+                "bearing": s.bearing,
+                "timestamp": s.timestamp,
+                "distanceFromPrevious": distFromPrev,
+                "cumulativeDistance": totalDist,
+                "isInterpolated": false
+            ])
+        }
+
+        kalmanFilter.clearHistory()
+        return (route: result, distance: totalDist)
     }
 
     func getCurrentStatus() -> String {
@@ -220,9 +285,14 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             lastHeading = newHeading.magneticHeading
         }
 
-        // Emit heading event (for standalone compass use on WorldScreen etc.)
+        // Emit heading event with full accuracy data for JS layer
         if lastHeading >= 0 {
-            onHeadingUpdate?(["heading": lastHeading])
+            onHeadingUpdate?([
+                "heading": lastHeading,
+                "accuracy": newHeading.headingAccuracy,
+                "trueHeading": newHeading.trueHeading,
+                "magneticHeading": newHeading.magneticHeading
+            ])
         }
     }
 
@@ -259,15 +329,45 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
                 session.markLocked()
                 coldStartTimer?.invalidate()
                 coldStartTimer = nil
-                updateGPSStatus("locked")
+                updateGPSStatus("locked", accuracy: location.horizontalAccuracy)
             } else {
-                return // Still waiting for GPS lock
+                // Still waiting — send accuracy update for UI
+                updateGPSStatus("searching", accuracy: location.horizontalAccuracy)
+                return
             }
+        }
+
+        // Send live accuracy while running
+        if session.state == .running {
+            updateGPSStatus("locked", accuracy: location.horizontalAccuracy)
+        }
+
+        // Reset GPS lost timer — restart 10s countdown
+        gpsLostTimer?.invalidate()
+        gpsLostTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { [weak self] _ in
+            guard let self = self, self.session.state == .running else { return }
+            self.gpsLostTime = Date()
+            self.updateGPSStatus("lost")
         }
 
         // Update sensor fusion with GPS data
         sensorFusion.onGPSUpdate(validLocation)
         gpsLostTime = nil
+
+        // Spike detection: reject physically impossible jumps BEFORE kalman update
+        // to prevent kalman state corruption from bad data
+        if let lastLoc = lastFilteredLocation {
+            let rawDist = GeoMath.distance(
+                lat1: lastLoc.latitude, lon1: lastLoc.longitude,
+                lat2: validLocation.coordinate.latitude, lon2: validLocation.coordinate.longitude
+            )
+            let timeDelta = (validLocation.timestamp.timeIntervalSince1970 * 1000 - lastLoc.timestamp) / 1000.0
+            // 10 m/s generous limit (raw GPS can overshoot vs filtered position)
+            let maxPlausibleDist = max(10.0 * max(timeDelta, 0.1), 5.0)
+            if rawDist > maxPlausibleDist {
+                return
+            }
+        }
 
         // Update Kalman Filter process noise from motion data
         kalmanFilter.updateProcessNoise(
@@ -324,13 +424,14 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             batteryOptimizer?.onMoving()
         }
 
-        // Calculate distance
+        // Calculate distance (spike already rejected above)
         var distanceFromPrevious: Double = 0
         if let lastLoc = lastFilteredLocation {
             let rawDist = GeoMath.distance(
                 lat1: lastLoc.latitude, lon1: lastLoc.longitude,
                 lat2: filtered.lat, lon2: filtered.lon
             )
+
             if stationaryDetector.isStationary {
                 // Safety net: if detector says stationary but movement is clearly
                 // significant (> 2m), the detector is wrong — still count distance
@@ -395,12 +496,12 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
     // MARK: - GPS Status
 
-    private func updateGPSStatus(_ status: String) {
-        guard status != currentGPSStatus else { return }
+    private func updateGPSStatus(_ status: String, accuracy: Double? = nil) {
+        guard status != currentGPSStatus || accuracy != nil else { return }
         currentGPSStatus = status
         let event: [String: Any] = [
             "status": status,
-            "accuracy": NSNull(),
+            "accuracy": accuracy.map { $0 as Any } ?? (NSNull() as Any),
             "satelliteCount": -1
         ]
         onGPSStatusChange?(event)

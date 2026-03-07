@@ -14,7 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -60,6 +60,12 @@ class Crew(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     requires_approval: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    grade_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    last_activity_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=True,
+    )
 
     # Relationships
     owner: Mapped["User"] = relationship("User", lazy="joined")
@@ -90,6 +96,9 @@ class CrewMember(Base, UUIDPrimaryKeyMixin):
     )
     role: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="'member'"
+    )
+    grade_level: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="1"
     )
     joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

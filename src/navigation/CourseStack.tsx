@@ -5,6 +5,7 @@ import CourseListScreen from '../screens/course/CourseListScreen';
 import CourseSearchScreen from '../screens/course/CourseSearchScreen';
 import CourseDetailScreen from '../screens/course/CourseDetailScreen';
 import CourseCreateScreen from '../screens/course/CourseCreateScreen';
+import CrewDetailScreen from '../screens/crew/CrewDetailScreen';
 import UserProfileScreen from '../screens/profile/UserProfileScreen';
 import RunningScreen from '../screens/running/RunningScreen';
 import RunResultScreen from '../screens/running/RunResultScreen';
@@ -26,6 +27,7 @@ export default function CourseStack() {
       <Stack.Screen name="CourseSearch" component={CourseSearchScreen} />
       <Stack.Screen name="CourseDetail" component={CourseDetailScreen} />
       <Stack.Screen name="CourseCreate" component={CourseCreateScreen} />
+      <Stack.Screen name="CrewDetail" component={CrewDetailScreen} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
       <Stack.Screen name="RunningMain" component={RunningScreen} options={{ gestureEnabled: false }} />
       <Stack.Screen name="RunResult" component={RunResultScreen} />

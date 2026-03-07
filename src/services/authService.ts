@@ -100,7 +100,9 @@ export const authService = {
     const formData = new FormData();
     const filename = fileUri.split('/').pop() ?? 'avatar.jpg';
     const match = /\.(\w+)$/.exec(filename);
-    const type = match ? `image/${match[1]}` : 'image/jpeg';
+    const ext = match ? match[1].toLowerCase() : 'jpeg';
+    const mimeMap: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+    const type = mimeMap[ext] ?? 'image/jpeg';
 
     formData.append('file', {
       uri: fileUri,

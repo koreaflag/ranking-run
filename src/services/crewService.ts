@@ -8,6 +8,7 @@ import type {
   CrewJoinRequestItem,
   CrewJoinRequestListResponse,
   MyJoinRequestStatus,
+  CrewManagementStats,
 } from '../types/api';
 
 class CrewService {
@@ -117,6 +118,16 @@ class CrewService {
   async getPendingRequestCount(crewId: string): Promise<number> {
     const res = await api.get<{ count: number }>(`/crews/${crewId}/join-requests/count`);
     return res.count;
+  }
+
+  // ---- Grade Management ----
+
+  async updateMemberGrade(crewId: string, userId: string, gradeLevel: number): Promise<CrewMemberItem> {
+    return api.patch<CrewMemberItem>(`/crews/${crewId}/members/${userId}/grade`, { grade_level: gradeLevel });
+  }
+
+  async getManagementStats(crewId: string): Promise<CrewManagementStats> {
+    return api.get<CrewManagementStats>(`/crews/${crewId}/management/stats`);
   }
 
   async uploadImage(fileUri: string): Promise<string> {

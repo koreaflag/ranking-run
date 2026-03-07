@@ -8,22 +8,30 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Alert,
+  ActionSheetIOS,
+  Platform,
   RefreshControl,
   Image,
   Dimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useNavigation, useRoute, useFocusEffect, type RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import type { HomeStackParamList } from '../../types/navigation';
-import type { CrewItem, CrewMemberItem, CrewJoinRequestItem, CommunityPostItem } from '../../types/api';
+import type { CrewItem, CrewMemberItem, CrewJoinRequestItem, CommunityPostItem, CrewChallengeItem } from '../../types/api';
 import { crewService } from '../../services/crewService';
 import { communityService } from '../../services/communityService';
+import { crewChallengeService } from '../../services/crewChallengeService';
+import { useCourseStore } from '../../stores/courseStore';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
+import { getGradeName, getGradeColor } from '../../utils/crewGrade';
+import { formatRelativeTime } from '../../utils/format';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'CrewDetail'>;
 type Route = RouteProp<HomeStackParamList, 'CrewDetail'>;
@@ -31,6 +39,7 @@ type Route = RouteProp<HomeStackParamList, 'CrewDetail'>;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const COVER_HEIGHT = 180;
 const MEMBER_PREVIEW_LIMIT = 5;
+const POSTS_PER_PAGE = 10;
 
 export default function CrewDetailScreen() {
   const navigation = useNavigation<Nav>();
@@ -50,6 +59,11 @@ export default function CrewDetailScreen() {
   const [pendingRequests, setPendingRequests] = useState<CrewJoinRequestItem[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [recentPosts, setRecentPosts] = useState<CommunityPostItem[]>([]);
+  const [activeRaid, setActiveRaid] = useState<CrewChallengeItem | null>(null);
+  const [isEndingRaid, setIsEndingRaid] = useState(false);
+  const [postsPage, setPostsPage] = useState(0);
+  const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
+  const [hasMorePosts, setHasMorePosts] = useState(false);
 
   const canEdit = crew?.my_role === 'owner' || crew?.my_role === 'admin';
 
@@ -63,11 +77,23 @@ export default function CrewDetailScreen() {
       setMembers(membersData.data);
       setMembersTotal(membersData.total_count);
 
+      // Load active raid
+      if (crewData.is_member) {
+        try {
+          const raid = await crewChallengeService.getActiveChallenge(crewId);
+          setActiveRaid(raid);
+        } catch {
+          // ignore
+        }
+      }
+
       // Load recent posts for members
       if (crewData.is_member) {
         try {
-          const postsData = await communityService.getPosts({ crew_id: crewId, per_page: 3 });
+          const postsData = await communityService.getPosts({ crew_id: crewId, per_page: POSTS_PER_PAGE });
           setRecentPosts(postsData.data);
+          setPostsPage(0);
+          setHasMorePosts(postsData.data.length === POSTS_PER_PAGE);
         } catch {
           // ignore
         }
@@ -146,24 +172,6 @@ export default function CrewDetailScreen() {
     }
   }, [crewId, crew?.join_request_status, t]);
 
-  const handleApproveRequest = useCallback(async (requestId: string) => {
-    try {
-      await crewService.approveRequest(crewId, requestId);
-      await loadData();
-    } catch {
-      Alert.alert(t('common.errorTitle'), t('common.error'));
-    }
-  }, [crewId, loadData, t]);
-
-  const handleRejectRequest = useCallback(async (requestId: string) => {
-    try {
-      await crewService.rejectRequest(crewId, requestId);
-      await loadData();
-    } catch {
-      Alert.alert(t('common.errorTitle'), t('common.error'));
-    }
-  }, [crewId, loadData, t]);
-
   const handleLeave = useCallback(async () => {
     Alert.alert(
       t('crew.leaveTitle'),
@@ -189,18 +197,111 @@ export default function CrewDetailScreen() {
     );
   }, [crewId, loadData, t]);
 
+  const handleSelectRaidCourse = useCallback(() => {
+    useCourseStore.getState().setPendingSelectForRaid(crewId);
+    (navigation as any).navigate('CourseTab', { screen: 'CourseList' });
+  }, [navigation, crewId]);
+
+  const handleEndRaid = useCallback(async () => {
+    if (!activeRaid || isEndingRaid) return;
+    Alert.alert(
+      t('raid.endRaid'),
+      t('raid.endRaidConfirm'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('raid.endRaid'),
+          style: 'destructive',
+          onPress: async () => {
+            setIsEndingRaid(true);
+            try {
+              await crewChallengeService.endChallenge(crewId, activeRaid.id);
+              setActiveRaid(null);
+            } catch {
+              Alert.alert(t('common.errorTitle'), t('common.error'));
+            } finally {
+              setIsEndingRaid(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [activeRaid, isEndingRaid, crewId, t]);
+
+  const handleRunRaidCourse = useCallback(() => {
+    if (!activeRaid?.course_id) return;
+    useCourseStore.getState().setPendingStartCourseId(activeRaid.course_id);
+    (navigation as any).navigate('WorldTab', { screen: 'World' });
+  }, [navigation, activeRaid]);
+
   const handleOpenBoard = useCallback(() => {
     if (!crew) return;
     navigation.navigate('CrewBoard', { crewId, crewName: crew.name });
   }, [navigation, crewId, crew]);
 
+  const loadMorePosts = useCallback(async () => {
+    if (isLoadingMorePosts || !hasMorePosts) return;
+    setIsLoadingMorePosts(true);
+    try {
+      const nextPage = postsPage + 1;
+      const postsData = await communityService.getPosts({
+        crew_id: crewId,
+        per_page: POSTS_PER_PAGE,
+        page: nextPage,
+      });
+      setRecentPosts(prev => [...prev, ...postsData.data]);
+      setPostsPage(nextPage);
+      setHasMorePosts(postsData.data.length === POSTS_PER_PAGE);
+    } catch {
+      // ignore
+    } finally {
+      setIsLoadingMorePosts(false);
+    }
+  }, [isLoadingMorePosts, hasMorePosts, postsPage, crewId]);
+
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+    if (distanceFromBottom < 200 && hasMorePosts && !isLoadingMorePosts) {
+      loadMorePosts();
+    }
+  }, [hasMorePosts, isLoadingMorePosts, loadMorePosts]);
+
   const handleViewAllMembers = useCallback(() => {
     navigation.navigate('CrewMembers', { crewId });
   }, [navigation, crewId]);
 
-  const handleEdit = useCallback(() => {
-    navigation.navigate('CrewEdit', { crewId });
+  const handleManage = useCallback(() => {
+    navigation.navigate('CrewManage', { crewId });
   }, [navigation, crewId]);
+
+  const handleMoreMenu = useCallback(() => {
+    const options = [t('crew.leave'), t('common.cancel')];
+    const destructiveIndex = 0;
+    const cancelIndex = 1;
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          destructiveButtonIndex: destructiveIndex,
+          cancelButtonIndex: cancelIndex,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === destructiveIndex) handleLeave();
+        },
+      );
+    } else {
+      Alert.alert(
+        '',
+        '',
+        [
+          { text: t('crew.leave'), style: 'destructive', onPress: handleLeave },
+          { text: t('common.cancel'), style: 'cancel' },
+        ],
+      );
+    }
+  }, [t, handleLeave]);
 
   // Loading state
   if (isLoading) {
@@ -280,11 +381,34 @@ export default function CrewDetailScreen() {
             )}
             {canEdit && (
               <TouchableOpacity
-                onPress={handleEdit}
+                onPress={() => navigation.navigate('CrewNotifications', { crewId })}
+                activeOpacity={0.6}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons name="notifications-outline" size={22} color={colors.text} />
+                {pendingCount > 0 && (
+                  <View style={styles.notifBadge}>
+                    <Text style={styles.notifBadgeText}>{pendingCount > 9 ? '9+' : pendingCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
+            {canEdit && (
+              <TouchableOpacity
+                onPress={handleManage}
                 activeOpacity={0.6}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
                 <Ionicons name="settings-outline" size={22} color={colors.text} />
+              </TouchableOpacity>
+            )}
+            {crew?.is_member && crew?.my_role !== 'owner' && (
+              <TouchableOpacity
+                onPress={handleMoreMenu}
+                activeOpacity={0.6}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
               </TouchableOpacity>
             )}
             {!crew?.is_member && !canEdit && <View style={styles.headerSpacer} />}
@@ -294,6 +418,8 @@ export default function CrewDetailScreen() {
         <ScrollView
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={400}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -357,128 +483,180 @@ export default function CrewDetailScreen() {
               ) : null}
             </View>
 
-            {/* Owner */}
-            {crew.owner.nickname ? (
-              <View style={styles.ownerRow}>
-                {crew.owner.avatar_url ? (
-                  <Image source={{ uri: crew.owner.avatar_url }} style={styles.ownerAvatarImg} />
+            {/* Action Buttons (join / pending — leave moved to bottom) */}
+            {!crew.is_member && (
+              <View style={styles.actionSection}>
+                {crew.join_request_status === 'pending' ? (
+                  <TouchableOpacity
+                    style={styles.pendingButton}
+                    onPress={handleCancelRequest}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="time-outline" size={18} color="#F59E0B" />
+                    <Text style={styles.pendingButtonText}>{t('crew.pending')}</Text>
+                    <Text style={styles.pendingCancelHint}>{t('crew.tapToCancel')}</Text>
+                  </TouchableOpacity>
                 ) : (
-                  <View style={styles.ownerAvatar}>
-                    <Text style={styles.ownerAvatarText}>
-                      {crew.owner.nickname.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
+                  <TouchableOpacity
+                    style={styles.joinButton}
+                    onPress={handleJoin}
+                    disabled={isJoining}
+                    activeOpacity={0.7}
+                  >
+                    {isJoining ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="person-add-outline" size={18} color="#FFFFFF" />
+                        <Text style={styles.joinButtonText}>
+                          {crew.requires_approval ? t('crew.requestJoin') : t('crew.joinBtn')}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
                 )}
-                <View style={styles.ownerInfo}>
-                  <Text style={styles.ownerLabel}>{t('crew.roleOwner')}</Text>
-                  <Text style={styles.ownerName}>{crew.owner.nickname}</Text>
-                </View>
               </View>
-            ) : null}
+            )}
 
-            {/* Action Buttons */}
-            <View style={styles.actionSection}>
-              {crew.is_member ? (
-                <View style={styles.memberActions}>
-                  {crew.my_role !== 'owner' && (
+            {/* Current Raid Section */}
+            {crew.is_member && (
+              <View style={styles.raidSection}>
+                <View style={styles.raidSectionTitleRow}>
+                  <Ionicons name="flash" size={18} color={colors.primary} />
+                  <Text style={styles.raidSectionTitle}>{t('raid.currentRaid')}</Text>
+                </View>
+                {activeRaid ? (
+                  <View style={styles.raidCard}>
+                    {/* Raid header */}
+                    <View style={styles.raidHeader}>
+                      <View style={styles.raidLabelRow}>
+                        <Ionicons name="flash" size={12} color="#FF7A33" />
+                        <Text style={styles.raidLabel}>RAID</Text>
+                      </View>
+                    </View>
+
+                    {/* Course info */}
+                    <View style={styles.raidCourseRow}>
+                      <View style={styles.raidCourseInfo}>
+                        <Text style={styles.raidCourseName} numberOfLines={1}>
+                          {activeRaid.course_name || t('raid.unknownCourse')}
+                        </Text>
+                      </View>
+                      {activeRaid.course_distance_meters != null && (
+                        <View style={styles.raidDistanceBadge}>
+                          <Text style={styles.raidDistanceBadgeText}>
+                            {(activeRaid.course_distance_meters / 1000).toFixed(1)}km
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Progress bar */}
+                    <View style={styles.raidProgressContainer}>
+                      <View style={styles.raidProgressBarBg}>
+                        <View
+                          style={[
+                            styles.raidProgressBarFill,
+                            {
+                              width: `${activeRaid.total_participants > 0
+                                ? Math.min(100, (activeRaid.completed_count / activeRaid.total_participants) * 100)
+                                : 0}%`,
+                            },
+                          ]}
+                        />
+                        <View
+                          style={[
+                            styles.raidProgressBarGlow,
+                            {
+                              width: `${activeRaid.total_participants > 0
+                                ? Math.min(100, (activeRaid.completed_count / activeRaid.total_participants) * 100)
+                                : 0}%`,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.raidProgressText}>
+                        {t('raid.participationStatus', {
+                          completed: activeRaid.completed_count,
+                          total: activeRaid.total_participants,
+                        })}
+                      </Text>
+                    </View>
+
+                    {/* Top 3 records with rank numbers */}
+                    {activeRaid.records.filter(r => r.best_duration_seconds != null).length > 0 && (
+                      <View style={styles.raidRecordsList}>
+                        {activeRaid.records
+                          .filter(r => r.best_duration_seconds != null)
+                          .slice(0, 3)
+                          .map((record, idx) => {
+                            const rankColors = ['#FFD700', '#C0C0C0', '#CD7F32'];
+                            const rankLabels = ['1st', '2nd', '3rd'];
+                            const mins = Math.floor((record.best_duration_seconds || 0) / 60);
+                            const secs = (record.best_duration_seconds || 0) % 60;
+                            return (
+                              <View key={record.user_id} style={styles.raidRecordRow}>
+                                <View style={[styles.raidRankBadge, { backgroundColor: rankColors[idx] + '25' }]}>
+                                  <Text style={[styles.raidRankText, { color: rankColors[idx] }]}>
+                                    {rankLabels[idx]}
+                                  </Text>
+                                </View>
+                                <Text style={styles.raidRecordName} numberOfLines={1}>
+                                  {record.nickname || '?'}
+                                </Text>
+                                <Text style={styles.raidRecordTime}>
+                                  {mins}:{secs.toString().padStart(2, '0')}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                      </View>
+                    )}
+
+                    {/* Run button - full width, prominent */}
                     <TouchableOpacity
-                      style={styles.leaveButton}
-                      onPress={handleLeave}
-                      disabled={isLeaving}
+                      style={styles.raidRunButton}
+                      onPress={handleRunRaidCourse}
                       activeOpacity={0.7}
                     >
-                      {isLeaving ? (
-                        <ActivityIndicator size="small" color={colors.error} />
-                      ) : (
-                        <Text style={styles.leaveButtonText}>{t('crew.leave')}</Text>
-                      )}
+                      <Ionicons name="play" size={22} color="#FFFFFF" />
+                      <Text style={styles.raidRunButtonText}>{t('raid.run')}</Text>
                     </TouchableOpacity>
-                  )}
-                </View>
-              ) : crew.join_request_status === 'pending' ? (
-                <TouchableOpacity
-                  style={styles.pendingButton}
-                  onPress={handleCancelRequest}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="time-outline" size={18} color="#F59E0B" />
-                  <Text style={styles.pendingButtonText}>{t('crew.pending')}</Text>
-                  <Text style={styles.pendingCancelHint}>{t('crew.tapToCancel')}</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={styles.joinButton}
-                  onPress={handleJoin}
-                  disabled={isJoining}
-                  activeOpacity={0.7}
-                >
-                  {isJoining ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Ionicons name="person-add-outline" size={18} color="#FFFFFF" />
-                      <Text style={styles.joinButtonText}>
-                        {crew.requires_approval ? t('crew.requestJoin') : t('crew.joinBtn')}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
 
-            {/* Pending Join Requests (admin/owner) */}
-            {canEdit && pendingCount > 0 && (
-              <View style={styles.requestsSection}>
-                <View style={styles.membersSectionHeader}>
-                  <Text style={styles.membersSectionTitle}>{t('crew.pendingRequests')}</Text>
-                  <View style={styles.requestCountBadge}>
-                    <Text style={styles.requestCountText}>{pendingCount}</Text>
-                  </View>
-                </View>
-                <View style={styles.membersList}>
-                  {pendingRequests.map((req, idx) => {
-                    const initial = (req.user.nickname ?? '?').charAt(0).toUpperCase();
-                    return (
-                      <View
-                        key={req.id}
-                        style={[
-                          styles.requestRow,
-                          idx === pendingRequests.length - 1 && styles.memberRowLast,
-                        ]}
+                    {/* End raid button - subtle text only */}
+                    {canEdit && (
+                      <TouchableOpacity
+                        style={styles.raidEndButton}
+                        onPress={handleEndRaid}
+                        disabled={isEndingRaid}
+                        activeOpacity={0.7}
                       >
-                        {req.user.avatar_url ? (
-                          <Image source={{ uri: req.user.avatar_url }} style={styles.memberAvatarImg} />
+                        {isEndingRaid ? (
+                          <ActivityIndicator size="small" color={colors.textTertiary} />
                         ) : (
-                          <View style={styles.memberAvatar}>
-                            <Text style={styles.memberAvatarText}>{initial}</Text>
-                          </View>
+                          <Text style={styles.raidEndButtonText}>{t('raid.endRaid')}</Text>
                         )}
-                        <View style={styles.requestInfo}>
-                          <Text style={styles.memberNickname}>{req.user.nickname ?? '?'}</Text>
-                          {req.message ? (
-                            <Text style={styles.requestMessage} numberOfLines={1}>{req.message}</Text>
-                          ) : null}
-                        </View>
-                        <View style={styles.requestActions}>
-                          <TouchableOpacity
-                            style={styles.approveBtn}
-                            onPress={() => handleApproveRequest(req.id)}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.approveBtnText}>{t('crew.approve')}</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.rejectBtn}
-                            onPress={() => handleRejectRequest(req.id)}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.rejectBtnText}>{t('crew.reject')}</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ) : canEdit ? (
+                  <TouchableOpacity
+                    style={styles.raidSelectCourseBtn}
+                    onPress={handleSelectRaidCourse}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.raidSelectCourseInner}>
+                      <Ionicons name="add-circle-outline" size={28} color={colors.primary} />
+                      <Text style={styles.raidSelectCourseText}>{t('raid.selectCourse')}</Text>
+                      <Text style={styles.raidSelectCourseHint}>{t('raid.noActiveRaid')}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.raidEmpty}>
+                    <Ionicons name="shield-outline" size={28} color={colors.textTertiary} />
+                    <Text style={styles.raidEmptyText}>{t('raid.noActiveRaid')}</Text>
+                  </View>
+                )}
               </View>
             )}
 
@@ -498,100 +676,74 @@ export default function CrewDetailScreen() {
                 </View>
                 {recentPosts.length > 0 ? (
                   <View style={styles.postsList}>
-                    {recentPosts.map((post, idx) => (
-                      <TouchableOpacity
-                        key={post.id}
-                        style={[styles.postRow, idx === recentPosts.length - 1 && styles.postRowLast]}
-                        onPress={() => navigation.navigate('CommunityPostDetail', { postId: post.id })}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.postContent}>
-                          <Text style={styles.postTitle} numberOfLines={1}>{post.title}</Text>
-                          <Text style={styles.postMeta}>
-                            {post.author.nickname} · {new Date(post.created_at).toLocaleDateString()}
+                    {recentPosts.map((post) => {
+                      const initial = (post.author.nickname ?? '?').charAt(0).toUpperCase();
+                      return (
+                        <TouchableOpacity
+                          key={post.id}
+                          style={styles.postCard}
+                          onPress={() => navigation.navigate('CommunityPostDetail', { postId: post.id })}
+                          activeOpacity={0.6}
+                        >
+                          {/* Author row */}
+                          <View style={styles.postAuthorRow}>
+                            {post.author.avatar_url ? (
+                              <Image source={{ uri: post.author.avatar_url }} style={styles.postAvatar} />
+                            ) : (
+                              <View style={styles.postAvatarPlaceholder}>
+                                <Text style={styles.postAvatarText}>{initial}</Text>
+                              </View>
+                            )}
+                            <Text style={styles.postNickname} numberOfLines={1}>{post.author.nickname ?? '?'}</Text>
+                            <Text style={styles.postDot}>&middot;</Text>
+                            <Text style={styles.postTime}>{formatRelativeTime(post.created_at)}</Text>
+                          </View>
+                          {/* Body */}
+                          <Text style={styles.postBody} numberOfLines={3}>
+                            {post.title ? <><Text style={styles.postTitleInline}>{post.title}  </Text>{post.content}</> : post.content}
                           </Text>
-                        </View>
-                        <View style={styles.postStats}>
-                          {post.comment_count > 0 && (
-                            <View style={styles.postStatItem}>
-                              <Ionicons name="chatbubble-outline" size={12} color={colors.textTertiary} />
-                              <Text style={styles.postStatText}>{post.comment_count}</Text>
-                            </View>
+                          {post.image_url && (
+                            <Image source={{ uri: post.image_url }} style={styles.postImagePreview} resizeMode="cover" />
                           )}
-                          {post.like_count > 0 && (
-                            <View style={styles.postStatItem}>
-                              <Ionicons name="heart-outline" size={12} color={colors.textTertiary} />
-                              <Text style={styles.postStatText}>{post.like_count}</Text>
-                            </View>
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    ))}
+                          <View style={styles.postActions}>
+                            {post.like_count > 0 && (
+                              <View style={styles.postActionItem}>
+                                <Ionicons name={post.is_liked ? 'heart' : 'heart-outline'} size={14} color={post.is_liked ? '#EF4444' : colors.textTertiary} />
+                                <Text style={[styles.postActionText, post.is_liked && { color: '#EF4444' }]}>{post.like_count}</Text>
+                              </View>
+                            )}
+                            {post.comment_count > 0 && (
+                              <View style={styles.postActionItem}>
+                                <Ionicons name="chatbubble-outline" size={13} color={colors.textTertiary} />
+                                <Text style={styles.postActionText}>{post.comment_count}</Text>
+                              </View>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {/* See all button */}
+                    <TouchableOpacity
+                      style={styles.seeAllBtn}
+                      onPress={handleOpenBoard}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={styles.seeAllText}>{t('common.seeMore')}</Text>
+                    </TouchableOpacity>
                   </View>
                 ) : (
                   <View style={styles.emptyPosts}>
                     <Text style={styles.emptyPostsText}>{t('social.noPosts')}</Text>
                   </View>
                 )}
-                <TouchableOpacity
-                  style={styles.viewAllButton}
-                  onPress={handleOpenBoard}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.viewAllText}>{t('social.viewAllPosts')}</Text>
-                  <Ionicons name="chevron-forward" size={16} color={colors.primary} />
-                </TouchableOpacity>
+                {isLoadingMorePosts && (
+                  <View style={styles.loadingMorePosts}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                )}
               </View>
             )}
 
-            {/* Members Preview */}
-            <View style={styles.membersSection}>
-              <TouchableOpacity
-                style={styles.membersSectionHeader}
-                onPress={handleViewAllMembers}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.membersSectionTitle}>{t('crew.members')}</Text>
-                <Text style={styles.membersSectionCount}>{membersTotal}</Text>
-                <View style={{ flex: 1 }} />
-                <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-              </TouchableOpacity>
-
-              {members.length > 0 ? (
-                <View style={styles.membersAvatarRow}>
-                  {members.map((member) => (
-                    <TouchableOpacity
-                      key={member.user_id}
-                      onPress={() => navigation.navigate('UserProfile', { userId: member.user_id })}
-                      activeOpacity={0.7}
-                    >
-                      {member.avatar_url ? (
-                        <Image source={{ uri: member.avatar_url }} style={styles.memberAvatarImg} />
-                      ) : (
-                        <View style={styles.memberAvatar}>
-                          <Text style={styles.memberAvatarText}>
-                            {(member.nickname ?? '?').charAt(0).toUpperCase()}
-                          </Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  ))}
-                  {membersTotal > MEMBER_PREVIEW_LIMIT && (
-                    <TouchableOpacity
-                      style={styles.memberAvatarMore}
-                      onPress={handleViewAllMembers}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.memberAvatarMoreText}>+{membersTotal - MEMBER_PREVIEW_LIMIT}</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ) : (
-                <View style={styles.emptyMembers}>
-                  <Text style={styles.emptyMembersText}>{t('crew.noMembers')}</Text>
-                </View>
-              )}
-            </View>
           </View>
         </ScrollView>
       </SafeAreaView>
@@ -605,22 +757,21 @@ function MemberRow({
   member,
   isLast,
   onPress,
+  gradeConfig,
 }: {
   member: CrewMemberItem;
   isLast: boolean;
   onPress: () => void;
+  gradeConfig?: CrewItem['grade_config'];
 }) {
   const colors = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const initial = (member.nickname ?? '?').charAt(0).toUpperCase();
-  const roleLabel =
-    member.role === 'owner'
-      ? t('crew.roleOwner')
-      : member.role === 'admin'
-        ? t('crew.roleAdmin')
-        : null;
+  const gradeLevel = member.grade_level ?? (member.role === 'owner' ? 5 : member.role === 'admin' ? 4 : 1);
+  const gradeName = getGradeName(gradeLevel, gradeConfig, t);
+  const gradeColor = getGradeColor(gradeLevel, colors);
 
   return (
     <TouchableOpacity
@@ -637,15 +788,11 @@ function MemberRow({
       )}
       <View style={styles.memberInfo}>
         <Text style={styles.memberNickname}>{member.nickname ?? t('crew.unknown')}</Text>
-        {roleLabel && (
-          <View style={[styles.roleBadge, member.role === 'owner' && styles.roleBadgeOwner]}>
-            <Text
-              style={[styles.roleBadgeText, member.role === 'owner' && styles.roleBadgeTextOwner]}
-            >
-              {roleLabel}
-            </Text>
-          </View>
-        )}
+        <View style={[styles.roleBadge, { backgroundColor: gradeColor + '20' }]}>
+          <Text style={[styles.roleBadgeText, { color: gradeColor }]}>
+            {gradeName}
+          </Text>
+        </View>
       </View>
       <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
     </TouchableOpacity>
@@ -699,6 +846,23 @@ const createStyles = (c: ThemeColors) =>
       minWidth: 24,
     },
     headerSpacer: { width: 24 },
+    notifBadge: {
+      position: 'absolute',
+      top: -4,
+      right: -6,
+      backgroundColor: '#EF4444',
+      borderRadius: 8,
+      minWidth: 16,
+      height: 16,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 3,
+    },
+    notifBadgeText: {
+      fontSize: 10,
+      fontWeight: '800',
+      color: '#FFFFFF',
+    },
 
     // Cover image
     coverImage: {
@@ -781,69 +945,8 @@ const createStyles = (c: ThemeColors) =>
       color: c.textSecondary,
     },
 
-    // Owner
-    ownerRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: SPACING.md,
-      backgroundColor: c.card,
-      borderRadius: BORDER_RADIUS.lg,
-      padding: SPACING.lg,
-      borderWidth: 1,
-      borderColor: c.border,
-    },
-    ownerAvatarImg: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-    },
-    ownerAvatar: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: c.primary + '20',
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    ownerAvatarText: {
-      fontSize: FONT_SIZES.md,
-      fontWeight: '800',
-      color: c.primary,
-    },
-    ownerInfo: {
-      flex: 1,
-      gap: 1,
-    },
-    ownerLabel: {
-      fontSize: FONT_SIZES.xs,
-      fontWeight: '600',
-      color: c.textTertiary,
-    },
-    ownerName: {
-      fontSize: FONT_SIZES.md,
-      fontWeight: '700',
-      color: c.text,
-    },
-
     // Action Buttons
     actionSection: {},
-    memberActions: {
-      alignItems: 'flex-end',
-    },
-    leaveButton: {
-      paddingHorizontal: SPACING.xxl,
-      borderRadius: BORDER_RADIUS.md,
-      paddingVertical: SPACING.lg,
-      borderWidth: 1.5,
-      borderColor: c.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    leaveButtonText: {
-      fontSize: FONT_SIZES.md,
-      fontWeight: '700',
-      color: c.error,
-    },
     joinButton: {
       flexDirection: 'row',
       backgroundColor: c.primary,
@@ -880,11 +983,232 @@ const createStyles = (c: ThemeColors) =>
       color: '#F59E0B' + '80',
     },
 
-    // Pending Requests Section
-    requestsSection: {
+    // Raid Section - Event Banner Style
+    raidSection: {
       gap: SPACING.md,
     },
-    requestCountBadge: {
+    raidSectionTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    raidSectionTitle: {
+      fontSize: FONT_SIZES.lg,
+      fontWeight: '800',
+      color: c.text,
+      letterSpacing: -0.3,
+    },
+    raidCard: {
+      backgroundColor: c.primary + '10',
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1.5,
+      borderColor: c.primary + '30',
+      padding: SPACING.xl,
+      gap: SPACING.lg,
+    },
+    raidHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    raidLabelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    raidLabel: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '900',
+      color: c.primary,
+      letterSpacing: 2,
+      textTransform: 'uppercase' as const,
+    },
+    raidCourseRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.md,
+    },
+    raidCourseInfo: {
+      flex: 1,
+    },
+    raidCourseName: {
+      fontSize: FONT_SIZES.xl,
+      fontWeight: '900',
+      color: c.text,
+      letterSpacing: -0.5,
+    },
+    raidDistanceBadge: {
+      backgroundColor: c.primary,
+      borderRadius: BORDER_RADIUS.full,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.xs,
+    },
+    raidDistanceBadgeText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '800',
+      color: '#FFFFFF',
+    },
+    raidProgressContainer: {
+      gap: SPACING.xs,
+    },
+    raidProgressBarBg: {
+      height: 12,
+      backgroundColor: c.primary + '15',
+      borderRadius: 6,
+      overflow: 'hidden',
+      position: 'relative' as const,
+    },
+    raidProgressBarFill: {
+      height: '100%',
+      backgroundColor: c.primary,
+      borderRadius: 6,
+      position: 'absolute' as const,
+      top: 0,
+      left: 0,
+    },
+    raidProgressBarGlow: {
+      height: '100%',
+      backgroundColor: c.primary + '40',
+      borderRadius: 6,
+      position: 'absolute' as const,
+      top: 0,
+      left: 0,
+    },
+    raidProgressText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '700',
+      color: c.textSecondary,
+      textAlign: 'right',
+    },
+    raidRecordsList: {
+      gap: SPACING.sm,
+    },
+    raidRecordRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.sm,
+    },
+    raidRankBadge: {
+      width: 36,
+      height: 24,
+      borderRadius: BORDER_RADIUS.sm,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    raidRankText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '900',
+    },
+    raidRecordName: {
+      flex: 1,
+      fontSize: FONT_SIZES.md,
+      fontWeight: '700',
+      color: c.text,
+    },
+    raidRecordTime: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '800',
+      color: c.text,
+      fontVariant: ['tabular-nums'],
+    },
+    raidRunButton: {
+      flexDirection: 'row',
+      backgroundColor: c.primary,
+      borderRadius: BORDER_RADIUS.lg,
+      paddingVertical: SPACING.xl,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: SPACING.sm,
+      shadowColor: c.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 6,
+    },
+    raidRunButtonText: {
+      fontSize: FONT_SIZES.lg,
+      fontWeight: '900',
+      color: '#FFFFFF',
+      letterSpacing: 0.5,
+    },
+    raidEndButton: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: SPACING.xs,
+    },
+    raidEndButtonText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '600',
+      color: c.textTertiary,
+    },
+    raidSelectCourseBtn: {
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 2,
+      borderColor: c.primary + '40',
+      borderStyle: 'dashed',
+      backgroundColor: c.primary + '06',
+      overflow: 'hidden',
+    },
+    raidSelectCourseInner: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: SPACING.sm,
+      paddingVertical: SPACING.xxxl,
+      paddingHorizontal: SPACING.xl,
+    },
+    raidSelectCourseText: {
+      fontSize: FONT_SIZES.lg,
+      fontWeight: '800',
+      color: c.primary,
+    },
+    raidSelectCourseHint: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '500',
+      color: c.textTertiary,
+    },
+    raidEmpty: {
+      paddingVertical: SPACING.xxxl,
+      alignItems: 'center',
+      gap: SPACING.sm,
+    },
+    raidEmptyText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '600',
+      color: c.textTertiary,
+    },
+
+    // Pending Requests Section
+    // Pending requests banner
+    pendingBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.primary + '10',
+      borderRadius: 12,
+      padding: SPACING.md,
+      gap: SPACING.sm,
+    },
+    pendingBannerIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: c.primary + '18',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    pendingBannerText: {
+      flex: 1,
+      gap: 1,
+    },
+    pendingBannerTitle: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.text,
+    },
+    pendingBannerSub: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '500',
+      color: c.textSecondary,
+    },
+    pendingBannerBadge: {
       backgroundColor: c.primary,
       borderRadius: 10,
       minWidth: 22,
@@ -893,56 +1217,13 @@ const createStyles = (c: ThemeColors) =>
       alignItems: 'center',
       paddingHorizontal: 6,
     },
-    requestCountText: {
+    pendingBannerBadgeText: {
       fontSize: 12,
       fontWeight: '800',
       color: '#FFF',
     },
-    requestRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: SPACING.lg,
-      gap: SPACING.sm,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: c.border,
-    },
-    requestInfo: {
-      flex: 1,
-      gap: 2,
-    },
-    requestMessage: {
-      fontSize: FONT_SIZES.xs,
-      fontWeight: '500',
-      color: c.textTertiary,
-    },
-    requestActions: {
-      flexDirection: 'row',
-      gap: SPACING.xs,
-    },
-    approveBtn: {
-      backgroundColor: c.primary,
-      borderRadius: BORDER_RADIUS.sm,
-      paddingHorizontal: SPACING.md,
-      paddingVertical: SPACING.xs + 1,
-    },
-    approveBtnText: {
-      fontSize: FONT_SIZES.xs,
-      fontWeight: '700',
-      color: '#FFF',
-    },
-    rejectBtn: {
-      backgroundColor: c.surface,
-      borderRadius: BORDER_RADIUS.sm,
-      paddingHorizontal: SPACING.md,
-      paddingVertical: SPACING.xs + 1,
-    },
-    rejectBtnText: {
-      fontSize: FONT_SIZES.xs,
-      fontWeight: '700',
-      color: c.textSecondary,
-    },
 
-    // Recent Posts Section
+    // Recent Posts Section (Threads style)
     postsSection: {
       gap: SPACING.md,
     },
@@ -968,50 +1249,96 @@ const createStyles = (c: ThemeColors) =>
       color: c.primary,
     },
     postsList: {
+      gap: SPACING.sm,
+    },
+    postCard: {
       backgroundColor: c.card,
-      borderRadius: BORDER_RADIUS.lg,
+      borderRadius: 12,
       borderWidth: 1,
       borderColor: c.border,
-      overflow: 'hidden',
+      padding: SPACING.md,
+      gap: SPACING.xs,
     },
-    postRow: {
+    postAuthorRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      padding: SPACING.lg,
-      gap: SPACING.md,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: c.border,
+      gap: SPACING.sm,
     },
-    postRowLast: {
-      borderBottomWidth: 0,
+    postAvatar: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
     },
-    postContent: {
-      flex: 1,
-      gap: 2,
+    postAvatarPlaceholder: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: c.surfaceLight,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
-    postTitle: {
-      fontSize: FONT_SIZES.md,
+    postAvatarText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '800',
+      color: c.textSecondary,
+    },
+    postNickname: {
+      fontSize: FONT_SIZES.sm,
       fontWeight: '700',
       color: c.text,
+      flexShrink: 1,
     },
-    postMeta: {
+    postDot: {
+      fontSize: FONT_SIZES.xs,
+      color: c.textTertiary,
+    },
+    postTime: {
       fontSize: FONT_SIZES.xs,
       fontWeight: '500',
       color: c.textTertiary,
     },
-    postStats: {
-      flexDirection: 'row',
-      gap: SPACING.sm,
+    postBody: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '400',
+      color: c.text,
+      lineHeight: 20,
     },
-    postStatItem: {
+    postTitleInline: {
+      fontWeight: '700',
+    },
+    postImagePreview: {
+      width: '100%',
+      aspectRatio: 16 / 9,
+      borderRadius: 10,
+      backgroundColor: c.surface,
+    },
+    postActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.md,
+      paddingTop: 2,
+    },
+    postActionItem: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 3,
     },
-    postStatText: {
+    postActionText: {
       fontSize: FONT_SIZES.xs,
       fontWeight: '600',
       color: c.textTertiary,
+    },
+    seeAllBtn: {
+      alignItems: 'center',
+      paddingVertical: SPACING.md,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.border,
+      marginTop: SPACING.xs,
+    },
+    seeAllText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.primary,
     },
     emptyPosts: {
       paddingVertical: SPACING.xxl,
@@ -1023,10 +1350,7 @@ const createStyles = (c: ThemeColors) =>
       color: c.textTertiary,
     },
 
-    // Members Section
-    membersSection: {
-      gap: SPACING.md,
-    },
+    // Members Section (used by pending requests and MemberRow)
     membersSectionHeader: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1037,11 +1361,6 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '800',
       color: c.text,
       letterSpacing: -0.3,
-    },
-    membersSectionCount: {
-      fontSize: FONT_SIZES.sm,
-      fontWeight: '700',
-      color: c.textTertiary,
     },
     membersList: {
       backgroundColor: c.card,
@@ -1061,11 +1380,6 @@ const createStyles = (c: ThemeColors) =>
     memberRowLast: {
       borderBottomWidth: 0,
     },
-    membersAvatarRow: {
-      flexDirection: 'row',
-      gap: SPACING.sm,
-      flexWrap: 'wrap',
-    },
     memberAvatarImg: {
       width: 40,
       height: 40,
@@ -1078,19 +1392,6 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: c.surfaceLight,
       justifyContent: 'center',
       alignItems: 'center',
-    },
-    memberAvatarMore: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: c.surface,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    memberAvatarMoreText: {
-      fontSize: FONT_SIZES.xs,
-      fontWeight: '700',
-      color: c.textSecondary,
     },
     memberAvatarText: {
       fontSize: FONT_SIZES.md,
@@ -1125,25 +1426,8 @@ const createStyles = (c: ThemeColors) =>
     roleBadgeTextOwner: {
       color: c.primary,
     },
-    viewAllButton: {
-      flexDirection: 'row',
+    loadingMorePosts: {
+      paddingVertical: SPACING.lg,
       alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: SPACING.sm,
-      gap: 4,
-    },
-    viewAllText: {
-      fontSize: FONT_SIZES.sm,
-      fontWeight: '700',
-      color: c.primary,
-    },
-    emptyMembers: {
-      paddingVertical: SPACING.xxl,
-      alignItems: 'center',
-    },
-    emptyMembersText: {
-      fontSize: FONT_SIZES.sm,
-      fontWeight: '500',
-      color: c.textTertiary,
     },
   });

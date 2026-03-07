@@ -33,6 +33,7 @@ interface CheckpointTrackerResult {
 }
 
 const PASS_RADIUS_METERS = 30;
+const FINISH_RADIUS_METERS = 50;
 
 /** Haversine distance in meters between two lat/lng points */
 function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -75,10 +76,48 @@ export function useCheckpointTracker(
       if (idx >= total) return;
 
       const cp = sorted[idx];
+      const isFinish = idx === total - 1;
+      const radius = isFinish ? FINISH_RADIUS_METERS : PASS_RADIUS_METERS;
       const dist = haversine(lat, lng, cp.lat, cp.lng);
 
-      if (dist <= PASS_RADIUS_METERS) {
-        // Mark as passed
+      // Check if current checkpoint is within radius
+      let passedCurrent = dist <= radius;
+
+      // Skip tolerance: if next checkpoint is within radius AND skipped CP is nearby (GPS drift only)
+      if (!passedCurrent && idx + 1 < total && dist <= PASS_RADIUS_METERS * 3) {
+        const nextCp = sorted[idx + 1];
+        const nextIsFinish = idx + 1 === total - 1;
+        const nextRadius = nextIsFinish ? FINISH_RADIUS_METERS : PASS_RADIUS_METERS;
+        const nextDist = haversine(lat, lng, nextCp.lat, nextCp.lng);
+        if (nextDist <= nextRadius) {
+          // Force-pass current checkpoint, then pass next
+          const now = Date.now() / 1000;
+          setPassedSet((prev) => {
+            const s = new Set(prev);
+            s.add(cp.id);
+            s.add(nextCp.id);
+            return s;
+          });
+          setPasses((prev) => [
+            ...prev,
+            { checkpoint_id: cp.id, timestamp: now, distance_from_checkpoint: Math.round(dist * 10) / 10 },
+            { checkpoint_id: nextCp.id, timestamp: now, distance_from_checkpoint: Math.round(nextDist * 10) / 10 },
+          ]);
+          nextIndexRef.current = idx + 2;
+
+          if (cp.order === 0) setCompetitionStartTime(Date.now());
+          if (nextCp.order === 0) setCompetitionStartTime(Date.now());
+          if (idx + 1 === total - 1) setFinishReached(true);
+
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          setJustPassed({ order: nextCp.order, total });
+          if (justPassedTimerRef.current) clearTimeout(justPassedTimerRef.current);
+          justPassedTimerRef.current = setTimeout(() => setJustPassed(null), 3000);
+          return;
+        }
+      }
+
+      if (passedCurrent) {
         nextIndexRef.current = idx + 1;
         setPassedSet((prev) => new Set(prev).add(cp.id));
         setPasses((prev) => [
@@ -90,20 +129,16 @@ export function useCheckpointTracker(
           },
         ]);
 
-        // Competition start: when order=0 (start checkpoint) is passed
         if (cp.order === 0) {
           setCompetitionStartTime(Date.now());
         }
 
-        // Finish: when last checkpoint is passed
-        if (idx === total - 1) {
+        if (isFinish) {
           setFinishReached(true);
         }
 
-        // Haptic
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-        // Toast data (auto-clear after 3s)
         setJustPassed({ order: cp.order, total });
         if (justPassedTimerRef.current) clearTimeout(justPassedTimerRef.current);
         justPassedTimerRef.current = setTimeout(() => setJustPassed(null), 3000);

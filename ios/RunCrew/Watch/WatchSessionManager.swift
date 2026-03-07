@@ -223,12 +223,40 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     /// - Parameter authoritative: `true` for GPSTrackerModule calls (start/pause/resume/stop),
     ///   `false` for useWatchCompanion calls via WatchBridgeModule. Non-authoritative calls
     ///   cannot revert the phase within 3 seconds of an authoritative change.
+    /// Keys that carry program goal context — preserved across phase changes
+    /// so authoritative updates from GPSTrackerModule (which lack these fields)
+    /// still deliver goal data to the watch.
+    private static let carryForwardKeys: Set<String> = [
+        "goalType", "goalValue",
+        "programTargetDistance", "programTargetTime", "programTimeDelta",
+        "programRequiredPace", "programStatus", "metronomeBPM",
+        "countdownStartedAt", "countdownTotal"
+    ]
+
     func sendRunStateUpdate(_ state: [String: Any], authoritative: Bool = true) {
         var message = state
         message["type"] = "stateUpdate"
         // Timestamp for watch-side freshness validation (prevents stale applicationContext/transferUserInfo)
         if message["timestamp"] == nil {
             message["timestamp"] = Date().timeIntervalSince1970 * 1000
+        }
+
+        // Clear cached state on new run start to prevent stale goal data from previous session
+        let newPhaseForReset = message["phase"] as? String
+        if newPhaseForReset == "countdown" || (newPhaseForReset == "running" && currentRunPhase == "idle") {
+            lastRunState = nil
+        }
+
+        // Carry forward program goal fields from lastRunState if not present in this update.
+        // GPSTrackerModule sends authoritative phase changes without goal context;
+        // useWatchCompanion sends full state including goals but non-authoritatively.
+        // Merging ensures transferUserInfo always carries goal data.
+        if let last = lastRunState {
+            for key in Self.carryForwardKeys {
+                if message[key] == nil, let cached = last[key] {
+                    message[key] = cached
+                }
+            }
         }
 
         let newPhase = message["phase"] as? String

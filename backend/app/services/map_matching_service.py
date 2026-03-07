@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # Mapbox limits: max 100 coordinates per request
 MAX_COORDS_PER_REQUEST = 100
 CHUNK_SIZE = 90  # Leave room for overlap
-OVERLAP = 5  # Overlap between chunks for smooth stitching
+OVERLAP = 10  # Overlap between chunks for smooth stitching (reduced boundary discontinuity)
 
 
 class MapMatchingService:
@@ -51,12 +51,16 @@ class MapMatchingService:
         if len(coordinates) < 2:
             return coordinates
 
+        # Pre-process: downsample dense points to reduce noise before matching
+        downsampled = self._downsample(coordinates, min_spacing_m=5.0)
+        logger.info(f"[MapMatching] Downsampled {len(coordinates)} → {len(downsampled)} points")
+
         try:
-            if len(coordinates) <= MAX_COORDS_PER_REQUEST:
-                matched = await self._match_chunk(coordinates, settings.MAPBOX_ACCESS_TOKEN)
+            if len(downsampled) <= MAX_COORDS_PER_REQUEST:
+                matched = await self._match_chunk(downsampled, settings.MAPBOX_ACCESS_TOKEN)
                 return matched if matched else coordinates
             else:
-                return await self._match_long_route(coordinates, settings.MAPBOX_ACCESS_TOKEN)
+                return await self._match_long_route(downsampled, settings.MAPBOX_ACCESS_TOKEN)
         except Exception as e:
             logger.error(f"[MapMatching] Failed: {e}")
             return coordinates
@@ -81,9 +85,14 @@ class MapMatchingService:
             "tidy": "true",  # Remove repeated/redundant points
         }
 
-        # Add radiuses - allow up to 50m snap distance per point
-        radiuses = ";".join(["50"] * len(coordinates))
-        params["radiuses"] = radiuses
+        # Tighter snap radius: endpoints 35m (more flexible), interior 20m (avoids building cuts)
+        radiuses = []
+        for i in range(len(coordinates)):
+            if i == 0 or i == len(coordinates) - 1:
+                radiuses.append("35")
+            else:
+                radiuses.append("20")
+        params["radiuses"] = ";".join(radiuses)
 
         client = await self._get_client()
         response = await client.get(url, params=params)
@@ -131,6 +140,29 @@ class MapMatchingService:
             i = end - OVERLAP if end < len(coordinates) else end
 
         return all_matched
+
+    @staticmethod
+    def _downsample(
+        coordinates: list[list[float]],
+        min_spacing_m: float = 5.0,
+    ) -> list[list[float]]:
+        """Remove dense points closer than min_spacing_m to reduce noise."""
+        if len(coordinates) <= 2:
+            return coordinates
+        result = [coordinates[0]]
+        acc = 0.0
+        for i in range(1, len(coordinates)):
+            dlng = (coordinates[i][0] - coordinates[i - 1][0]) * 111000
+            dlat = (coordinates[i][1] - coordinates[i - 1][1]) * 111000
+            dist = (dlng**2 + dlat**2) ** 0.5
+            acc += dist
+            if acc >= min_spacing_m:
+                result.append(coordinates[i])
+                acc = 0.0
+        # Always include the last point
+        if result[-1] != coordinates[-1]:
+            result.append(coordinates[-1])
+        return result
 
     @staticmethod
     def _restore_altitude(

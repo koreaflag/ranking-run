@@ -3,10 +3,10 @@ import { NativeModules, NativeEventEmitter, Platform, Alert } from 'react-native
 import { runService } from '../services/runService';
 import { useRunningStore } from '../stores/runningStore';
 import { formatDistance, formatDuration } from '../utils/format';
+import { WATCH_EVENTS } from '../types/watch';
 import i18n from '../i18n';
 
 const { WatchBridgeModule } = NativeModules;
-const STANDALONE_RUN_EVENT = 'Watch_onStandaloneRun';
 
 interface WatchRunData {
   type: string;
@@ -24,6 +24,16 @@ interface WatchRunData {
   startedAt: number; // unix timestamp
   finishedAt: number;
   pointCount: number;
+  isIndoor?: boolean; // pedometer-based indoor run (no GPS)
+  totalSteps?: number;
+  // Program goal data (from watch standalone runs)
+  goalType?: string; // "free"/"distance"/"time"/"program"
+  goalValue?: number; // meters (distance/program) or seconds (time)
+  programTargetDistance?: number; // meters
+  programTargetTime?: number; // seconds
+  programStatus?: string; // "ahead"/"on_pace"/"behind"/"critical"
+  programTimeDelta?: number; // seconds
+  metronomeBPM?: number;
 }
 
 /**
@@ -40,7 +50,7 @@ export function useWatchRunSync() {
 
     const emitter = new NativeEventEmitter(WatchBridgeModule);
 
-    const subscription = emitter.addListener(STANDALONE_RUN_EVENT, async (data: WatchRunData) => {
+    const subscription = emitter.addListener(WATCH_EVENTS.STANDALONE_RUN, async (data: WatchRunData) => {
       console.log('[WatchRunSync] Received standalone run from watch:', {
         distance: data.distanceMeters,
         duration: data.durationSeconds,
@@ -63,39 +73,58 @@ export function useWatchRunSync() {
         console.log('[WatchRunSync] Session created:', session.session_id);
 
         // 2. Build route geometry from watch GPS points
-        const coordinates: [number, number, number][] = (data.routePoints || []).map((p) => [p.lng, p.lat, p.alt ?? 0] as [number, number, number]);
-        const routeGeometry = {
-          type: 'LineString' as const,
-          coordinates: coordinates.length >= 2 ? coordinates : [[0, 0, 0], [0, 0, 0]] as [number, number, number][],
-        };
+        // For indoor runs (pedometer-based), skip route geometry entirely
+        const isIndoor = data.isIndoor === true;
+        const coordinates: [number, number, number][] = isIndoor
+          ? []
+          : (data.routePoints || []).map((p) => [p.lng, p.lat, p.alt ?? 0] as [number, number, number]);
+        const routeGeometry = coordinates.length >= 2
+          ? { type: 'LineString' as const, coordinates }
+          : null;
 
         // 3. Build raw GPS points for chunk upload
         // Watch sends timestamps in seconds (timeIntervalSince1970), backend expects milliseconds int
-        const rawPoints = (data.routePoints || []).map((p) => ({
-          lat: p.lat,
-          lng: p.lng,
-          alt: p.alt ?? 0,
-          speed: p.speed ?? 0,
-          bearing: 0,
-          accuracy: p.accuracy ?? 10,
-          timestamp: Math.round(p.timestamp * 1000),
-        }));
+        const rawPoints = isIndoor
+          ? []
+          : (data.routePoints || []).map((p) => ({
+              lat: p.lat,
+              lng: p.lng,
+              alt: p.alt ?? 0,
+              speed: p.speed ?? 0,
+              bearing: 0,
+              accuracy: p.accuracy ?? 10,
+              timestamp: Math.round(p.timestamp * 1000),
+            }));
 
-        // 4. Upload single chunk with all points
-        if (rawPoints.length > 0) {
+        // 4. Upload chunks — split large payloads into 200-point chunks to prevent
+        // data loss from a single failed upload
+        const CHUNK_SIZE = 200;
+        const totalChunks = rawPoints.length > 0 ? Math.ceil(rawPoints.length / CHUNK_SIZE) : 0;
+        const uploadedSequences: number[] = [];
+
+        for (let seq = 0; seq < totalChunks; seq++) {
+          const start = seq * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, rawPoints.length);
+          const chunkPoints = rawPoints.slice(start, end);
+          const isLast = seq === totalChunks - 1;
+
+          // Use chunk-specific timestamps from actual GPS points
+          const chunkStartTs = chunkPoints[0].timestamp;
+          const chunkEndTs = chunkPoints[chunkPoints.length - 1].timestamp;
+
           await runService.uploadChunk(session.session_id, {
             session_id: session.session_id,
-            sequence: 0,
-            chunk_type: 'final',
-            raw_gps_points: rawPoints,
+            sequence: seq,
+            chunk_type: isLast ? 'final' : 'intermediate',
+            raw_gps_points: chunkPoints,
             chunk_summary: {
-              distance_meters: data.distanceMeters,
-              duration_seconds: Math.round(data.durationSeconds),
+              distance_meters: isLast ? data.distanceMeters : Math.round(data.distanceMeters * (end / rawPoints.length)),
+              duration_seconds: Math.round((chunkEndTs - chunkStartTs) / 1000),
               avg_pace_seconds_per_km: Math.round(data.avgPace),
               elevation_change_meters: 0,
-              point_count: rawPoints.length,
-              start_timestamp: Math.round(data.startedAt * 1000),
-              end_timestamp: Math.round(data.finishedAt * 1000),
+              point_count: chunkPoints.length,
+              start_timestamp: chunkStartTs,
+              end_timestamp: chunkEndTs,
             },
             cumulative: {
               total_distance_meters: data.distanceMeters,
@@ -105,7 +134,8 @@ export function useWatchRunSync() {
             completed_splits: [],
             pause_intervals: [],
           });
-          console.log('[WatchRunSync] Chunk uploaded');
+          uploadedSequences.push(seq);
+          console.log(`[WatchRunSync] Chunk ${seq + 1}/${totalChunks} uploaded`);
         }
 
         // 5. Complete the run
@@ -125,7 +155,10 @@ export function useWatchRunSync() {
           max_speed_ms: avgSpeedMs,
           calories: null,
           finished_at: new Date(data.finishedAt * 1000).toISOString(),
-          route_geometry: routeGeometry,
+          route_geometry: routeGeometry ?? {
+            type: 'LineString' as const,
+            coordinates: [[0, 0, 0], [0, 0, 0]] as [number, number, number][],
+          },
           elevation_gain_meters: 0,
           elevation_loss_meters: 0,
           elevation_profile: [],
@@ -137,8 +170,8 @@ export function useWatchRunSync() {
             outlier_speed_threshold: 15,
             outlier_accuracy_threshold: 30,
           },
-          total_chunks: 1,
-          uploaded_chunk_sequences: [0],
+          total_chunks: totalChunks,
+          uploaded_chunk_sequences: uploadedSequences,
         });
 
         console.log('[WatchRunSync] Run saved successfully:', session.session_id);
@@ -161,6 +194,17 @@ export function useWatchRunSync() {
           longitude: p.lng,
         }));
 
+        // Build runGoal from watch data
+        const validGoalTypes = ['distance', 'time', 'pace', 'program'] as const;
+        const gt = data.goalType ?? '';
+        const watchGoalType = validGoalTypes.includes(gt as any) ? (gt as typeof validGoalTypes[number]) : null;
+        const watchRunGoal = {
+          type: watchGoalType,
+          value: data.goalValue ?? null,
+          targetTime: data.programTargetTime ?? null,
+          cadenceBPM: data.metronomeBPM ?? null,
+        };
+
         useRunningStore.setState({
           sessionId: session.session_id,
           courseId: null,
@@ -169,6 +213,9 @@ export function useWatchRunSync() {
           durationSeconds: data.durationSeconds,
           avgPaceSecondsPerKm: data.avgPace,
           currentPaceSecondsPerKm: data.avgPace,
+          currentSpeedMs: 0,
+          gpsStatus: 'locked',
+          isPaused: false,
           routePoints,
           splits: [],
           elevationGainMeters: 0,
@@ -177,6 +224,7 @@ export function useWatchRunSync() {
           heartRate: 0,
           cadence: 0,
           stopLocation: routePoints.length > 0 ? routePoints[routePoints.length - 1] : null,
+          runGoal: watchRunGoal,
         });
       } catch (error) {
         console.warn('[WatchRunSync] Failed to save watch run:', error);

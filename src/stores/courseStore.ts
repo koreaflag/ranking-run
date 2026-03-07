@@ -11,8 +11,10 @@ import type {
   CourseReview,
   MyCourse,
   FavoriteCourseItem,
+  CrewCourseRankingEntry,
 } from '../types/api';
 import { courseService } from '../services/courseService';
+import { crewChallengeService } from '../services/crewChallengeService';
 import { rankingService } from '../services/rankingService';
 import { reviewService } from '../services/reviewService';
 import i18n from '../i18n';
@@ -52,6 +54,8 @@ interface CourseState {
   selectedCourse: CourseDetail | null;
   selectedCourseStats: CourseDetailStats | null;
   selectedCourseRankings: RankingEntry[];
+  selectedCourseCrewRankings: CrewCourseRankingEntry[];
+  selectedCourseMyCrewRankings: CrewCourseRankingEntry[];
   selectedCourseMyBest: MyBestRecord | null;
   isLoadingDetail: boolean;
 
@@ -68,8 +72,16 @@ interface CourseState {
   // World focus
   pendingFocusCourseId: string | null;
 
+  // Raid course selection
+  pendingSelectForRaid: string | null;
+
+  // Auto-start course run from outside WorldScreen (e.g. crew raid)
+  pendingStartCourseId: string | null;
+
   // Actions
   setPendingFocusCourseId: (id: string | null) => void;
+  setPendingSelectForRaid: (crewId: string | null) => void;
+  setPendingStartCourseId: (id: string | null) => void;
   fetchCourses: (params?: CourseListParams) => Promise<void>;
   fetchMoreCourses: () => Promise<void>;
   fetchNearbyCourses: (lat: number, lng: number) => Promise<void>;
@@ -120,9 +132,19 @@ export const useCourseStore = create<CourseState>((set, get) => ({
   mapMarkers: [],
 
   pendingFocusCourseId: null,
+  pendingSelectForRaid: null,
+  pendingStartCourseId: null,
 
   setPendingFocusCourseId: (id) => {
     set({ pendingFocusCourseId: id });
+  },
+
+  setPendingSelectForRaid: (crewId) => {
+    set({ pendingSelectForRaid: crewId });
+  },
+
+  setPendingStartCourseId: (id) => {
+    set({ pendingStartCourseId: id });
   },
 
   myCourses: [],
@@ -135,6 +157,8 @@ export const useCourseStore = create<CourseState>((set, get) => ({
   selectedCourse: null,
   selectedCourseStats: null,
   selectedCourseRankings: [],
+  selectedCourseCrewRankings: [],
+  selectedCourseMyCrewRankings: [],
   selectedCourseMyBest: null,
   isLoadingDetail: false,
 
@@ -229,10 +253,11 @@ export const useCourseStore = create<CourseState>((set, get) => ({
   fetchCourseDetail: async (courseId) => {
     set({ isLoadingDetail: true });
     try {
-      const [detail, stats, rankings, myBest, reviewsResponse, myReview, likeStatus] = await Promise.all([
+      const [detail, stats, rankings, crewRankingsRes, myBest, reviewsResponse, myReview, likeStatus] = await Promise.all([
         courseService.getCourseDetail(courseId),
         courseService.getCourseStats(courseId).catch(() => null),
         rankingService.getCourseRankings(courseId, 10).catch(() => []),
+        crewChallengeService.getCourseCrewRankings(courseId, 0, 10).catch(() => ({ data: [], my_crews: [], total_crews: 0 })),
         courseService.getMyBest(courseId).catch(() => null),
         reviewService.getCourseReviews(courseId).catch(() => ({ data: [], total_count: 0, avg_rating: null })),
         reviewService.getMyReview(courseId).catch(() => null),
@@ -242,6 +267,8 @@ export const useCourseStore = create<CourseState>((set, get) => ({
         selectedCourse: detail,
         selectedCourseStats: stats,
         selectedCourseRankings: rankings,
+        selectedCourseCrewRankings: crewRankingsRes.data,
+        selectedCourseMyCrewRankings: crewRankingsRes.my_crews,
         selectedCourseMyBest: myBest,
         selectedCourseReviews: reviewsResponse.data,
         selectedCourseAvgRating: reviewsResponse.avg_rating,
@@ -441,6 +468,8 @@ export const useCourseStore = create<CourseState>((set, get) => ({
       selectedCourse: null,
       selectedCourseStats: null,
       selectedCourseRankings: [],
+      selectedCourseCrewRankings: [],
+      selectedCourseMyCrewRankings: [],
       selectedCourseMyBest: null,
       selectedCourseReviews: [],
       selectedCourseAvgRating: null,

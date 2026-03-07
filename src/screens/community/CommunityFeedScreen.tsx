@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,12 @@ import {
   RefreshControl,
   Image,
   ImageBackground,
+  Platform,
+  StatusBar,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import type { CommunityStackParamList } from '../../types/navigation';
@@ -25,6 +27,212 @@ import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 
 type Nav = NativeStackNavigationProp<CommunityStackParamList, 'CommunityFeed'>;
 
+// ---- Helpers ----
+
+const getJoinStatus = (crew: CrewItem): 'member' | 'pending' | 'join' | 'request' => {
+  if (crew.is_member) return 'member';
+  if (crew.join_request_status === 'pending') return 'pending';
+  if (crew.requires_approval) return 'request';
+  return 'join';
+};
+
+// ---- Memoized Card Components ----
+
+interface ExploreCardProps {
+  item: CrewItem;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+  colors: ThemeColors;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}
+
+const ExploreCard = memo(function ExploreCard({ item: crew, onPress, styles, colors, t }: ExploreCardProps) {
+  const joinStatus = getJoinStatus(crew);
+  const hasCover = !!crew.cover_image_url;
+
+  return (
+    <TouchableOpacity
+      style={styles.exploreCard}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      {/* Cover */}
+      {hasCover ? (
+        <ImageBackground
+          source={{ uri: crew.cover_image_url! }}
+          style={styles.exploreCover}
+          imageStyle={styles.exploreCoverImage}
+        >
+          <View style={styles.exploreCoverGradient} />
+        </ImageBackground>
+      ) : (
+        <View
+          style={[
+            styles.exploreCover,
+            { backgroundColor: crew.badge_color || colors.primary },
+          ]}
+        >
+          <Ionicons
+            name={(crew.badge_icon as keyof typeof Ionicons.glyphMap) || 'people'}
+            size={32}
+            color="rgba(255,255,255,0.3)"
+          />
+        </View>
+      )}
+
+      {/* Logo */}
+      <View style={styles.exploreLogoWrap}>
+        {crew.logo_url ? (
+          <Image source={{ uri: crew.logo_url }} style={styles.exploreLogo} />
+        ) : (
+          <View
+            style={[
+              styles.exploreLogo,
+              { backgroundColor: crew.badge_color || colors.primary },
+            ]}
+          >
+            <Ionicons
+              name={(crew.badge_icon as keyof typeof Ionicons.glyphMap) || 'people'}
+              size={18}
+              color="#FFF"
+            />
+          </View>
+        )}
+      </View>
+
+      {/* Info */}
+      <View style={styles.exploreInfo}>
+        <View style={styles.exploreNameRow}>
+          <Text style={styles.exploreName} numberOfLines={1}>
+            {crew.name}
+          </Text>
+          {crew.region && (
+            <View style={styles.regionBadge}>
+              <Text style={styles.regionBadgeText}>{crew.region}</Text>
+            </View>
+          )}
+        </View>
+        {crew.description ? (
+          <Text style={styles.exploreDesc} numberOfLines={2}>
+            {crew.description}
+          </Text>
+        ) : null}
+
+        <View style={styles.exploreBottom}>
+          <View style={styles.exploreStats}>
+            <Ionicons name="people-outline" size={13} color={colors.textTertiary} />
+            <Text style={styles.exploreStatText}>
+              {crew.member_count}{crew.max_members ? `/${crew.max_members}` : ''}
+            </Text>
+            <Text style={styles.exploreDot}>·</Text>
+            <Ionicons
+              name={crew.requires_approval ? 'shield-checkmark-outline' : 'enter-outline'}
+              size={12}
+              color={colors.textTertiary}
+            />
+            <Text style={styles.exploreStatText}>
+              {crew.requires_approval ? t('crew.requiresApproval') : t('crew.freeJoin')}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.statusBadge,
+              joinStatus === 'member' && styles.statusBadgeMember,
+              joinStatus === 'pending' && styles.statusBadgePending,
+              (joinStatus === 'join' || joinStatus === 'request') && styles.statusBadgeJoin,
+            ]}
+          >
+            {joinStatus === 'member' && (
+              <Ionicons name="checkmark-circle" size={13} color={colors.primary} style={{ marginRight: 3 }} />
+            )}
+            <Text
+              style={[
+                styles.statusBadgeText,
+                joinStatus === 'member' && styles.statusTextMember,
+                joinStatus === 'pending' && styles.statusTextPending,
+                (joinStatus === 'join' || joinStatus === 'request') && styles.statusTextJoin,
+              ]}
+            >
+              {joinStatus === 'member'
+                ? t('crew.joined')
+                : joinStatus === 'pending'
+                  ? t('crew.pending')
+                  : joinStatus === 'request'
+                    ? t('crew.requestJoin')
+                    : t('crew.join')}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+interface MyCrewCardProps {
+  item: CrewItem;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+  colors: ThemeColors;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}
+
+const MyCrewCard = memo(function MyCrewCard({ item: crew, onPress, styles, colors, t }: MyCrewCardProps) {
+  const isAdmin = crew.my_role === 'owner' || crew.my_role === 'admin';
+  return (
+    <TouchableOpacity
+      style={styles.myCrewCard}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      {/* Logo */}
+      {crew.logo_url ? (
+        <Image source={{ uri: crew.logo_url }} style={styles.myCrewLogo} />
+      ) : (
+        <View
+          style={[
+            styles.myCrewLogo,
+            { backgroundColor: crew.badge_color || colors.primary },
+          ]}
+        >
+          <Ionicons
+            name={(crew.badge_icon as keyof typeof Ionicons.glyphMap) || 'people'}
+            size={22}
+            color="#FFF"
+          />
+        </View>
+      )}
+
+      {/* Info */}
+      <View style={styles.myCrewInfo}>
+        <View style={styles.myCrewNameRow}>
+          <Text style={styles.myCrewName} numberOfLines={1}>
+            {crew.name}
+          </Text>
+          {isAdmin && (
+            <View style={styles.roleBadge}>
+              <Text style={styles.roleBadgeText}>
+                {crew.my_role === 'owner' ? t('crew.owner') : t('crew.admin')}
+              </Text>
+            </View>
+          )}
+        </View>
+        <Text style={styles.myCrewMeta}>
+          {t('crew.memberCount', { count: crew.member_count })}
+          {crew.region ? ` · ${crew.region}` : ''}
+          {crew.recurring_schedule ? ` · ${crew.recurring_schedule}` : ''}
+        </Text>
+      </View>
+
+      <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+    </TouchableOpacity>
+  );
+});
+
+// Module-level cache: survives tab switches
+let _cachedExplore: CrewItem[] = [];
+let _cachedMyCrews: CrewItem[] = [];
+
 // ---- Main ----
 
 export default function CommunityFeedScreen() {
@@ -35,17 +243,17 @@ export default function CommunityFeedScreen() {
 
   const [activeTab, setActiveTab] = useState<'explore' | 'myCrews'>('explore');
 
-  // Explore tab state
-  const [exploreCrews, setExploreCrews] = useState<CrewItem[]>([]);
+  // Explore tab state (initialized from module cache)
+  const [exploreCrews, setExploreCrews] = useState<CrewItem[]>(_cachedExplore);
   const [explorePage, setExplorePage] = useState(0);
   const [exploreHasMore, setExploreHasMore] = useState(true);
-  const [exploreLoading, setExploreLoading] = useState(true);
+  const [exploreLoading, setExploreLoading] = useState(_cachedExplore.length === 0);
   const [exploreRefreshing, setExploreRefreshing] = useState(false);
   const exploreLoadingMore = useRef(false);
 
-  // My crews tab state
-  const [myCrews, setMyCrews] = useState<CrewItem[]>([]);
-  const [myCrewsLoading, setMyCrewsLoading] = useState(true);
+  // My crews tab state (initialized from module cache)
+  const [myCrews, setMyCrews] = useState<CrewItem[]>(_cachedMyCrews);
+  const [myCrewsLoading, setMyCrewsLoading] = useState(_cachedMyCrews.length === 0);
   const [myCrewsRefreshing, setMyCrewsRefreshing] = useState(false);
 
   const loadExplore = useCallback(async (page: number, refresh = false) => {
@@ -56,9 +264,9 @@ export default function CommunityFeedScreen() {
     try {
       const res = await crewService.listCrews({ page, per_page: 20 });
       if (page === 0) {
-        setExploreCrews(res.data);
+        setExploreCrews(res.data); _cachedExplore = res.data;
       } else {
-        setExploreCrews((prev) => [...prev, ...res.data]);
+        setExploreCrews((prev) => { const next = [...prev, ...res.data]; _cachedExplore = next; return next; });
       }
       setExplorePage(page);
       setExploreHasMore(res.data.length >= 20);
@@ -76,7 +284,7 @@ export default function CommunityFeedScreen() {
     else setMyCrewsLoading(true);
     try {
       const res = await crewService.getMyCrews();
-      setMyCrews(res);
+      setMyCrews(res); _cachedMyCrews = res;
     } catch {
       // ignore
     } finally {
@@ -85,12 +293,10 @@ export default function CommunityFeedScreen() {
     }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadExplore(0);
-      loadMyCrews();
-    }, [loadExplore, loadMyCrews]),
-  );
+  useEffect(() => {
+    loadExplore(0);
+    loadMyCrews();
+  }, [loadExplore, loadMyCrews]);
 
   const handleExploreEndReached = useCallback(() => {
     if (!exploreHasMore || exploreLoadingMore.current) return;
@@ -98,194 +304,66 @@ export default function CommunityFeedScreen() {
     loadExplore(explorePage + 1);
   }, [exploreHasMore, explorePage, loadExplore]);
 
-  // ---- Renderers ----
-
-  const getJoinStatus = (crew: CrewItem): 'member' | 'pending' | 'join' | 'request' => {
-    if (crew.is_member) return 'member';
-    if (crew.join_request_status === 'pending') return 'pending';
-    if (crew.requires_approval) return 'request';
-    return 'join';
-  };
+  // ---- Renderers (delegate to memoized components) ----
 
   const renderExploreCard = useCallback(
-    ({ item: crew }: { item: CrewItem }) => {
-      const joinStatus = getJoinStatus(crew);
-      const hasCover = !!crew.cover_image_url;
-
-      return (
-        <TouchableOpacity
-          style={styles.exploreCard}
-          onPress={() => navigation.navigate('CrewDetail', { crewId: crew.id })}
-          activeOpacity={0.7}
-        >
-          {/* Cover */}
-          {hasCover ? (
-            <ImageBackground
-              source={{ uri: crew.cover_image_url! }}
-              style={styles.exploreCover}
-              imageStyle={styles.exploreCoverImage}
-            >
-              <View style={styles.exploreCoverGradient} />
-            </ImageBackground>
-          ) : (
-            <View
-              style={[
-                styles.exploreCover,
-                { backgroundColor: crew.badge_color || colors.primary },
-              ]}
-            >
-              <Ionicons
-                name={(crew.badge_icon as keyof typeof Ionicons.glyphMap) || 'people'}
-                size={32}
-                color="rgba(255,255,255,0.3)"
-              />
-            </View>
-          )}
-
-          {/* Logo */}
-          <View style={styles.exploreLogoWrap}>
-            {crew.logo_url ? (
-              <Image source={{ uri: crew.logo_url }} style={styles.exploreLogo} />
-            ) : (
-              <View
-                style={[
-                  styles.exploreLogo,
-                  { backgroundColor: crew.badge_color || colors.primary },
-                ]}
-              >
-                <Ionicons
-                  name={(crew.badge_icon as keyof typeof Ionicons.glyphMap) || 'people'}
-                  size={18}
-                  color="#FFF"
-                />
-              </View>
-            )}
-          </View>
-
-          {/* Info */}
-          <View style={styles.exploreInfo}>
-            <View style={styles.exploreNameRow}>
-              <Text style={styles.exploreName} numberOfLines={1}>
-                {crew.name}
-              </Text>
-              {crew.region && (
-                <View style={styles.regionBadge}>
-                  <Text style={styles.regionBadgeText}>{crew.region}</Text>
-                </View>
-              )}
-            </View>
-            {crew.description ? (
-              <Text style={styles.exploreDesc} numberOfLines={2}>
-                {crew.description}
-              </Text>
-            ) : null}
-
-            <View style={styles.exploreBottom}>
-              <View style={styles.exploreStats}>
-                <Ionicons name="people-outline" size={13} color={colors.textTertiary} />
-                <Text style={styles.exploreStatText}>
-                  {crew.member_count}{crew.max_members ? `/${crew.max_members}` : ''}
-                </Text>
-                {crew.recurring_schedule ? (
-                  <>
-                    <Text style={styles.exploreDot}>·</Text>
-                    <Ionicons name="calendar-outline" size={12} color={colors.textTertiary} />
-                    <Text style={styles.exploreStatText} numberOfLines={1}>
-                      {crew.recurring_schedule}
-                    </Text>
-                  </>
-                ) : null}
-              </View>
-
-              <View
-                style={[
-                  styles.statusBadge,
-                  joinStatus === 'member' && styles.statusBadgeMember,
-                  joinStatus === 'pending' && styles.statusBadgePending,
-                  (joinStatus === 'join' || joinStatus === 'request') && styles.statusBadgeJoin,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.statusBadgeText,
-                    joinStatus === 'member' && styles.statusTextMember,
-                    joinStatus === 'pending' && styles.statusTextPending,
-                    (joinStatus === 'join' || joinStatus === 'request') && styles.statusTextJoin,
-                  ]}
-                >
-                  {joinStatus === 'member'
-                    ? t('crew.joined')
-                    : joinStatus === 'pending'
-                      ? t('crew.pending')
-                      : joinStatus === 'request'
-                        ? t('crew.requestJoin')
-                        : t('crew.join')}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-      );
-    },
+    ({ item }: { item: CrewItem }) => (
+      <ExploreCard
+        item={item}
+        onPress={() => navigation.navigate('CrewDetail', { crewId: item.id })}
+        styles={styles}
+        colors={colors}
+        t={t}
+      />
+    ),
     [colors, navigation, styles, t],
   );
 
   const renderMyCrewCard = useCallback(
-    ({ item: crew }: { item: CrewItem }) => {
-      const isAdmin = crew.my_role === 'owner' || crew.my_role === 'admin';
-      return (
-        <TouchableOpacity
-          style={styles.myCrewCard}
-          onPress={() => navigation.navigate('CrewDetail', { crewId: crew.id })}
-          activeOpacity={0.7}
-        >
-          {/* Logo */}
-          {crew.logo_url ? (
-            <Image source={{ uri: crew.logo_url }} style={styles.myCrewLogo} />
-          ) : (
-            <View
-              style={[
-                styles.myCrewLogo,
-                { backgroundColor: crew.badge_color || colors.primary },
-              ]}
-            >
-              <Ionicons
-                name={(crew.badge_icon as keyof typeof Ionicons.glyphMap) || 'people'}
-                size={22}
-                color="#FFF"
-              />
-            </View>
-          )}
-
-          {/* Info */}
-          <View style={styles.myCrewInfo}>
-            <View style={styles.myCrewNameRow}>
-              <Text style={styles.myCrewName} numberOfLines={1}>
-                {crew.name}
-              </Text>
-              {isAdmin && (
-                <View style={styles.roleBadge}>
-                  <Text style={styles.roleBadgeText}>
-                    {crew.my_role === 'owner' ? t('crew.owner') : t('crew.admin')}
-                  </Text>
-                </View>
-              )}
-            </View>
-            <Text style={styles.myCrewMeta}>
-              {t('crew.memberCount', { count: crew.member_count })}
-              {crew.recurring_schedule ? ` · ${crew.recurring_schedule}` : ''}
-            </Text>
-          </View>
-
-          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-        </TouchableOpacity>
-      );
-    },
+    ({ item }: { item: CrewItem }) => (
+      <MyCrewCard
+        item={item}
+        onPress={() => navigation.navigate('CrewDetail', { crewId: item.id })}
+        styles={styles}
+        colors={colors}
+        t={t}
+      />
+    ),
     [colors, navigation, styles, t],
   );
 
   const exploreKeyExtractor = useCallback((item: CrewItem) => item.id, []);
   const myCrewKeyExtractor = useCallback((item: CrewItem) => item.id, []);
+
+  // ---- Header navigation handlers ----
+
+  const handleNavigateToFriends = useCallback(() => {
+    navigation.navigate('Friends');
+  }, [navigation]);
+
+  const handleNavigateToCrewSearch = useCallback(() => {
+    navigation.navigate('CrewSearch');
+  }, [navigation]);
+
+  const handleNavigateToCrewCreate = useCallback(() => {
+    navigation.navigate('CrewCreate');
+  }, [navigation]);
+
+  const handleExploreRefresh = useCallback(() => {
+    loadExplore(0, true);
+  }, [loadExplore]);
+
+  const handleMyCrewsRefresh = useCallback(() => {
+    loadMyCrews(true);
+  }, [loadMyCrews]);
+
+  const handleSetExploreTab = useCallback(() => {
+    setActiveTab('explore');
+  }, []);
+
+  const handleSetMyCrewsTab = useCallback(() => {
+    setActiveTab('myCrews');
+  }, []);
 
   // ---- Empty states ----
 
@@ -307,7 +385,7 @@ export default function CommunityFeedScreen() {
         <Text style={styles.emptySubtitle}>{t('crew.noCrewsDesc')}</Text>
         <TouchableOpacity
           style={styles.emptyBtn}
-          onPress={() => setActiveTab('explore')}
+          onPress={handleSetExploreTab}
           activeOpacity={0.7}
         >
           <Ionicons name="search" size={16} color="#FFF" />
@@ -315,7 +393,7 @@ export default function CommunityFeedScreen() {
         </TouchableOpacity>
       </View>
     ),
-    [colors, styles, t],
+    [colors, styles, t, handleSetExploreTab],
   );
 
   // ---- Render ----
@@ -329,14 +407,21 @@ export default function CommunityFeedScreen() {
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={styles.headerBtn}
-              onPress={() => navigation.navigate('CrewSearch')}
+              onPress={handleNavigateToFriends}
+              activeOpacity={0.6}
+            >
+              <Ionicons name="people-outline" size={20} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerBtn}
+              onPress={handleNavigateToCrewSearch}
               activeOpacity={0.6}
             >
               <Ionicons name="search-outline" size={20} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerBtn}
-              onPress={() => navigation.navigate('CrewCreate')}
+              onPress={handleNavigateToCrewCreate}
               activeOpacity={0.6}
             >
               <Ionicons name="add-outline" size={22} color={colors.text} />
@@ -348,7 +433,7 @@ export default function CommunityFeedScreen() {
         <View style={styles.tabBar}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'explore' && styles.tabActive]}
-            onPress={() => setActiveTab('explore')}
+            onPress={handleSetExploreTab}
             activeOpacity={0.7}
           >
             <Text style={[styles.tabText, activeTab === 'explore' && styles.tabTextActive]}>
@@ -357,17 +442,12 @@ export default function CommunityFeedScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'myCrews' && styles.tabActive]}
-            onPress={() => setActiveTab('myCrews')}
+            onPress={handleSetMyCrewsTab}
             activeOpacity={0.7}
           >
             <Text style={[styles.tabText, activeTab === 'myCrews' && styles.tabTextActive]}>
               {t('crew.myCrews')}
             </Text>
-            {myCrews.length > 0 && (
-              <View style={styles.tabBadge}>
-                <Text style={styles.tabBadgeText}>{myCrews.length}</Text>
-              </View>
-            )}
           </TouchableOpacity>
         </View>
 
@@ -386,11 +466,14 @@ export default function CommunityFeedScreen() {
               showsVerticalScrollIndicator={false}
               onEndReached={handleExploreEndReached}
               onEndReachedThreshold={0.3}
+              removeClippedSubviews={true}
+              maxToRenderPerBatch={10}
+              windowSize={7}
               ListEmptyComponent={ExploreEmpty}
               refreshControl={
                 <RefreshControl
                   refreshing={exploreRefreshing}
-                  onRefresh={() => loadExplore(0, true)}
+                  onRefresh={handleExploreRefresh}
                   tintColor={colors.primary}
                 />
               }
@@ -418,11 +501,14 @@ export default function CommunityFeedScreen() {
               keyExtractor={myCrewKeyExtractor}
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
+              removeClippedSubviews={true}
+              maxToRenderPerBatch={10}
+              windowSize={7}
               ListEmptyComponent={MyCrewsEmpty}
               refreshControl={
                 <RefreshControl
                   refreshing={myCrewsRefreshing}
-                  onRefresh={() => loadMyCrews(true)}
+                  onRefresh={handleMyCrewsRefresh}
                   tintColor={colors.primary}
                 />
               }
@@ -438,7 +524,10 @@ export default function CommunityFeedScreen() {
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
-    container: { flex: 1 },
+    container: {
+      flex: 1,
+      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
+    },
 
     loadingContainer: {
       flex: 1,
@@ -509,21 +598,6 @@ const createStyles = (c: ThemeColors) =>
       color: c.text,
       fontWeight: '700',
     },
-    tabBadge: {
-      backgroundColor: c.primary,
-      borderRadius: 8,
-      minWidth: 18,
-      height: 18,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: 5,
-    },
-    tabBadgeText: {
-      fontSize: 11,
-      fontWeight: '800',
-      color: '#FFF',
-    },
-
     listContent: {
       paddingHorizontal: SPACING.xl,
       paddingBottom: SPACING.xxxl + SPACING.xl,
@@ -625,12 +699,14 @@ const createStyles = (c: ThemeColors) =>
 
     // Status badge
     statusBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
       paddingHorizontal: SPACING.md,
       paddingVertical: SPACING.xs + 1,
       borderRadius: BORDER_RADIUS.full,
     },
     statusBadgeMember: {
-      backgroundColor: c.surface,
+      backgroundColor: c.primary + '15',
     },
     statusBadgePending: {
       backgroundColor: '#F59E0B' + '18',
@@ -643,7 +719,7 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '700',
     },
     statusTextMember: {
-      color: c.textTertiary,
+      color: c.primary,
     },
     statusTextPending: {
       color: '#F59E0B',

@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from './api';
 import type {
   CourseListResponse,
@@ -17,6 +18,35 @@ import type {
   LikeStatusResponse,
 } from '../types/api';
 import { PAGINATION } from '../utils/constants';
+
+// ---- Offline course cache (AsyncStorage, 7-day TTL) ----
+const CACHE_PREFIX = 'course_detail_';
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function getCachedCourseDetail(courseId: string): Promise<CourseDetail | null> {
+  try {
+    const raw = await AsyncStorage.getItem(`${CACHE_PREFIX}${courseId}`);
+    if (!raw) return null;
+    const { data, timestamp } = JSON.parse(raw);
+    if (Date.now() - timestamp > CACHE_TTL_MS) {
+      AsyncStorage.removeItem(`${CACHE_PREFIX}${courseId}`);
+      return null;
+    }
+    return data;
+  } catch { return null; }
+}
+
+async function setCachedCourseDetail(courseId: string, data: CourseDetail): Promise<void> {
+  try {
+    await AsyncStorage.setItem(`${CACHE_PREFIX}${courseId}`, JSON.stringify({
+      data, timestamp: Date.now(),
+    }));
+  } catch {}
+}
+
+function invalidateCourseCache(courseId: string): void {
+  AsyncStorage.removeItem(`${CACHE_PREFIX}${courseId}`).catch(() => {});
+}
 
 /**
  * Build a query string from a params object, omitting undefined values.
@@ -78,7 +108,16 @@ export const courseService = {
    * Fetch full course detail including route geometry.
    */
   async getCourseDetail(courseId: string): Promise<CourseDetail> {
-    return api.get<CourseDetail>(`/courses/${courseId}`);
+    try {
+      const detail = await api.get<CourseDetail>(`/courses/${courseId}`);
+      setCachedCourseDetail(courseId, detail); // fire-and-forget cache update
+      return detail;
+    } catch (error) {
+      // Network failure — fall back to cached data
+      const cached = await getCachedCourseDetail(courseId);
+      if (cached) return cached;
+      throw error;
+    }
   },
 
   /**
@@ -126,6 +165,7 @@ export const courseService = {
     },
   ): Promise<void> {
     await api.patch(`/courses/${courseId}`, data);
+    invalidateCourseCache(courseId);
   },
 
   /**
@@ -133,6 +173,7 @@ export const courseService = {
    */
   async deleteCourse(courseId: string): Promise<void> {
     await api.delete(`/courses/${courseId}`);
+    invalidateCourseCache(courseId);
   },
 
   /**

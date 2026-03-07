@@ -88,6 +88,7 @@ export interface ProfileUpdateRequest {
   instagram_username?: string | null;
   country?: string | null;
   activity_region?: string | null;
+  crew_name?: string | null;
 }
 
 export interface ProfileSetupResponse {
@@ -378,6 +379,108 @@ export interface MyBestRecord {
   finished_at: string;
 }
 
+// ---- Group Runs ----
+
+export interface GroupRunMemberInfo {
+  user_id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  status: 'invited' | 'accepted' | 'completed';
+  best_duration_seconds: number | null;
+  best_pace_seconds_per_km: number | null;
+}
+
+export interface GroupRankingInfo {
+  rank: number | null;
+  avg_duration_seconds: number;
+}
+
+export interface GroupRunItem {
+  id: string;
+  course_id: string;
+  course_name: string | null;
+  name: string;
+  creator_id: string | null;
+  status: 'active' | 'completed';
+  member_count: number;
+  members: GroupRunMemberInfo[];
+  my_status: 'invited' | 'accepted' | 'completed' | null;
+  group_ranking: GroupRankingInfo | null;
+  created_at: string;
+}
+
+export interface GroupRankingEntry {
+  rank: number;
+  group_run_id: string;
+  group_name: string;
+  avg_duration_seconds: number;
+  completed_count: number;
+  total_members: number;
+  members: GroupRunMemberInfo[];
+  achieved_at: string;
+}
+
+export interface GroupRankingListResponse {
+  data: GroupRankingEntry[];
+  my_groups: GroupRankingEntry[];
+  total_groups: number;
+}
+
+export interface GroupRunListResponse {
+  data: GroupRunItem[];
+  total_count: number;
+}
+
+// ---- Crew Challenges (Raid Run) ----
+
+export interface CrewChallengeRecordInfo {
+  user_id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  best_duration_seconds: number | null;
+  best_pace_seconds_per_km: number | null;
+  completed_at: string | null;
+  run_count: number;
+}
+
+export interface CrewChallengeItem {
+  id: string;
+  crew_id: string;
+  course_id: string;
+  course_name: string | null;
+  course_distance_meters: number | null;
+  created_by: string | null;
+  status: 'active' | 'ended';
+  records: CrewChallengeRecordInfo[];
+  completed_count: number;
+  total_participants: number;
+  created_at: string;
+  ended_at: string | null;
+}
+
+export interface CrewChallengeHistoryResponse {
+  data: CrewChallengeItem[];
+  total_count: number;
+}
+
+export interface CrewCourseRankingEntry {
+  rank: number;
+  crew_id: string;
+  crew_name: string;
+  crew_logo_url: string | null;
+  crew_badge_color: string;
+  avg_duration_seconds: number;
+  completed_count: number;
+  total_participants: number;
+  achieved_at: string;
+}
+
+export interface CrewCourseRankingListResponse {
+  data: CrewCourseRankingEntry[];
+  my_crews: CrewCourseRankingEntry[];
+  total_crews: number;
+}
+
 // ---- Running Session ----
 
 export interface DeviceInfo {
@@ -507,6 +610,8 @@ export interface RunCompleteResponse {
   };
   is_flagged?: boolean;
   flag_reason?: string;
+  route_match_percent?: number;
+  max_deviation_meters?: number;
   user_stats_update: {
     total_distance_meters: number;
     total_runs: number;
@@ -837,9 +942,11 @@ export interface CrewItem {
   recurring_schedule: string | null;
   meeting_point: string | null;
   requires_approval: boolean;
+  grade_config: { levels: Record<string, { name: string }> } | null;
   is_member: boolean;
   my_role: string | null;
   join_request_status: string | null;
+  last_activity_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -854,7 +961,16 @@ export interface CrewMemberItem {
   nickname: string | null;
   avatar_url: string | null;
   role: string;
+  grade_level: number;
   joined_at: string;
+}
+
+export interface CrewManagementStats {
+  total_members: number;
+  members_by_grade: Record<number, number>;
+  pending_requests: number;
+  recent_joins_7d: number;
+  recent_leaves_7d: number;
 }
 
 export interface CrewMemberListResponse {
@@ -930,19 +1046,21 @@ export interface PostAuthor {
   nickname: string | null;
   avatar_url: string | null;
   crew_name?: string | null;
+  crew_grade_level?: number | null;
 }
 
 export type CommunityPostType = 'general' | 'crew_promo' | 'question';
 
 export interface CommunityPostItem {
   id: string;
-  title: string;
+  title: string | null;
   content: string;
   post_type: CommunityPostType;
   event_id: string | null;
   event_title: string | null;
   crew_id: string | null;
   image_url: string | null;
+  image_urls: string[] | null;
   like_count: number;
   comment_count: number;
   is_liked: boolean;

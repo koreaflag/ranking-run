@@ -5,6 +5,11 @@
 
 // ---- GPS Tracker Module (JS -> Native) ----
 
+export interface SmoothedRouteResult {
+  route: FilteredLocation[];
+  distance: number;
+}
+
 export interface GPSTrackerModule {
   startTracking(): Promise<void>;
   stopTracking(): Promise<void>;
@@ -12,6 +17,7 @@ export interface GPSTrackerModule {
   resumeTracking(): Promise<void>;
   getRawGPSPoints(): Promise<RawGPSPoint[]>;
   getFilteredRoute(): Promise<FilteredLocation[]>;
+  getSmoothedRoute(): Promise<SmoothedRouteResult>;
   getCurrentStatus(): Promise<GPSStatus>;
 }
 

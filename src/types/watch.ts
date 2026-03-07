@@ -47,4 +47,5 @@ export const WATCH_EVENTS = {
   COMMAND: 'Watch_onCommand',
   HEART_RATE: 'Watch_onHeartRate',
   REACHABILITY_CHANGE: 'Watch_onReachabilityChange',
+  STANDALONE_RUN: 'Watch_onStandaloneRun',
 } as const;

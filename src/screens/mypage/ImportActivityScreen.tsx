@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import ScreenHeader from '../../components/common/ScreenHeader';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import { useTheme } from '../../hooks/useTheme';

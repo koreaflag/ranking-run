@@ -14,7 +14,7 @@ import {
   Image,
   InteractionManager,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -38,6 +38,8 @@ import { useRunTimer } from '../../hooks/useRunTimer';
 import { useWatchCompanion } from '../../hooks/useWatchCompanion';
 import { useCourseNavigation } from '../../hooks/useCourseNavigation';
 import { useCheckpointTracker } from '../../hooks/useCheckpointTracker';
+import { usePaceCoaching } from '../../hooks/usePaceCoaching';
+import { useVoiceGuidance } from '../../hooks/useVoiceGuidance';
 
 import * as Location from 'expo-location';
 import { useTheme } from '../../hooks/useTheme';
@@ -174,13 +176,18 @@ function formatGoalLabel(goal: RunGoal, t: (key: string, opts?: Record<string, u
     }
     case 'pace':
       return t('world.paceGoalLabel', { pace: `${Math.floor(goal.value / 60)}'${String(Math.floor(goal.value % 60)).padStart(2, '0')}"` });
+    case 'program': {
+      const km = (goal.value / 1000).toFixed(1);
+      const targetMins = goal.targetTime ? Math.floor(goal.targetTime / 60) : 0;
+      return `${km}km · ${targetMins}분`;
+    }
     default:
       return t('world.goalSetting');
   }
 }
 
 function getGoalProgress(
-  goal: { type: 'distance' | 'time' | 'pace' | null; value: number | null },
+  goal: { type: 'distance' | 'time' | 'pace' | 'program' | null; value: number | null; targetTime?: number | null },
   distanceMeters: number,
   durationSeconds: number,
   avgPace: number,
@@ -202,6 +209,23 @@ function getGoalProgress(
       const pct = Math.min(100, (goal.value / avgPace) * 100);
       return { percent: pct, label: `${formatPace(avgPace)} / ${formatPace(goal.value)}`, reached: avgPace <= goal.value };
     }
+    case 'program': {
+      const targetTime = goal.targetTime ?? 0;
+      const pct = Math.min(100, (distanceMeters / goal.value) * 100);
+      const targetKm = (goal.value / 1000).toFixed(1);
+      let deltaLabel = '';
+      if (distanceMeters > 0 && targetTime > 0) {
+        const projectedFinish = (goal.value / distanceMeters) * durationSeconds;
+        const timeDelta = targetTime - projectedFinish;
+        const absDelta = Math.abs(Math.round(timeDelta));
+        deltaLabel = timeDelta >= 0 ? ` (+${absDelta}s)` : ` (-${absDelta}s)`;
+      }
+      return {
+        percent: pct,
+        label: `${metersToKm(distanceMeters)} / ${targetKm} km${deltaLabel}`,
+        reached: distanceMeters >= goal.value,
+      };
+    }
     default:
       return null;
   }
@@ -216,8 +240,8 @@ export default function WorldScreen() {
   const colors = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { mapMarkers, fetchMapMarkers, pendingFocusCourseId } = useCourseStore();
-  const { map3DStyle, countdownSeconds, hapticFeedback } = useSettingsStore();
+  const { mapMarkers, fetchMapMarkers, pendingFocusCourseId, pendingStartCourseId } = useCourseStore();
+  const { map3DStyle, countdownSeconds, hapticFeedback, voiceGuidance } = useSettingsStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<RouteMapViewHandle>(null);
   const [userRegion, setUserRegion] = useState<Region | null>(null);
@@ -272,6 +296,7 @@ export default function WorldScreen() {
     distanceToStart,
     courseId: runCourseId,
     runGoal: storeRunGoal,
+    splits,
     startSession,
     updateSessionId,
     pause: storePause,
@@ -280,6 +305,7 @@ export default function WorldScreen() {
     reset,
     setPhase,
     setRunGoal: setStoreRunGoal,
+    addDeviationPoint,
   } = useRunningStore();
 
   const isInRun = phase !== 'idle';  // includes completed to keep route visible
@@ -287,6 +313,45 @@ export default function WorldScreen() {
   // GPS & timer hooks (always mounted, only active when phase is running/paused)
   const { startTracking, stopTracking, pauseTracking, resumeTracking } = useGPSTracker();
   useRunTimer();
+
+  // Pace coaching (program goal only)
+  const paceCoachingEnabled = storeRunGoal?.type === 'program';
+  const paceCoachingTargetDist = paceCoachingEnabled ? (storeRunGoal.value ?? 0) : 0;
+  const paceCoachingTargetTime = paceCoachingEnabled ? (storeRunGoal.targetTime ?? 0) : 0;
+  const paceCoaching = usePaceCoaching({
+    enabled: paceCoachingEnabled,
+    targetDistance: paceCoachingTargetDist,
+    targetTime: paceCoachingTargetTime,
+    currentDistance: distanceMeters,
+    elapsedTime: durationSeconds,
+    avgPace: avgPaceSecondsPerKm,
+    phase,
+    splits,
+  });
+
+  // DEBUG: remove after confirming pace coaching works
+  useEffect(() => {
+    if (phase === 'running' && paceCoachingEnabled) {
+      console.log('[PaceCoaching] enabled:', paceCoachingEnabled,
+        'targetDist:', paceCoachingTargetDist, 'targetTime:', paceCoachingTargetTime,
+        'dist:', distanceMeters, 'result:', paceCoaching ? paceCoaching.status : 'null');
+    }
+  }, [phase, distanceMeters, paceCoaching, paceCoachingEnabled, paceCoachingTargetDist, paceCoachingTargetTime]);
+
+  // Metronome auto-start/stop
+  const [metronomeMuted, setMetronomeMuted] = useState(false);
+  const MetronomeModule = NativeModules.MetronomeModule;
+  useEffect(() => {
+    if (!MetronomeModule) return;
+    const bpm = storeRunGoal?.type === 'program' ? (storeRunGoal.cadenceBPM ?? 0) : 0;
+
+    if (phase === 'running' && bpm > 0 && !metronomeMuted) {
+      MetronomeModule.start(bpm);
+    } else {
+      MetronomeModule.stop();
+    }
+    return () => { MetronomeModule.stop(); };
+  }, [phase, storeRunGoal?.type, storeRunGoal?.cadenceBPM, metronomeMuted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Countdown state
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -297,6 +362,7 @@ export default function WorldScreen() {
   // Course running state
   const [courseRoute, setCourseRoute] = useState<Array<{ latitude: number; longitude: number }> | null>(null);
   const [courseCheckpoints, setCourseCheckpoints] = useState<CourseCheckpoint[] | null>(null);
+  const [courseElevationProfile, setCourseElevationProfile] = useState<number[] | null>(null);
 
   // Course navigation & checkpoint tracking hooks
   const courseNavigation = useCourseNavigation(
@@ -323,6 +389,98 @@ export default function WorldScreen() {
   const [screenLocked, setScreenLocked] = useState(false);
   const lockProgressAnim = useRef(new Animated.Value(0)).current;
   const trackingStartedRef = useRef(false);
+
+  // Refs to avoid stale closures in finishRun callback
+  const finishReachedRef = useRef(finishReached);
+  finishReachedRef.current = finishReached;
+  const runCourseIdRef = useRef(runCourseId);
+  runCourseIdRef.current = runCourseId;
+
+  // Track course deviation stats for fair ranking
+  const maxDeviationRef = useRef(0);
+  const deviationSamplesRef = useRef(0);
+  const offCourseSamplesRef = useRef(0);
+  const offCourseStartRef = useRef<number | null>(null);
+  // 0=on-course, 1=just off (grace), 2=grace expired (penalty counting)
+  const [offCourseLevel, setOffCourseLevel] = useState(0);
+
+  const OFF_COURSE_GRACE_SECONDS = 15;
+
+  useEffect(() => {
+    if (!courseNavigation || phase !== 'running') return;
+    deviationSamplesRef.current += 1;
+    if (courseNavigation.deviationMeters > maxDeviationRef.current) {
+      maxDeviationRef.current = courseNavigation.deviationMeters;
+    }
+
+    // Log deviation for result screen visualization
+    if (runCourseId) {
+      addDeviationPoint(runRoutePoints.length - 1, courseNavigation.deviationMeters);
+    }
+
+    if (courseNavigation.isOffCourse) {
+      const now = Date.now();
+      if (offCourseStartRef.current === null) {
+        offCourseStartRef.current = now;
+        setOffCourseLevel(1);
+      }
+      const elapsed = (now - offCourseStartRef.current) / 1000;
+      if (elapsed >= OFF_COURSE_GRACE_SECONDS) {
+        // Grace expired — count as penalty sample
+        offCourseSamplesRef.current += 1;
+        setOffCourseLevel(2);
+      }
+    } else {
+      // Back on course — reset grace timer
+      offCourseStartRef.current = null;
+      if (offCourseLevel !== 0) setOffCourseLevel(0);
+    }
+  }, [courseNavigation, phase, offCourseLevel]);
+
+  // Reset deviation tracking on new run
+  useEffect(() => {
+    if (phase === 'idle') {
+      maxDeviationRef.current = 0;
+      deviationSamplesRef.current = 0;
+      offCourseSamplesRef.current = 0;
+      offCourseStartRef.current = null;
+      setOffCourseLevel(0);
+    }
+  }, [phase]);
+
+  // Haptic escalation: strong vibration when off-course grace expires
+  const prevOffCourseLevelRef = useRef(0);
+  useEffect(() => {
+    if (offCourseLevel === 2 && prevOffCourseLevelRef.current < 2 && hapticFeedback) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } else if (offCourseLevel === 1 && prevOffCourseLevelRef.current === 0 && hapticFeedback) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    }
+    prevOffCourseLevelRef.current = offCourseLevel;
+  }, [offCourseLevel, hapticFeedback]);
+
+  // Voice guidance for course navigation + pace coaching
+  const paceCoachingTTSMessage: string | null = paceCoaching
+    ? (() => {
+        const absDelta = Math.abs(Math.round(paceCoaching.timeDelta));
+        switch (paceCoaching.status) {
+          case 'ahead': return String(t('voice.paceAhead', { seconds: absDelta }));
+          case 'on_pace': return String(t('voice.paceOnTrack'));
+          case 'behind': return String(t('voice.paceBehind', { seconds: absDelta }));
+          case 'critical': return String(t('voice.paceCritical'));
+        }
+      })()
+    : null;
+
+  useVoiceGuidance({
+    navigation: courseNavigation,
+    distanceMeters,
+    phase,
+    enabled: voiceGuidance && (!!runCourseId || storeRunGoal?.type === 'program'),
+    paceCoachingMessage: paceCoachingTTSMessage,
+    offCourseLevel,
+    elevationProfile: courseElevationProfile,
+  });
 
   const handleLockPressIn = useCallback(() => {
     lockProgressAnim.setValue(0);
@@ -358,7 +516,7 @@ export default function WorldScreen() {
 
   // Transition animations
   const worldOverlayOpacity = useRef(new Animated.Value(1)).current;
-  const runPanelTranslateY = useRef(new Animated.Value(400)).current;
+  const runPanelTranslateY = useRef(new Animated.Value(500)).current;
   const countdownOpacity = useRef(new Animated.Value(0)).current;
 
   // Animate world overlays out / running panel in based on phase
@@ -366,14 +524,14 @@ export default function WorldScreen() {
     if (phase === 'idle') {
       Animated.parallel([
         Animated.timing(worldOverlayOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.timing(runPanelTranslateY, { toValue: 400, duration: 250, useNativeDriver: true }),
+        Animated.timing(runPanelTranslateY, { toValue: 500, duration: 250, useNativeDriver: true }),
         Animated.timing(countdownOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
       ]).start();
     } else if (phase === 'completed') {
       // Keep panel visible — content morphs to result summary
       Animated.parallel([
         Animated.timing(countdownOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.spring(runPanelTranslateY, { toValue: 0, damping: 22, stiffness: 160, useNativeDriver: true }),
+        Animated.spring(runPanelTranslateY, { toValue: 0, damping: 22, stiffness: 160, overshootClamping: true, useNativeDriver: true }),
       ]).start();
     } else if (phase === 'countdown') {
       Animated.parallel([
@@ -384,7 +542,7 @@ export default function WorldScreen() {
       Animated.parallel([
         Animated.timing(worldOverlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
         Animated.timing(countdownOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.spring(runPanelTranslateY, { toValue: 0, damping: 22, stiffness: 160, useNativeDriver: true }),
+        Animated.spring(runPanelTranslateY, { toValue: 0, damping: 22, stiffness: 160, overshootClamping: true, useNativeDriver: true }),
       ]).start();
     }
   }, [phase, worldOverlayOpacity, runPanelTranslateY, countdownOpacity]);
@@ -434,6 +592,11 @@ export default function WorldScreen() {
   }, [reset, myLocation]);
 
 
+  // Request location permission on mount (Android requires explicit runtime request)
+  useEffect(() => {
+    Location.requestForegroundPermissionsAsync().catch(() => {});
+  }, []);
+
   // Feed GPS to checkpoint tracker during course running
   useEffect(() => {
     if (phase === 'running' && runCourseId && currentLocation) {
@@ -473,6 +636,18 @@ export default function WorldScreen() {
 
   // Begin countdown + start running (extracted so it can be called after navigating to start)
   const beginCountdownAndRun = useCallback(async (courseId?: string | null) => {
+    // Ensure location permission before starting (critical for Android)
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          t('common.error'),
+          '위치 권한이 필요합니다. 설정에서 위치 권한을 허용해주세요.',
+        );
+        return;
+      }
+    } catch {}
+
     // Clear any 3D preview
     if (selectedMarker) {
       setSelectedMarker(null);
@@ -480,6 +655,18 @@ export default function WorldScreen() {
       setPreviewRoute([]);
       setPreviewCheckpoints([]);
     }
+
+    // Center map on current location (non-blocking — don't delay countdown)
+    // Use last known position for instant response, fall back to async fetch
+    Location.getLastKnownPositionAsync().then((loc) => {
+      if (loc) {
+        const center = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+        setMyLocation(center);
+        mapRef.current?.animateToRegion({
+          ...center, latitudeDelta: 0.005, longitudeDelta: 0.005,
+        }, 600);
+      }
+    }).catch(() => {});
 
     setPhase('countdown');
     setCountdown(countdownSeconds);
@@ -561,16 +748,23 @@ export default function WorldScreen() {
 
   const handleStartRun = useCallback(async (courseId?: string | null) => {
     // Block start if Low Power Mode is enabled (GPS accuracy degrades significantly)
+    // Use a timeout to prevent native bridge delays from blocking the start button
     if (Platform.OS === 'ios') {
       try {
-        const isLowPower = await NativeModules.GPSTrackerModule?.isLowPowerModeEnabled?.();
-        if (isLowPower) {
-          Alert.alert(
-            t('running.lowPowerTitle'),
-            t('running.lowPowerMessage'),
-            [{ text: t('common.confirm'), style: 'default' }],
-          );
-          return;
+        const lowPowerCheck = NativeModules.GPSTrackerModule?.isLowPowerModeEnabled?.();
+        if (lowPowerCheck) {
+          const isLowPower = await Promise.race([
+            lowPowerCheck,
+            new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+          ]);
+          if (isLowPower) {
+            Alert.alert(
+              t('running.lowPowerTitle'),
+              t('running.lowPowerMessage'),
+              [{ text: t('common.confirm'), style: 'default' }],
+            );
+            return;
+          }
         }
       } catch {
         // Unavailable — allow start
@@ -592,6 +786,7 @@ export default function WorldScreen() {
         if (cps?.length) {
           setCourseCheckpoints(cps);
         }
+        setCourseElevationProfile(detail.elevation_profile?.length ? detail.elevation_profile : null);
 
         // Always enter navigate-to-start mode for course runs
         const startCp = cps?.find((cp) => cp.order === 0);
@@ -633,6 +828,15 @@ export default function WorldScreen() {
           setPreviewCheckpoints([{ id: 0, order: 0, lat: startLat, lng: startLng }]);
           // Follow user location while navigating to start
           setFollowUser(true);
+          // Zoom to user location so the map is centered before GPS tracking starts
+          if (userLat != null && userLng != null) {
+            mapRef.current?.animateToRegion({
+              latitude: userLat,
+              longitude: userLng,
+              latitudeDelta: 0.005,
+              longitudeDelta: 0.005,
+            }, 600);
+          }
           trackingStartedRef.current = true;
           await startTracking();
           // Fetch walking directions in background
@@ -832,7 +1036,7 @@ export default function WorldScreen() {
       },
       elevation_gain_meters: Math.round(store.elevationGainMeters),
       elevation_loss_meters: Math.round(store.elevationLossMeters),
-      elevation_profile: [] as number[],
+      elevation_profile: store.filteredLocations.map(loc => Math.round(loc.altitude)),
       splits: store.splits,
       pause_intervals: [] as { paused_at: string; resumed_at: string }[],
       filter_config: {
@@ -844,12 +1048,14 @@ export default function WorldScreen() {
       total_chunks: 0,
       uploaded_chunk_sequences: [] as number[],
       ...(store.checkpointPasses.length > 0 ? { checkpoint_passes: store.checkpointPasses } : {}),
-      ...(runCourseId && finishReached ? {
+      ...(runCourseIdRef.current && finishReachedRef.current ? {
         course_completion: {
           is_completed: true,
-          max_deviation_meters: 0,
-          deviation_points: 0,
-          route_match_percent: 100,
+          max_deviation_meters: Math.round(maxDeviationRef.current),
+          deviation_points: offCourseSamplesRef.current,
+          route_match_percent: deviationSamplesRef.current > 0
+            ? Math.round((1 - offCourseSamplesRef.current / deviationSamplesRef.current) * 100)
+            : 100,
         },
       } : {}),
     };
@@ -892,6 +1098,18 @@ export default function WorldScreen() {
       finishTriggeredRef.current = false;
     }
   }, [finishReached, phase, runCourseId, finishRun]);
+
+  // Fallback auto-finish for courses without checkpoints (progress-based)
+  useEffect(() => {
+    if (phase !== 'running' || !runCourseId || !courseNavigation || finishReached) return;
+    if (cpTotalCount > 0) return; // checkpoint-based detection takes priority
+
+    if (courseNavigation.progressPercent > 95 && courseNavigation.remainingDistanceMeters < 40) {
+      finishReachedRef.current = true;
+      finishTriggeredRef.current = true;
+      finishRun();
+    }
+  }, [phase, runCourseId, courseNavigation, finishReached, cpTotalCount, finishRun]);
 
   const handleStop = useCallback(() => {
     Alert.alert('러닝 종료', '러닝을 종료하시겠습니까?', [
@@ -1091,18 +1309,34 @@ export default function WorldScreen() {
     return () => interaction.cancel();
   }, [pendingFocusCourseId, animateRouteDraw, fetchMapMarkers]);
 
+  // Handle pendingStartCourseId (auto-start course run from outside, e.g. crew raid)
+  useEffect(() => {
+    if (!pendingStartCourseId) return;
+    const courseId = pendingStartCourseId;
+    useCourseStore.getState().setPendingStartCourseId(null);
+
+    // Wait for tab transition, then start the run flow (navigate-to-start)
+    const interaction = InteractionManager.runAfterInteractions(() => {
+      setTimeout(() => {
+        handleStartRun(courseId);
+      }, 300);
+    });
+    return () => interaction.cancel();
+  }, [pendingStartCourseId, handleStartRun]);
+
   const resetTo2D = useCallback(() => {
     cancelRouteAnimation();
     setPreviewRoute([]);
     setPreviewCheckpoints([]);
     setIs3DMode(false);
 
-    const target = userRegion ?? SEOUL_REGION;
+    const target = myLocation ?? userRegion ?? SEOUL_REGION;
     mapRef.current?.animateCamera(
-      { center: target, pitch: 0, heading: 0, zoom: 13 },
+      { center: target, pitch: 0, heading: 0, zoom: 14 },
       800,
     );
-  }, [cancelRouteAnimation, userRegion]);
+    setFollowUser(true);
+  }, [cancelRouteAnimation, myLocation, userRegion]);
 
   const handleMarkerPress = useCallback(
     async (courseId: string) => {
@@ -1181,16 +1415,21 @@ export default function WorldScreen() {
     }
   }, [navigation, selectedMarker]);
 
-  const handleRecenter = useCallback(() => {
-    const center = myLocation ?? { latitude: SEOUL_REGION.latitude, longitude: SEOUL_REGION.longitude };
-    const delta = isInRun ? 0.005 : 0.01;
-    mapRef.current?.animateToRegion(
-      { ...center, latitudeDelta: delta, longitudeDelta: delta },
-      600,
-    );
-    setFollowUser(false);
-    requestAnimationFrame(() => setFollowUser(true));
-  }, [myLocation, isInRun]);
+  const handleRecenter = useCallback(async () => {
+    if (!myLocation) {
+      // Try to get current location if we don't have one yet
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          setMyLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        }
+      } catch {}
+    }
+    // Force Camera to re-engage follow mode (works even if followUser is already true)
+    mapRef.current?.recenterOnUser();
+    setFollowUser(true);
+  }, [myLocation]);
 
   const getDifficultyLabel = (d?: string | null) => {
     switch (d) {
@@ -1241,28 +1480,26 @@ export default function WorldScreen() {
         onMarkerPress={isInRun ? undefined : handleMarkerPress}
         onMapPress={isInRun ? undefined : handleMapPress}
         onRegionChange={isInRun ? undefined : handleRegionChange}
+        onUserMapInteraction={isInRun ? undefined : () => setFollowUser(false)}
         onUserLocationChange={(coord) => {
           setMyLocation({ latitude: coord.latitude, longitude: coord.longitude });
           if (!hasInitializedRef.current) {
             hasInitializedRef.current = true;
-            setFollowUser(false);
             fetchMapMarkers(-90, -180, 90, 180);
-            mapRef.current?.animateToRegion({
-              latitude: coord.latitude,
-              longitude: coord.longitude,
-              latitudeDelta: 0.02,
-              longitudeDelta: 0.02,
-            }, 800);
+            // followUser is already true — Camera will center on user location
           }
         }}
         followsUserLocation={followUser}
+        followZoomLevel={isInRun ? (runCourseId ? 17 : 16) : 15}
+        followUserMode={isInRun && runCourseId ? 'course' : undefined}
+        followPitch={isInRun && runCourseId ? 45 : undefined}
         followPadding={panelHeight > 0 ? { paddingBottom: panelHeight + 60 } : undefined}
         showUserLocation={true}
         hideRouteMarkers={isInRun}
         customUserLocation={myLocation ?? undefined}
         customUserHeading={isInRun ? runHeadingValue : headingAnim}
         interactive
-        pitchEnabled={map3DStyle || is3DMode}
+        pitchEnabled={map3DStyle || is3DMode || (isInRun && !!runCourseId)}
         use3DStyle={map3DStyle}
         style={styles.map}
       />
@@ -1475,6 +1712,22 @@ export default function WorldScreen() {
                       <Ionicons name="watch-outline" size={12} color={colors.success} />
                     </View>
                   )}
+                  {storeRunGoal?.type === 'program' && (storeRunGoal.cadenceBPM ?? 0) > 0 && (
+                    <TouchableOpacity
+                      style={[styles.modeChip, !metronomeMuted && { borderColor: colors.primary }]}
+                      onPress={() => setMetronomeMuted(!metronomeMuted)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons
+                        name={metronomeMuted ? 'musical-note' : 'musical-notes'}
+                        size={11}
+                        color={metronomeMuted ? colors.textTertiary : colors.primary}
+                      />
+                      <Text style={[styles.modeChipText, !metronomeMuted && { color: colors.primary }]}>
+                        {storeRunGoal.cadenceBPM}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </SafeAreaView>
 
@@ -1503,6 +1756,7 @@ export default function WorldScreen() {
                   <Text style={styles.goalReachedText}>목표 달성!</Text>
                 </View>
               )}
+{/* Floating pace coaching banner removed — now shown inside runPanel */}
               {loopDetected && distanceMeters >= 300 && (
                 <View style={styles.loopBanner}>
                   <Ionicons name="flag" size={16} color={COLORS.white} />
@@ -1593,10 +1847,14 @@ export default function WorldScreen() {
                     </View>
                   )}
                   {courseNavigation.isOffCourse && (
-                    <View style={styles.navStripOffCourse}>
+                    <View style={[styles.navStripOffCourse, offCourseLevel >= 2 && { backgroundColor: '#CC0000' }]}>
                       <Ionicons name="warning" size={12} color={COLORS.white} />
                       <Text style={styles.navStripOffCourseText}>
-                        코스 이탈 {Math.round(courseNavigation.deviationMeters)}m
+                        {offCourseLevel >= 2
+                          ? '코스 이탈 — 랭킹 미반영 중'
+                          : offCourseLevel === 1
+                            ? `코스 이탈 ${Math.round(courseNavigation.deviationMeters)}m · 코스로 복귀하세요`
+                            : `코스 이탈 ${Math.round(courseNavigation.deviationMeters)}m`}
                       </Text>
                     </View>
                   )}
@@ -1627,6 +1885,53 @@ export default function WorldScreen() {
                   />
                 </View>
                 <Text style={styles.goalProgressLabel}>{goalProgress.label}</Text>
+              </View>
+            )}
+
+            {/* Pace coaching card — inside panel for visibility */}
+            {paceCoaching && (phase === 'running' || phase === 'paused') && !goalReachedShown && (
+              <View style={[
+                styles.paceCoachingCard,
+                paceCoaching.status === 'ahead' && { backgroundColor: colors.success + '18', borderColor: colors.success + '55' },
+                paceCoaching.status === 'on_pace' && { backgroundColor: colors.primary + '18', borderColor: colors.primary + '55' },
+                paceCoaching.status === 'behind' && { backgroundColor: colors.warning + '18', borderColor: colors.warning + '55' },
+                paceCoaching.status === 'critical' && { backgroundColor: colors.error + '18', borderColor: colors.error + '55' },
+              ]}>
+                <View style={styles.paceCoachingTop}>
+                  <Ionicons
+                    name={paceCoaching.timeDelta >= 0 ? 'caret-up' : 'caret-down'}
+                    size={18}
+                    color={
+                      paceCoaching.status === 'ahead' ? colors.success :
+                      paceCoaching.status === 'on_pace' ? colors.primary :
+                      paceCoaching.status === 'behind' ? colors.warning : colors.error
+                    }
+                  />
+                  <Text style={[
+                    styles.paceCoachingDelta,
+                    paceCoaching.status === 'ahead' && { color: colors.success },
+                    paceCoaching.status === 'on_pace' && { color: colors.primary },
+                    paceCoaching.status === 'behind' && { color: colors.warning },
+                    paceCoaching.status === 'critical' && { color: colors.error },
+                  ]}>
+                    {paceCoaching.timeDelta >= 0 ? '+' : '-'}{Math.abs(Math.round(paceCoaching.timeDelta))}초
+                  </Text>
+                  <Text style={styles.paceCoachingStatus}>
+                    {paceCoaching.status === 'ahead' ? '여유' :
+                     paceCoaching.status === 'on_pace' ? '유지 중' :
+                     paceCoaching.status === 'behind' ? '느림' : '위험'}
+                  </Text>
+                </View>
+                <View style={styles.paceCoachingBottom}>
+                  <Text style={styles.paceCoachingPaceLabel}>목표</Text>
+                  <Text style={styles.paceCoachingPaceValue}>{formatPace(paceCoaching.requiredPace)}</Text>
+                  <View style={styles.paceCoachingPaceDivider} />
+                  <Text style={styles.paceCoachingPaceLabel}>현재</Text>
+                  <Text style={[
+                    styles.paceCoachingPaceValue,
+                    (paceCoaching.status === 'behind' || paceCoaching.status === 'critical') && { color: colors.error },
+                  ]}>{formatPace(paceCoaching.currentPace)}</Text>
+                </View>
               </View>
             )}
 
@@ -1723,7 +2028,7 @@ export default function WorldScreen() {
                             : '기록 업로드 중입니다. 잠시만 기다려주세요.');
                           return;
                         }
-                        navigation.getParent()?.navigate('CourseTab', {
+                        (navigation as any).navigate('CourseTab', {
                           screen: 'CourseCreate',
                           params: {
                             runRecordId: resultRunRecordId,
@@ -1891,7 +2196,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: SPACING.xxl,
-    paddingTop: SPACING.md,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 40) + SPACING.sm : SPACING.md,
     paddingBottom: SPACING.md,
   },
   // -- Weather widget --
@@ -2312,6 +2617,50 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '800',
     color: COLORS.white,
   },
+  paceCoachingCard: {
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    marginBottom: SPACING.md,
+  },
+  paceCoachingTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  paceCoachingDelta: {
+    fontSize: FONT_SIZES.xl,
+    fontWeight: '900',
+  },
+  paceCoachingStatus: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginLeft: SPACING.xs,
+  },
+  paceCoachingBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  paceCoachingPaceLabel: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  paceCoachingPaceValue: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  paceCoachingPaceDivider: {
+    width: 1,
+    height: 14,
+    backgroundColor: COLORS.border,
+    marginHorizontal: SPACING.xs,
+  },
   loopBanner: {
     position: 'absolute',
     top: 150,
@@ -2425,14 +2774,14 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   // -- Bottom running panel --
   runPanel: {
     position: 'absolute',
-    bottom: 0,
+    bottom: -40,
     left: 0,
     right: 0,
     backgroundColor: c.card,
     borderTopLeftRadius: BORDER_RADIUS.xl,
     borderTopRightRadius: BORDER_RADIUS.xl,
     paddingTop: SPACING.lg,
-    paddingBottom: Platform.OS === 'ios' ? 24 : SPACING.lg,
+    paddingBottom: (Platform.OS === 'ios' ? 24 : SPACING.lg) + 40,
     paddingHorizontal: SPACING.xl,
     ...SHADOWS.lg,
     zIndex: 60,

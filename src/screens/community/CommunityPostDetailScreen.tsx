@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
@@ -15,61 +14,33 @@ import {
   Platform,
   Alert,
   ActionSheetIOS,
+  Dimensions,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import type { HomeStackParamList } from '../../types/navigation';
 import type {
   CommunityPostItem,
   CommunityCommentItem,
-  CommunityPostType,
 } from '../../types/api';
 import { communityService } from '../../services/communityService';
 import { crewService } from '../../services/crewService';
 import { useAuthStore } from '../../stores/authStore';
-import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
+import { FONT_SIZES, SPACING } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
+import { formatRelativeTime } from '../../utils/format';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'CommunityPostDetail'>;
 type Route = RouteProp<HomeStackParamList, 'CommunityPostDetail'>;
 
-// ---- Helpers ----
-
-function timeAgo(dateStr: string, t: TFunction): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return t('format.justNow');
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return t('format.minutesAgo', { count: minutes });
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t('format.hoursAgo', { count: hours });
-  const days = Math.floor(hours / 24);
-  return t('format.daysAgo', { count: days });
-}
-
-function postTypeBadge(
-  postType: CommunityPostType,
-  t: TFunction,
-): { label: string; color: string } {
-  switch (postType) {
-    case 'crew_promo':
-      return { label: t('community.categoryCrewPromo'), color: '#FF7A33' };
-    case 'question':
-      return { label: t('community.categoryQuestion'), color: '#3B82F6' };
-    case 'general':
-    default:
-      return { label: t('community.categoryGeneral'), color: '#9CA3AF' };
-  }
-}
+const AVATAR_SIZE = 40;
+const COMMENT_AVATAR_SIZE = 32;
 
 const COMMENTS_PAGE_SIZE = 20;
-
-// ---- Main Screen ----
 
 export default function CommunityPostDetailScreen() {
   const navigation = useNavigation<Nav>();
@@ -82,7 +53,7 @@ export default function CommunityPostDetailScreen() {
 
   const [post, setPost] = useState<CommunityPostItem | null>(null);
   const [comments, setComments] = useState<CommunityCommentItem[]>([]);
-  const [commentPage, setCommentPage] = useState(1);
+  const [commentPage, setCommentPage] = useState(0);
   const [hasMoreComments, setHasMoreComments] = useState(false);
   const [totalComments, setTotalComments] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -99,7 +70,6 @@ export default function CommunityPostDetailScreen() {
   const canDelete = isMine || (!!post?.crew_id && isCrewAdmin);
   const showMenu = canEdit || canDelete;
 
-  // Fetch post
   const fetchPost = useCallback(async () => {
     try {
       const data = await communityService.getPost(postId);
@@ -109,7 +79,6 @@ export default function CommunityPostDetailScreen() {
     }
   }, [postId]);
 
-  // Fetch comments
   const fetchComments = useCallback(
     async (pageNum: number, reset: boolean) => {
       try {
@@ -134,12 +103,11 @@ export default function CommunityPostDetailScreen() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.all([fetchPost(), fetchComments(1, true)]);
+      await Promise.all([fetchPost(), fetchComments(0, true)]);
       setLoading(false);
     })();
   }, [fetchPost, fetchComments]);
 
-  // Fetch crew role if post belongs to a crew
   useEffect(() => {
     if (!post?.crew_id || !currentUser) return;
     crewService
@@ -148,7 +116,6 @@ export default function CommunityPostDetailScreen() {
       .catch(() => {});
   }, [post?.crew_id, currentUser]);
 
-  // Like toggle
   const handleToggleLike = useCallback(async () => {
     if (!post) return;
     try {
@@ -163,7 +130,6 @@ export default function CommunityPostDetailScreen() {
     }
   }, [post, postId]);
 
-  // Add comment
   const handleAddComment = useCallback(async () => {
     const trimmed = commentText.trim();
     if (!trimmed || submitting) return;
@@ -184,7 +150,6 @@ export default function CommunityPostDetailScreen() {
     }
   }, [commentText, submitting, postId]);
 
-  // Delete comment
   const handleDeleteComment = useCallback(
     async (commentId: string) => {
       Alert.alert(t('community.deleteComment'), t('community.deleteCommentMsg'), [
@@ -209,10 +174,9 @@ export default function CommunityPostDetailScreen() {
         },
       ]);
     },
-    [postId],
+    [postId, t],
   );
 
-  // Delete post
   const handleDeletePost = useCallback(async () => {
     if (!post) return;
     Alert.alert(t('community.deletePost'), t('community.deletePostMsg'), [
@@ -232,19 +196,17 @@ export default function CommunityPostDetailScreen() {
     ]);
   }, [post, navigation, t]);
 
-  // Edit post
   const handleEditPost = useCallback(() => {
     if (!post) return;
     navigation.navigate('CommunityPostEdit', {
       postId: post.id,
-      title: post.title,
+      title: post.title ?? undefined,
       content: post.content,
       imageUrl: post.image_url ?? undefined,
       postType: post.post_type,
     });
   }, [post, navigation]);
 
-  // More menu (ActionSheet)
   const handleMoreMenu = useCallback(() => {
     if (!post) return;
 
@@ -273,7 +235,6 @@ export default function CommunityPostDetailScreen() {
         },
       );
     } else {
-      // Android: use Alert as fallback
       Alert.alert(
         undefined as unknown as string,
         undefined,
@@ -286,7 +247,6 @@ export default function CommunityPostDetailScreen() {
     }
   }, [post, canEdit, canDelete, handleEditPost, handleDeletePost, t]);
 
-  // Load more comments
   const handleLoadMoreComments = useCallback(async () => {
     if (loadingMore || !hasMoreComments) return;
     setLoadingMore(true);
@@ -342,7 +302,6 @@ export default function CommunityPostDetailScreen() {
     );
   }
 
-  const badge = postTypeBadge(post.post_type, t);
   const authorInitial = (post.author.nickname ?? '?').charAt(0).toUpperCase();
 
   return (
@@ -351,7 +310,6 @@ export default function CommunityPostDetailScreen() {
         <KeyboardAvoidingView
           style={styles.container}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
         >
           {/* Header */}
           <View style={styles.header}>
@@ -376,30 +334,26 @@ export default function CommunityPostDetailScreen() {
             )}
           </View>
 
-          {/* Scrollable content */}
           <ScrollView
             style={styles.scrollView}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Post section */}
-            <View style={styles.postSection}>
-              {/* Author */}
+            {/* Post card */}
+            <View style={styles.postCard}>
+              {/* Author row */}
               <View style={styles.authorRow}>
                 {post.author.avatar_url ? (
-                  <Image
-                    source={{ uri: post.author.avatar_url }}
-                    style={styles.avatar}
-                  />
+                  <Image source={{ uri: post.author.avatar_url }} style={styles.avatar} />
                 ) : (
                   <View style={styles.avatarPlaceholder}>
                     <Text style={styles.avatarInitial}>{authorInitial}</Text>
                   </View>
                 )}
                 <View style={styles.authorInfo}>
-                  <View style={styles.authorNameRow}>
-                    <Text style={styles.authorNickname}>
+                  <View style={styles.topRow}>
+                    <Text style={styles.authorNickname} numberOfLines={1}>
                       {post.author.nickname ?? t('common.anonymous')}
                     </Text>
                     {post.author.crew_name && (
@@ -408,37 +362,28 @@ export default function CommunityPostDetailScreen() {
                       </View>
                     )}
                   </View>
-                  <Text style={styles.authorTime}>
-                    {timeAgo(post.created_at, t)}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Badge */}
-              <View style={styles.badgeRow}>
-                <View
-                  style={[styles.typeBadge, { backgroundColor: badge.color + '18' }]}
-                >
-                  <Text style={[styles.typeBadgeText, { color: badge.color }]}>
-                    {badge.label}
-                  </Text>
+                  <Text style={styles.timeText}>{formatRelativeTime(post.created_at)}</Text>
                 </View>
               </View>
 
               {/* Title */}
-              <Text style={styles.postTitle}>{post.title}</Text>
+              {!!post.title && (
+                <Text style={styles.postTitle}>{post.title}</Text>
+              )}
 
               {/* Content */}
               <Text style={styles.postContent}>{post.content}</Text>
 
-              {/* Post image */}
-              {post.image_url && (
+              {/* Images */}
+              {(post.image_urls?.length ?? 0) > 1 ? (
+                <PostImageCarousel imageUrls={post.image_urls!} />
+              ) : post.image_url ? (
                 <Image
                   source={{ uri: post.image_url }}
                   style={styles.postImage}
-                  resizeMode="cover"
+                  resizeMode="contain"
                 />
-              )}
+              ) : null}
 
               {/* Crew promo card */}
               {post.post_type === 'crew_promo' && post.event_title && (
@@ -466,59 +411,51 @@ export default function CommunityPostDetailScreen() {
                 </View>
               )}
 
-              {/* Like button */}
-              <TouchableOpacity
-                style={styles.likeRow}
-                onPress={handleToggleLike}
-                activeOpacity={0.6}
-              >
-                <Ionicons
-                  name={post.is_liked ? 'heart' : 'heart-outline'}
-                  size={20}
-                  color={post.is_liked ? colors.error : colors.textTertiary}
-                />
-                <Text
-                  style={[
-                    styles.likeText,
-                    post.is_liked && { color: colors.error },
-                  ]}
+              {/* Actions: like + comment */}
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  style={styles.actionItem}
+                  onPress={handleToggleLike}
+                  activeOpacity={0.6}
                 >
-                  {post.like_count}
-                </Text>
-                <Text
-                  style={[
-                    styles.likeLabel,
-                    post.is_liked && { color: colors.error },
-                  ]}
-                >
-                  {t('community.like')}
-                </Text>
-              </TouchableOpacity>
+                  <Ionicons
+                    name={post.is_liked ? 'heart' : 'heart-outline'}
+                    size={20}
+                    color={post.is_liked ? '#EF4444' : colors.textTertiary}
+                  />
+                  {post.like_count > 0 && (
+                    <Text style={[styles.actionText, post.is_liked && { color: '#EF4444' }]}>
+                      {post.like_count}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+                <View style={styles.actionItem}>
+                  <Ionicons name="chatbubble-outline" size={18} color={colors.textTertiary} />
+                  {post.comment_count > 0 && (
+                    <Text style={styles.actionText}>{post.comment_count}</Text>
+                  )}
+                </View>
+              </View>
             </View>
 
             {/* Divider */}
             <View style={styles.divider} />
 
-            {/* Comments section */}
+            {/* Comments */}
             <View style={styles.commentsSection}>
-              <Text style={styles.commentsHeader}>
-                {t('community.comments')} {totalComments}
-              </Text>
-
               {comments.length === 0 ? (
                 <View style={styles.noComments}>
-                  <Text style={styles.noCommentsText}>
-                    {t('community.noComments')}
-                  </Text>
+                  <Text style={styles.noCommentsText}>{t('community.noComments')}</Text>
                 </View>
               ) : (
                 <>
-                  {comments.map((comment) => (
+                  {comments.map((comment, idx) => (
                     <CommentRow
                       key={comment.id}
                       comment={comment}
-                      isMine={currentUser?.id === comment.author.id}
+                      canDelete={currentUser?.id === comment.author.id || isCrewAdmin}
                       onDelete={() => handleDeleteComment(comment.id)}
+                      isLast={idx === comments.length - 1}
                     />
                   ))}
                   {hasMoreComments && (
@@ -539,7 +476,7 @@ export default function CommunityPostDetailScreen() {
             </View>
           </ScrollView>
 
-          {/* Comment input bar */}
+          {/* Comment input */}
           <View style={styles.inputBar}>
             <TextInput
               ref={inputRef}
@@ -573,16 +510,66 @@ export default function CommunityPostDetailScreen() {
   );
 }
 
-// ---- Sub-components ----
+// ---- Image carousel ----
+
+const DETAIL_IMAGE_WIDTH = Dimensions.get('window').width - SPACING.xl * 2;
+
+function PostImageCarousel({ imageUrls }: { imageUrls: string[] }) {
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  return (
+    <View>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={(e) => {
+          const idx = Math.round(e.nativeEvent.contentOffset.x / DETAIL_IMAGE_WIDTH);
+          setActiveIndex(idx);
+        }}
+        style={{ width: DETAIL_IMAGE_WIDTH }}
+      >
+        {imageUrls.map((url, i) => (
+          <Image
+            key={i}
+            source={{ uri: url }}
+            style={[styles.postImage, { width: DETAIL_IMAGE_WIDTH }]}
+            resizeMode="contain"
+          />
+        ))}
+      </ScrollView>
+      {imageUrls.length > 1 && (
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: SPACING.xs }}>
+          {imageUrls.map((_, i) => (
+            <View
+              key={i}
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: i === activeIndex ? colors.primary : colors.textTertiary + '40',
+              }}
+            />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ---- Comment sub-component ----
 
 function CommentRow({
   comment,
-  isMine,
+  canDelete,
   onDelete,
 }: {
   comment: CommunityCommentItem;
-  isMine: boolean;
+  canDelete: boolean;
   onDelete: () => void;
+  isLast: boolean;
 }) {
   const colors = useTheme();
   const { t } = useTranslation();
@@ -592,10 +579,7 @@ function CommentRow({
   return (
     <View style={styles.commentRow}>
       {comment.author.avatar_url ? (
-        <Image
-          source={{ uri: comment.author.avatar_url }}
-          style={styles.commentAvatar}
-        />
+        <Image source={{ uri: comment.author.avatar_url }} style={styles.commentAvatar} />
       ) : (
         <View style={styles.commentAvatarPlaceholder}>
           <Text style={styles.commentAvatarInitial}>{initial}</Text>
@@ -603,16 +587,12 @@ function CommentRow({
       )}
       <View style={styles.commentBody}>
         <View style={styles.commentHeaderRow}>
-          <Text style={styles.commentNickname}>
+          <Text style={styles.commentNickname} numberOfLines={1}>
             {comment.author.nickname ?? t('common.anonymous')}
           </Text>
-          {comment.author.crew_name && (
-            <View style={styles.crewTag}>
-              <Text style={styles.crewTagText}>{comment.author.crew_name}</Text>
-            </View>
-          )}
-          <Text style={styles.commentTime}>{timeAgo(comment.created_at, t)}</Text>
-          {isMine && (
+          <Text style={styles.commentDot}>&middot;</Text>
+          <Text style={styles.commentTime}>{formatRelativeTime(comment.created_at)}</Text>
+          {canDelete && (
             <TouchableOpacity
               onPress={onDelete}
               activeOpacity={0.6}
@@ -637,7 +617,6 @@ const createStyles = (c: ThemeColors) =>
     scrollView: { flex: 1 },
     scrollContent: { paddingBottom: SPACING.xxl },
 
-    // Header
     header: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -663,11 +642,12 @@ const createStyles = (c: ThemeColors) =>
       color: c.textSecondary,
     },
 
-    // Post section
-    postSection: {
-      paddingHorizontal: SPACING.xxl,
+    // Post card layout
+    postCard: {
+      paddingHorizontal: SPACING.xl,
       paddingTop: SPACING.md,
-      gap: SPACING.md,
+      paddingBottom: SPACING.md,
+      gap: SPACING.sm,
     },
     authorRow: {
       flexDirection: 'row',
@@ -675,14 +655,14 @@ const createStyles = (c: ThemeColors) =>
       gap: SPACING.sm,
     },
     avatar: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+      width: AVATAR_SIZE,
+      height: AVATAR_SIZE,
+      borderRadius: AVATAR_SIZE / 2,
     },
     avatarPlaceholder: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
+      width: AVATAR_SIZE,
+      height: AVATAR_SIZE,
+      borderRadius: AVATAR_SIZE / 2,
       backgroundColor: c.surfaceLight,
       justifyContent: 'center',
       alignItems: 'center',
@@ -694,41 +674,33 @@ const createStyles = (c: ThemeColors) =>
     },
     authorInfo: {
       flex: 1,
-      gap: 1,
+      gap: 2,
     },
-    authorNameRow: {
+
+    topRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: SPACING.sm,
+      gap: SPACING.xs,
+      flexWrap: 'wrap',
     },
     authorNickname: {
-      fontSize: FONT_SIZES.md,
+      fontSize: FONT_SIZES.sm + 1,
       fontWeight: '700',
       color: c.text,
+      flexShrink: 1,
     },
-    authorTime: {
+    dot: {
+      fontSize: FONT_SIZES.xs,
+      color: c.textTertiary,
+    },
+    timeText: {
       fontSize: FONT_SIZES.xs,
       fontWeight: '500',
       color: c.textTertiary,
     },
 
-    // Badge
-    badgeRow: {
-      flexDirection: 'row',
-    },
-    typeBadge: {
-      paddingHorizontal: SPACING.sm,
-      paddingVertical: 2,
-      borderRadius: BORDER_RADIUS.xs,
-    },
-    typeBadgeText: {
-      fontSize: FONT_SIZES.xs,
-      fontWeight: '700',
-    },
-
-    // Post content
     postTitle: {
-      fontSize: FONT_SIZES.xl,
+      fontSize: FONT_SIZES.lg,
       fontWeight: '800',
       color: c.text,
       letterSpacing: -0.3,
@@ -741,8 +713,8 @@ const createStyles = (c: ThemeColors) =>
     },
     postImage: {
       width: '100%',
-      height: 240,
-      borderRadius: BORDER_RADIUS.md,
+      aspectRatio: 4 / 3,
+      borderRadius: 12,
       backgroundColor: c.surface,
     },
 
@@ -751,7 +723,7 @@ const createStyles = (c: ThemeColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: c.card,
-      borderRadius: BORDER_RADIUS.lg,
+      borderRadius: 12,
       padding: SPACING.md,
       gap: SPACING.md,
       borderWidth: 1,
@@ -782,7 +754,7 @@ const createStyles = (c: ThemeColors) =>
     crewPromoBtn: {
       paddingHorizontal: SPACING.md,
       paddingVertical: SPACING.xs,
-      borderRadius: BORDER_RADIUS.full,
+      borderRadius: 20,
       backgroundColor: c.primary,
     },
     crewPromoBtnText: {
@@ -791,19 +763,19 @@ const createStyles = (c: ThemeColors) =>
       color: '#FFFFFF',
     },
 
-    // Like row
-    likeRow: {
+    // Actions
+    actions: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: SPACING.xs,
-      paddingVertical: SPACING.sm,
+      gap: SPACING.lg,
+      paddingTop: 2,
     },
-    likeText: {
-      fontSize: FONT_SIZES.md,
-      fontWeight: '700',
-      color: c.textTertiary,
+    actionItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
     },
-    likeLabel: {
+    actionText: {
       fontSize: FONT_SIZES.sm,
       fontWeight: '600',
       color: c.textTertiary,
@@ -811,21 +783,14 @@ const createStyles = (c: ThemeColors) =>
 
     // Divider
     divider: {
-      height: 8,
-      backgroundColor: c.divider,
-      marginTop: SPACING.md,
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: c.border,
+      marginHorizontal: SPACING.xl,
     },
 
-    // Comments section
+    // Comments
     commentsSection: {
-      paddingHorizontal: SPACING.xxl,
-      paddingTop: SPACING.lg,
-      gap: SPACING.md,
-    },
-    commentsHeader: {
-      fontSize: FONT_SIZES.lg,
-      fontWeight: '800',
-      color: c.text,
+      paddingTop: SPACING.xs,
     },
     noComments: {
       paddingVertical: SPACING.xxl,
@@ -840,18 +805,19 @@ const createStyles = (c: ThemeColors) =>
     // Comment row
     commentRow: {
       flexDirection: 'row',
-      gap: SPACING.sm,
+      paddingHorizontal: SPACING.xl,
       paddingVertical: SPACING.sm,
+      gap: SPACING.sm,
     },
     commentAvatar: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
+      width: COMMENT_AVATAR_SIZE,
+      height: COMMENT_AVATAR_SIZE,
+      borderRadius: COMMENT_AVATAR_SIZE / 2,
     },
     commentAvatarPlaceholder: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
+      width: COMMENT_AVATAR_SIZE,
+      height: COMMENT_AVATAR_SIZE,
+      borderRadius: COMMENT_AVATAR_SIZE / 2,
       backgroundColor: c.surfaceLight,
       justifyContent: 'center',
       alignItems: 'center',
@@ -868,12 +834,17 @@ const createStyles = (c: ThemeColors) =>
     commentHeaderRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: SPACING.sm,
+      gap: SPACING.xs,
     },
     commentNickname: {
       fontSize: FONT_SIZES.sm,
       fontWeight: '700',
       color: c.text,
+      flexShrink: 1,
+    },
+    commentDot: {
+      fontSize: FONT_SIZES.xs,
+      color: c.textTertiary,
     },
     commentTime: {
       fontSize: FONT_SIZES.xs,
@@ -887,7 +858,7 @@ const createStyles = (c: ThemeColors) =>
       fontSize: FONT_SIZES.sm,
       fontWeight: '500',
       color: c.text,
-      lineHeight: 18,
+      lineHeight: 19,
     },
 
     // Load more
@@ -901,6 +872,19 @@ const createStyles = (c: ThemeColors) =>
       color: c.primary,
     },
 
+    // Crew tag
+    crewTag: {
+      backgroundColor: c.primary + '15',
+      paddingHorizontal: 6,
+      paddingVertical: 1,
+      borderRadius: 4,
+    },
+    crewTagText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: c.primary,
+    },
+
     // Input bar
     inputBar: {
       flexDirection: 'row',
@@ -908,9 +892,8 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: SPACING.xxl,
       paddingVertical: SPACING.sm,
       gap: SPACING.sm,
-      borderTopWidth: 1,
+      borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: c.border,
-      backgroundColor: c.card,
     },
     commentInput: {
       flex: 1,
@@ -918,7 +901,7 @@ const createStyles = (c: ThemeColors) =>
       maxHeight: 100,
       paddingHorizontal: SPACING.md,
       paddingVertical: SPACING.sm,
-      borderRadius: BORDER_RADIUS.lg,
+      borderRadius: 18,
       backgroundColor: c.surface,
       fontSize: FONT_SIZES.sm,
       fontWeight: '500',
@@ -934,18 +917,5 @@ const createStyles = (c: ThemeColors) =>
     },
     sendButtonDisabled: {
       opacity: 0.4,
-    },
-
-    // Crew tag
-    crewTag: {
-      backgroundColor: c.primary + '15',
-      paddingHorizontal: 6,
-      paddingVertical: 1,
-      borderRadius: 4,
-    },
-    crewTagText: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: c.primary,
     },
   });

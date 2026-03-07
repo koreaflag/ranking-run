@@ -16,7 +16,7 @@ import {
   Image,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +27,7 @@ import { crewService } from '../../services/crewService';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
+import { getGradeName, getGradeColor } from '../../utils/crewGrade';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'CrewMembers'>;
 type Route = RouteProp<HomeStackParamList, 'CrewMembers'>;
@@ -88,6 +89,57 @@ export default function CrewMembersScreen() {
     }
   }, [inviteCode, crewId, loadData, t]);
 
+  const showGradeSelection = useCallback(
+    (member: CrewMemberItem) => {
+      const myLevel = crew?.my_role === 'owner' ? 5 : 4;
+      const currentLevel = member.grade_level ?? (member.role === 'owner' ? 5 : member.role === 'admin' ? 4 : 1);
+
+      const gradeOptions: string[] = [];
+      const gradeLevels: number[] = [];
+
+      for (let lvl = 1; lvl <= 4; lvl++) {
+        if (lvl < myLevel && lvl !== currentLevel) {
+          gradeOptions.push(getGradeName(lvl, crew?.grade_config, t));
+          gradeLevels.push(lvl);
+        }
+      }
+      gradeOptions.push(t('common.cancel'));
+
+      if (Platform.OS === 'ios') {
+        ActionSheetIOS.showActionSheetWithOptions(
+          {
+            options: gradeOptions,
+            cancelButtonIndex: gradeOptions.length - 1,
+          },
+          (idx) => {
+            if (idx < gradeLevels.length) {
+              crewService
+                .updateMemberGrade(crewId, member.user_id, gradeLevels[idx])
+                .then(() => loadData())
+                .catch(() => Alert.alert(t('common.errorTitle'), t('crew.gradeChangeFailed')));
+            }
+          },
+        );
+      } else {
+        Alert.alert(t('crew.selectGrade'), undefined, [
+          ...gradeLevels.map((lvl, i) => ({
+            text: gradeOptions[i],
+            onPress: async () => {
+              try {
+                await crewService.updateMemberGrade(crewId, member.user_id, lvl);
+                await loadData();
+              } catch {
+                Alert.alert(t('common.errorTitle'), t('crew.gradeChangeFailed'));
+              }
+            },
+          })),
+          { text: t('common.cancel'), style: 'cancel' as const },
+        ]);
+      }
+    },
+    [crew, crewId, loadData, t],
+  );
+
   const handleMemberAction = useCallback(
     (member: CrewMemberItem) => {
       if (!canManage || member.role === 'owner') return;
@@ -98,29 +150,13 @@ export default function CrewMembersScreen() {
       const options: string[] = [];
       const actions: (() => void)[] = [];
 
-      // Role change (owner only)
-      if (isOwner) {
-        if (member.role === 'member') {
-          options.push(t('crew.promoteAdmin'));
-          actions.push(async () => {
-            try {
-              await crewService.updateMemberRole(crewId, member.user_id, 'admin');
-              await loadData();
-            } catch {
-              Alert.alert(t('common.errorTitle'), t('crew.roleChangeFailed'));
-            }
-          });
-        } else if (member.role === 'admin') {
-          options.push(t('crew.demoteMember'));
-          actions.push(async () => {
-            try {
-              await crewService.updateMemberRole(crewId, member.user_id, 'member');
-              await loadData();
-            } catch {
-              Alert.alert(t('common.errorTitle'), t('crew.roleChangeFailed'));
-            }
-          });
-        }
+      const myLevel = crew?.my_role === 'owner' ? 5 : 4;
+      const targetLevel = member.grade_level ?? (member.role === 'owner' ? 5 : member.role === 'admin' ? 4 : 1);
+
+      // Grade change — higher level can manage lower level
+      if (isOwner || (isAdmin && myLevel > targetLevel)) {
+        options.push(t('crew.changeGrade'));
+        actions.push(() => showGradeSelection(member));
       }
 
       // Kick
@@ -178,18 +214,15 @@ export default function CrewMembersScreen() {
         );
       }
     },
-    [canManage, isOwner, isAdmin, crewId, loadData, t],
+    [canManage, isOwner, isAdmin, crew, crewId, loadData, t, showGradeSelection],
   );
 
   const renderMember = useCallback(
     ({ item }: { item: CrewMemberItem }) => {
       const initial = (item.nickname ?? '?').charAt(0).toUpperCase();
-      const roleLabel =
-        item.role === 'owner'
-          ? t('crew.roleOwner')
-          : item.role === 'admin'
-            ? t('crew.roleAdmin')
-            : null;
+      const gradeLevel = item.grade_level ?? (item.role === 'owner' ? 5 : item.role === 'admin' ? 4 : 1);
+      const gradeName = getGradeName(gradeLevel, crew?.grade_config, t);
+      const gradeColor = getGradeColor(gradeLevel, colors);
 
       const showAction = canManage && item.role !== 'owner' && !(isAdmin && item.role === 'admin');
 
@@ -200,25 +233,22 @@ export default function CrewMembersScreen() {
             onPress={() => navigation.navigate('UserProfile', { userId: item.user_id })}
             activeOpacity={0.7}
           >
-            <View style={styles.memberAvatar}>
-              <Text style={styles.memberAvatarText}>{initial}</Text>
-            </View>
+            {item.avatar_url ? (
+              <Image source={{ uri: item.avatar_url }} style={styles.memberAvatarImg} />
+            ) : (
+              <View style={styles.memberAvatar}>
+                <Text style={styles.memberAvatarText}>{initial}</Text>
+              </View>
+            )}
             <View style={styles.memberInfo}>
               <Text style={styles.memberNickname}>
                 {item.nickname ?? t('crew.unknown')}
               </Text>
-              {roleLabel && (
-                <View style={[styles.roleBadge, item.role === 'owner' && styles.roleBadgeOwner]}>
-                  <Text
-                    style={[
-                      styles.roleBadgeText,
-                      item.role === 'owner' && styles.roleBadgeTextOwner,
-                    ]}
-                  >
-                    {roleLabel}
-                  </Text>
-                </View>
-              )}
+              <View style={[styles.roleBadge, { backgroundColor: gradeColor + '20' }]}>
+                <Text style={[styles.roleBadgeText, { color: gradeColor }]}>
+                  {gradeName}
+                </Text>
+              </View>
             </View>
           </TouchableOpacity>
           {showAction && (
@@ -233,7 +263,7 @@ export default function CrewMembersScreen() {
         </View>
       );
     },
-    [canManage, isAdmin, styles, colors, navigation, handleMemberAction, t],
+    [canManage, isAdmin, crew, styles, colors, navigation, handleMemberAction, t],
   );
 
   return (
@@ -406,6 +436,11 @@ const createStyles = (c: ThemeColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: SPACING.md,
+    },
+    memberAvatarImg: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
     },
     memberAvatar: {
       width: 44,

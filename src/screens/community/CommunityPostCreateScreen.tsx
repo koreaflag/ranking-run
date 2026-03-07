@@ -12,9 +12,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
-  ActionSheetIOS,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +44,7 @@ const POST_TYPE_OPTIONS: PostTypeOption[] = [
 ];
 
 const TITLE_MAX_LENGTH = 100;
+const MAX_IMAGES = 10;
 
 // ---- Main Screen ----
 
@@ -62,70 +62,41 @@ export default function CommunityPostCreateScreen() {
   );
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageUris, setImageUris] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const canSubmit = title.trim().length > 0 && content.trim().length > 0 && !submitting;
+  const canSubmit = crewId
+    ? content.trim().length > 0 && !submitting
+    : title.trim().length > 0 && content.trim().length > 0 && !submitting;
 
   // ---- Image picker ----
 
-  const pickImage = useCallback(async (useCamera: boolean) => {
-    const permission = useCamera
-      ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
-
+  const pickImages = useCallback(async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert(t('common.permissionTitle'), t('common.permissionPhoto'));
       return;
     }
 
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync({
-          allowsEditing: true,
-          quality: 0.8,
-        })
-      : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images'],
-          allowsEditing: true,
-          quality: 0.8,
-        });
+    const remaining = MAX_IMAGES - imageUris.length;
+    if (remaining <= 0) return;
 
-    if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri);
-    }
-  }, [t]);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
+      quality: 0.8,
+    });
 
-  const showImageOptions = useCallback(() => {
-    if (Platform.OS === 'ios') {
-      const options = [t('common.camera'), t('common.library'), t('common.cancel')];
-      if (imageUri) {
-        options.splice(2, 0, t('community.removeImage'));
-      }
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          cancelButtonIndex: options.length - 1,
-          destructiveButtonIndex: imageUri ? 2 : undefined,
-        },
-        (idx) => {
-          if (idx === 0) pickImage(true);
-          else if (idx === 1) pickImage(false);
-          else if (imageUri && idx === 2) setImageUri(null);
-        },
-      );
-    } else {
-      Alert.alert(
-        t('community.addImage'),
-        undefined,
-        [
-          { text: t('common.camera'), onPress: () => pickImage(true) },
-          { text: t('common.library'), onPress: () => pickImage(false) },
-          ...(imageUri ? [{ text: t('community.removeImage'), style: 'destructive' as const, onPress: () => setImageUri(null) }] : []),
-          { text: t('common.cancel'), style: 'cancel' as const },
-        ],
-      );
+    if (!result.canceled && result.assets.length > 0) {
+      const newUris = result.assets.map((a) => a.uri);
+      setImageUris((prev) => [...prev, ...newUris].slice(0, MAX_IMAGES));
     }
-  }, [imageUri, pickImage, t]);
+  }, [t, imageUris.length]);
+
+  const removeImage = useCallback((index: number) => {
+    setImageUris((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   // ---- Submit ----
 
@@ -135,7 +106,7 @@ export default function CommunityPostCreateScreen() {
     const trimmedTitle = title.trim();
     const trimmedContent = content.trim();
 
-    if (trimmedTitle.length === 0) {
+    if (!crewId && trimmedTitle.length === 0) {
       Alert.alert(t('common.notification'), t('community.titleRequired'));
       return;
     }
@@ -146,17 +117,21 @@ export default function CommunityPostCreateScreen() {
 
     setSubmitting(true);
     try {
-      let uploadedImageUrl: string | undefined;
-      if (imageUri) {
-        uploadedImageUrl = await communityService.uploadImage(imageUri);
+      let uploadedImageUrls: string[] | undefined;
+      if (imageUris.length > 0) {
+        const urls = await Promise.all(
+          imageUris.map((uri) => communityService.uploadImage(uri)),
+        );
+        uploadedImageUrls = urls;
       }
 
       await communityService.createPost({
-        title: trimmedTitle,
+        title: crewId ? undefined : trimmedTitle,
         content: trimmedContent,
         post_type: crewId ? 'general' : postType,
         crew_id: crewId,
-        image_url: uploadedImageUrl,
+        image_url: uploadedImageUrls?.[0],
+        image_urls: uploadedImageUrls,
       });
       navigation.goBack();
     } catch {
@@ -164,7 +139,7 @@ export default function CommunityPostCreateScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [canSubmit, title, content, postType, crewId, imageUri, navigation, t]);
+  }, [canSubmit, title, content, postType, crewId, imageUris, navigation, t]);
 
   return (
     <BlurredBackground>
@@ -246,56 +221,78 @@ export default function CommunityPostCreateScreen() {
               </View>
             )}
 
-            {/* Title */}
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{t('community.postTitle')}</Text>
-              <TextInput
-                style={styles.titleInput}
-                placeholder={t('community.titlePlaceholder')}
-                placeholderTextColor={colors.textTertiary}
-                value={title}
-                onChangeText={setTitle}
-                maxLength={TITLE_MAX_LENGTH}
-                returnKeyType="next"
-              />
-              <Text style={styles.charCount}>
-                {title.length}/{TITLE_MAX_LENGTH}
-              </Text>
-            </View>
+            {/* Title — hidden for crew posts */}
+            {!crewId && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>{t('community.postTitle')}</Text>
+                <TextInput
+                  style={styles.titleInput}
+                  placeholder={t('community.titlePlaceholder')}
+                  placeholderTextColor={colors.textTertiary}
+                  value={title}
+                  onChangeText={setTitle}
+                  maxLength={TITLE_MAX_LENGTH}
+                  returnKeyType="next"
+                />
+                <Text style={styles.charCount}>
+                  {title.length}/{TITLE_MAX_LENGTH}
+                </Text>
+              </View>
+            )}
 
             {/* Content */}
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>{t('community.postContent')}</Text>
               <TextInput
                 style={styles.contentInput}
-                placeholder={t('community.contentPlaceholder')}
+                placeholder={crewId ? t('community.crewContentPlaceholder') : t('community.contentPlaceholder')}
                 placeholderTextColor={colors.textTertiary}
                 value={content}
                 onChangeText={setContent}
                 multiline
                 textAlignVertical="top"
               />
-            </View>
-
-            {/* Image */}
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{t('community.imageLabel')}</Text>
-              {imageUri ? (
-                <TouchableOpacity onPress={showImageOptions} activeOpacity={0.8}>
-                  <Image source={{ uri: imageUri }} style={styles.imagePreview} />
-                  <View style={styles.imageOverlay}>
-                    <Ionicons name="create-outline" size={20} color="#FFFFFF" />
-                  </View>
-                </TouchableOpacity>
-              ) : (
+              {/* Inline toolbar */}
+              <View style={styles.editorToolbar}>
                 <TouchableOpacity
-                  style={styles.imagePickerBtn}
-                  onPress={showImageOptions}
+                  style={styles.toolbarIconBtn}
+                  onPress={pickImages}
                   activeOpacity={0.7}
+                  disabled={imageUris.length >= MAX_IMAGES}
                 >
-                  <Ionicons name="image-outline" size={28} color={colors.textTertiary} />
-                  <Text style={styles.imagePickerText}>{t('community.addImage')}</Text>
+                  <Ionicons
+                    name="image-outline"
+                    size={22}
+                    color={imageUris.length > 0 ? colors.primary : colors.textTertiary}
+                  />
                 </TouchableOpacity>
+                {imageUris.length > 0 && (
+                  <Text style={styles.imageCountText}>
+                    {imageUris.length}/{MAX_IMAGES}
+                  </Text>
+                )}
+              </View>
+              {/* Image thumbnails */}
+              {imageUris.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.imageRow}
+                >
+                  {imageUris.map((uri, index) => (
+                    <View key={uri} style={styles.imageThumbWrap}>
+                      <Image source={{ uri }} style={styles.imageThumb} />
+                      <TouchableOpacity
+                        style={styles.imageRemoveBtn}
+                        onPress={() => removeImage(index)}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Ionicons name="close-circle" size={20} color="rgba(0,0,0,0.6)" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
               )}
             </View>
 
@@ -414,39 +411,45 @@ const createStyles = (c: ThemeColors) =>
       lineHeight: 22,
     },
 
-    // Image picker
-    imagePickerBtn: {
-      backgroundColor: c.card,
-      borderRadius: BORDER_RADIUS.md,
-      borderWidth: 1,
-      borderColor: c.border,
-      borderStyle: 'dashed',
-      paddingVertical: SPACING.xxl,
+    // Editor toolbar
+    editorToolbar: {
+      flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
+      paddingTop: SPACING.xs,
       gap: SPACING.sm,
     },
-    imagePickerText: {
-      fontSize: FONT_SIZES.sm,
+    toolbarIconBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: c.surface,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    imageCountText: {
+      fontSize: FONT_SIZES.xs,
       fontWeight: '600',
       color: c.textTertiary,
     },
-    imagePreview: {
-      width: '100%',
-      height: 200,
-      borderRadius: BORDER_RADIUS.md,
+
+    // Multi-image thumbnails
+    imageRow: {
+      gap: SPACING.sm,
+      paddingTop: SPACING.xs,
+    },
+    imageThumbWrap: {
+      position: 'relative',
+    },
+    imageThumb: {
+      width: 80,
+      height: 80,
+      borderRadius: BORDER_RADIUS.sm,
       backgroundColor: c.surface,
     },
-    imageOverlay: {
+    imageRemoveBtn: {
       position: 'absolute',
-      top: SPACING.sm,
-      right: SPACING.sm,
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      justifyContent: 'center',
-      alignItems: 'center',
+      top: -6,
+      right: -6,
     },
 
   });

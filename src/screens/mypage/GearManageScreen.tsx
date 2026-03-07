@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import ScreenHeader from '../../components/common/ScreenHeader';
 import { useTheme } from '../../hooks/useTheme';
 import { gearService } from '../../services/gearService';

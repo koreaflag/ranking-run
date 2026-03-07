@@ -11,8 +11,10 @@ from pydantic import BaseModel
 
 from app.schemas.crew import (
     CrewCreateRequest,
+    CrewGradeUpdateRequest,
     CrewInviteByCodeRequest,
     CrewListResponse,
+    CrewManagementStats,
     CrewMemberListResponse,
     CrewMemberResponse,
     CrewResponse,
@@ -251,3 +253,43 @@ async def kick_member(
         target_user_id=user_id,
         actor_user_id=current_user.id,
     )
+
+
+@router.patch(
+    "/{crew_id}/members/{user_id}/grade",
+    response_model=CrewMemberResponse,
+)
+@inject
+async def update_member_grade(
+    crew_id: UUID,
+    user_id: UUID,
+    body: CrewGradeUpdateRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+    crew_service: CrewService = Depends(Provide[Container.crew_service]),
+) -> CrewMemberResponse:
+    result = await crew_service.update_member_grade(
+        db=db,
+        crew_id=crew_id,
+        target_user_id=user_id,
+        actor_user_id=current_user.id,
+        new_grade_level=body.grade_level,
+    )
+    return CrewMemberResponse(**result)
+
+
+@router.get(
+    "/{crew_id}/management/stats",
+    response_model=CrewManagementStats,
+)
+@inject
+async def get_management_stats(
+    crew_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    crew_service: CrewService = Depends(Provide[Container.crew_service]),
+) -> CrewManagementStats:
+    result = await crew_service.get_management_stats(
+        db=db, crew_id=crew_id, user_id=current_user.id
+    )
+    return CrewManagementStats(**result)

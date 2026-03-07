@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   Animated,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useRunningStore } from '../../stores/runningStore';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
@@ -42,6 +42,8 @@ interface RunningHUDProps {
   onToggleVoiceGuidance?: () => void;
   /** Checkpoint just-passed data for toast. */
   checkpointJustPassed?: { order: number; total: number } | null;
+  /** Off-course warning level: 0=on-course, 1=grace period, 2=penalty active */
+  offCourseLevel?: number;
 }
 
 // ---- Component ----
@@ -59,6 +61,7 @@ export default function RunningHUD({
   voiceGuidance,
   onToggleVoiceGuidance,
   checkpointJustPassed,
+  offCourseLevel = 0,
 }: RunningHUDProps) {
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -69,6 +72,7 @@ export default function RunningHUD({
     durationSeconds,
     avgPaceSecondsPerKm,
     gpsStatus,
+    gpsAccuracy,
     calories,
     heartRate,
     cadence,
@@ -109,8 +113,18 @@ export default function RunningHUD({
   // ---- Running / Paused HUD ----
 
   const gpsDisabled = gpsStatus === 'disabled';
-  const gpsLabel = gpsDisabled ? '위치 권한 필요' : 'GPS 연결됨';
-  const gpsColor = gpsDisabled ? colors.error : colors.success;
+  const gpsColor = gpsDisabled
+    ? colors.error
+    : gpsAccuracy != null && gpsAccuracy < 10
+      ? colors.success
+      : gpsAccuracy != null && gpsAccuracy < 25
+        ? colors.warning
+        : colors.error;
+  const gpsLabel = gpsDisabled
+    ? '위치 권한 필요'
+    : gpsAccuracy != null
+      ? `±${Math.round(gpsAccuracy)}m`
+      : 'GPS';
 
   return (
     <View style={styles.hudContainer}>
@@ -145,6 +159,39 @@ export default function RunningHUD({
         )}
       </View>
 
+      {/* Persistent course navigation bar — always visible during course running */}
+      {courseNavigation && courseId && (
+        <View style={styles.persistentNavBar}>
+          <Ionicons
+            name={turnDirectionIcon(courseNavigation.nextTurnDirection) as any}
+            size={28}
+            color={colors.primary}
+          />
+          <View style={styles.navBarCenter}>
+            <Text style={styles.navBarDistance}>
+              {courseNavigation.distanceToNextTurn >= 0
+                ? courseNavigation.distanceToNextTurn < 1000
+                  ? `${Math.round(courseNavigation.distanceToNextTurn)}m`
+                  : `${(courseNavigation.distanceToNextTurn / 1000).toFixed(1)}km`
+                : '--'}
+            </Text>
+            <Text style={styles.navBarInstruction} numberOfLines={1}>
+              {courseNavigation.distanceToNextTurn >= 0
+                ? formatTurnInstruction(courseNavigation.distanceToNextTurn, courseNavigation.nextTurnDirection)
+                : '직진'}
+            </Text>
+          </View>
+          <Text style={styles.navBarRemaining}>
+            {courseNavigation.instructionsRemaining}
+          </Text>
+        </View>
+      )}
+
+      {/* Dead Reckoning banner */}
+      {gpsStatus === 'lost' && phase === 'running' && (
+        <DRBanner colors={colors} styles={styles} />
+      )}
+
       {/* Banner area */}
       <BannerArea
         phase={phase}
@@ -157,6 +204,7 @@ export default function RunningHUD({
         distanceToStart={distanceToStart}
         distanceMeters={distanceMeters}
         checkpointJustPassed={checkpointJustPassed}
+        offCourseLevel={offCourseLevel}
         colors={colors}
         styles={styles}
       />
@@ -306,6 +354,28 @@ function DashboardCell({
   );
 }
 
+/** GPS recovering (dead reckoning) banner with pulse animation. */
+function DRBanner({ colors, styles }: { colors: ThemeColors; styles: ReturnType<typeof createStyles> }) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 0.3, duration: 500, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulseAnim]);
+
+  return (
+    <Animated.View style={[styles.drBanner, { opacity: pulseAnim }]}>
+      <Ionicons name="navigate-outline" size={16} color={colors.warning} />
+      <Text style={styles.drBannerText}>GPS Recovering</Text>
+    </Animated.View>
+  );
+}
+
 /** Contextual banners: turn instruction, paused, auto-pause, off-course, checkpoint, loop. */
 function BannerArea({
   phase,
@@ -318,6 +388,7 @@ function BannerArea({
   distanceToStart,
   distanceMeters,
   checkpointJustPassed,
+  offCourseLevel = 0,
   colors,
   styles,
 }: {
@@ -331,28 +402,12 @@ function BannerArea({
   distanceToStart: number;
   distanceMeters: number;
   checkpointJustPassed?: { order: number; total: number } | null;
+  offCourseLevel?: number;
   colors: ThemeColors;
   styles: ReturnType<typeof createStyles>;
 }) {
   return (
     <>
-      {/* Turn instruction bar (course running) */}
-      {courseNavigation && courseNavigation.distanceToNextTurn >= 0 && (
-        <View style={styles.turnInstructionBar}>
-          <Ionicons
-            name={turnDirectionIcon(courseNavigation.nextTurnDirection) as any}
-            size={24}
-            color={colors.primary}
-          />
-          <Text style={styles.turnInstructionText}>
-            {formatTurnInstruction(
-              courseNavigation.distanceToNextTurn,
-              courseNavigation.nextTurnDirection,
-            )}
-          </Text>
-        </View>
-      )}
-
       {/* Paused banner */}
       {phase === 'paused' && (
         <View style={styles.pausedBanner}>
@@ -369,11 +424,22 @@ function BannerArea({
         </View>
       )}
 
-      {/* Off-course warning */}
+      {/* Off-course warning with return arrow */}
       {courseNavigation?.isOffCourse && (
-        <View style={styles.offCourseBanner}>
-          <Ionicons name="warning" size={16} color={colors.white} />
-          <Text style={styles.offCourseText}>코스를 이탈했습니다</Text>
+        <View style={[styles.offCourseBanner, offCourseLevel >= 2 && { backgroundColor: '#CC0000' }]}>
+          <Ionicons name="navigate" size={20} color={colors.white} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.offCourseText}>
+              {offCourseLevel >= 2
+                ? '코스 이탈 — 랭킹 미반영 중'
+                : offCourseLevel === 1
+                  ? '코스를 이탈했습니다 · 복귀하세요'
+                  : '코스를 이탈했습니다'}
+            </Text>
+            <Text style={styles.offCourseDistText}>
+              {Math.round(courseNavigation.deviationMeters)}m 이탈
+            </Text>
+          </View>
         </View>
       )}
 
@@ -498,22 +564,56 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: c.surface,
     },
 
-    // Turn instruction bar
-    turnInstructionBar: {
+    // Dead Reckoning banner
+    drBanner: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: SPACING.md,
+      justifyContent: 'center',
+      gap: SPACING.sm,
       backgroundColor: c.surface,
-      paddingVertical: SPACING.md,
-      paddingHorizontal: SPACING.lg,
-      borderRadius: BORDER_RADIUS.md,
-      marginTop: SPACING.md,
+      paddingVertical: SPACING.xs + 2,
+      borderRadius: BORDER_RADIUS.sm,
+      marginTop: SPACING.sm,
+      borderWidth: 1,
+      borderColor: c.warning,
     },
-    turnInstructionText: {
-      fontSize: FONT_SIZES.md,
-      fontWeight: '700',
-      color: c.text,
+    drBannerText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '600',
+      color: c.warning,
+    },
+
+    // Persistent navigation bar
+    persistentNavBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.surface,
+      paddingVertical: SPACING.sm,
+      paddingHorizontal: SPACING.md,
+      borderRadius: BORDER_RADIUS.md,
+      marginTop: SPACING.sm,
+      gap: SPACING.sm,
+    },
+    navBarCenter: {
       flex: 1,
+    },
+    navBarDistance: {
+      fontSize: FONT_SIZES.lg,
+      fontWeight: '800',
+      color: c.text,
+      fontVariant: ['tabular-nums'] as const,
+    },
+    navBarInstruction: {
+      fontSize: FONT_SIZES.sm,
+      color: c.textSecondary,
+      marginTop: 2,
+    },
+    navBarRemaining: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.textTertiary,
+      minWidth: 20,
+      textAlign: 'center',
     },
 
     // Paused banner
@@ -554,10 +654,10 @@ const createStyles = (c: ThemeColors) =>
     offCourseBanner: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
       gap: SPACING.sm,
       backgroundColor: c.warning,
       paddingVertical: SPACING.sm,
+      paddingHorizontal: SPACING.md,
       borderRadius: BORDER_RADIUS.sm,
       marginTop: SPACING.md,
     },
@@ -565,6 +665,11 @@ const createStyles = (c: ThemeColors) =>
       fontSize: FONT_SIZES.md,
       fontWeight: '700',
       color: c.white,
+    },
+    offCourseDistText: {
+      fontSize: FONT_SIZES.xs,
+      color: c.white + 'CC',
+      marginTop: 1,
     },
 
     // Checkpoint pass banner

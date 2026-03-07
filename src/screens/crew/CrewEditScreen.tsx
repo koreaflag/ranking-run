@@ -15,7 +15,7 @@ import {
   ActionSheetIOS,
   Dimensions,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
@@ -57,9 +57,11 @@ export default function CrewEditScreen() {
   const [coverUri, setCoverUri] = useState<string | null>(null);
   const [logoUri, setLogoUri] = useState<string | null>(null);
   const [badgeColor, setBadgeColor] = useState('#FF7A33');
+  const [region, setRegion] = useState('');
   const [recurringSchedule, setRecurringSchedule] = useState('');
   const [meetingPoint, setMeetingPoint] = useState('');
   const [maxMembers, setMaxMembers] = useState('');
+  const [requiresApproval, setRequiresApproval] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -71,9 +73,11 @@ export default function CrewEditScreen() {
         setCoverUri(data.cover_image_url);
         setLogoUri(data.logo_url);
         setBadgeColor(data.badge_color || '#FF7A33');
+        setRegion(data.region ?? '');
         setRecurringSchedule(data.recurring_schedule ?? '');
         setMeetingPoint(data.meeting_point ?? '');
         setMaxMembers(data.max_members ? String(data.max_members) : '');
+        setRequiresApproval(data.requires_approval ?? false);
       } catch {
         Alert.alert(t('common.errorTitle'), t('crew.loadError'));
         navigation.goBack();
@@ -197,9 +201,11 @@ export default function CrewEditScreen() {
         cover_image_url: coverUrl ?? undefined,
         logo_url: logoUrl ?? undefined,
         badge_color: badgeColor,
+        region: region.trim() || undefined,
         recurring_schedule: recurringSchedule.trim() || undefined,
         meeting_point: meetingPoint.trim() || undefined,
         max_members: maxMembers ? parseInt(maxMembers, 10) : undefined,
+        requires_approval: requiresApproval,
       });
 
       navigation.goBack();
@@ -208,7 +214,7 @@ export default function CrewEditScreen() {
     } finally {
       setIsSaving(false);
     }
-  }, [crewId, name, description, coverUri, logoUri, badgeColor, recurringSchedule, meetingPoint, maxMembers, navigation, t]);
+  }, [crewId, name, description, coverUri, logoUri, badgeColor, region, recurringSchedule, meetingPoint, maxMembers, requiresApproval, navigation, t]);
 
   if (isLoading) {
     return (
@@ -353,6 +359,19 @@ export default function CrewEditScreen() {
                 </View>
               </View>
 
+              {/* Region */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>{t('crew.region')}</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={region}
+                  onChangeText={setRegion}
+                  placeholder={t('crew.regionPlaceholder')}
+                  placeholderTextColor={colors.textTertiary}
+                  maxLength={50}
+                />
+              </View>
+
               {/* Schedule */}
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>{t('crew.recurringSchedule')}</Text>
@@ -391,6 +410,41 @@ export default function CrewEditScreen() {
                   keyboardType="number-pad"
                   maxLength={4}
                 />
+              </View>
+
+              {/* Join Type */}
+              <View style={styles.fieldGroup}>
+                <Text style={styles.fieldLabel}>{t('crew.joinType')}</Text>
+                <View style={styles.joinTypeRow}>
+                  <TouchableOpacity
+                    style={[styles.joinTypeBtn, !requiresApproval && styles.joinTypeBtnActive]}
+                    onPress={() => setRequiresApproval(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name="enter-outline"
+                      size={18}
+                      color={!requiresApproval ? colors.primary : colors.textTertiary}
+                    />
+                    <Text style={[styles.joinTypeBtnText, !requiresApproval && styles.joinTypeBtnTextActive]}>
+                      {t('crew.freeJoin')}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.joinTypeBtn, requiresApproval && styles.joinTypeBtnActive]}
+                    onPress={() => setRequiresApproval(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name="shield-checkmark-outline"
+                      size={18}
+                      color={requiresApproval ? colors.primary : colors.textTertiary}
+                    />
+                    <Text style={[styles.joinTypeBtnText, requiresApproval && styles.joinTypeBtnTextActive]}>
+                      {t('crew.requiresApproval')}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* Disband Crew (owner only) */}
@@ -557,6 +611,37 @@ const createStyles = (c: ThemeColors) =>
     colorCircleSelected: {
       borderWidth: 3,
       borderColor: c.text,
+    },
+
+    // Join type toggle
+    joinTypeRow: {
+      flexDirection: 'row',
+      gap: SPACING.sm,
+    },
+    joinTypeBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.md,
+      paddingVertical: SPACING.md,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    joinTypeBtnActive: {
+      borderColor: c.primary,
+      backgroundColor: c.primary + '10',
+    },
+    joinTypeBtnText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '600',
+      color: c.textTertiary,
+    },
+    joinTypeBtnTextActive: {
+      color: c.primary,
+      fontWeight: '700',
     },
 
     // Disband

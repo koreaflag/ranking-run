@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { useTheme } from '../../hooks/useTheme';
 import { FONT_SIZES, SPACING } from '../../utils/constants';
 

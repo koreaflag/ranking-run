@@ -106,6 +106,7 @@ class CrewJoinRequestService:
             crew_id=crew_id,
             user_id=req.user_id,
             role="member",
+            grade_level=1,
         )
         db.add(member)
         crew.member_count = Crew.member_count + 1

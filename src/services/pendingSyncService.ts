@@ -2,12 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from './authService';
 import { courseService } from './courseService';
 import { runService } from './runService';
-import type { CompleteRunRequest, ProfileUpdateRequest } from '../types/api';
+import type { CompleteRunRequest, ProfileUpdateRequest, UploadChunkRequest } from '../types/api';
 
 const KEYS = {
   PENDING_PROFILE: '@pending_sync:profile',
   PENDING_COURSES: '@pending_sync:courses',
   PENDING_RUNS: '@pending_sync:runs',
+  PENDING_CHUNKS: '@pending_sync:chunks',
 } as const;
 
 export interface PendingCourse {
@@ -104,14 +105,68 @@ export async function removePendingRunRecord(id: string): Promise<void> {
   }
 }
 
+// ── Chunks (intermediate GPS data during running) ────────
+
+export interface PendingChunk {
+  id: string;
+  sessionId: string;
+  request: UploadChunkRequest;
+  createdAt: string;
+}
+
+export async function savePendingChunk(chunk: PendingChunk): Promise<void> {
+  const existing = await getPendingChunks();
+  const filtered = existing.filter((c) => c.id !== chunk.id);
+  filtered.push(chunk);
+  await AsyncStorage.setItem(KEYS.PENDING_CHUNKS, JSON.stringify(filtered));
+}
+
+export async function getPendingChunks(): Promise<PendingChunk[]> {
+  const raw = await AsyncStorage.getItem(KEYS.PENDING_CHUNKS);
+  return raw ? JSON.parse(raw) : [];
+}
+
+export async function removePendingChunk(id: string): Promise<void> {
+  const existing = await getPendingChunks();
+  const filtered = existing.filter((c) => c.id !== id);
+  if (filtered.length > 0) {
+    await AsyncStorage.setItem(KEYS.PENDING_CHUNKS, JSON.stringify(filtered));
+  } else {
+    await AsyncStorage.removeItem(KEYS.PENDING_CHUNKS);
+  }
+}
+
+export async function clearPendingChunksForSession(sessionId: string): Promise<void> {
+  const existing = await getPendingChunks();
+  const filtered = existing.filter((c) => c.sessionId !== sessionId);
+  if (filtered.length > 0) {
+    await AsyncStorage.setItem(KEYS.PENDING_CHUNKS, JSON.stringify(filtered));
+  } else {
+    await AsyncStorage.removeItem(KEYS.PENDING_CHUNKS);
+  }
+}
+
 // ── Sync All ─────────────────────────────────────────────
 
-export async function syncPendingData(): Promise<{ profileSynced: boolean; coursesSynced: number; runsSynced: number }> {
+export async function syncPendingData(): Promise<{ profileSynced: boolean; coursesSynced: number; runsSynced: number; chunksSynced: number }> {
   let profileSynced = false;
   let coursesSynced = 0;
   let runsSynced = 0;
+  let chunksSynced = 0;
 
-  // 1) Sync pending profile
+  // 1) Sync pending chunks first (they should arrive before run completion)
+  const pendingChunks = await getPendingChunks();
+  for (const chunk of pendingChunks) {
+    try {
+      await runService.uploadChunk(chunk.sessionId, chunk.request);
+      await removePendingChunk(chunk.id);
+      chunksSynced++;
+    } catch {
+      // Server still unreachable — keep pending
+    }
+  }
+
+  // 2) Sync pending profile
   const pendingProfile = await getPendingProfile();
   if (pendingProfile) {
     try {
@@ -123,7 +178,7 @@ export async function syncPendingData(): Promise<{ profileSynced: boolean; cours
     }
   }
 
-  // 2) Sync pending run records (before courses, since courses may reference run_record_id)
+  // 3) Sync pending run records (before courses, since courses may reference run_record_id)
   const pendingRuns = await getPendingRunRecords();
   for (const run of pendingRuns) {
     try {
@@ -135,7 +190,7 @@ export async function syncPendingData(): Promise<{ profileSynced: boolean; cours
     }
   }
 
-  // 3) Sync pending courses
+  // 4) Sync pending courses
   const pendingCourses = await getPendingCourses();
   for (const course of pendingCourses) {
     try {
@@ -147,16 +202,17 @@ export async function syncPendingData(): Promise<{ profileSynced: boolean; cours
     }
   }
 
-  return { profileSynced, coursesSynced, runsSynced };
+  return { profileSynced, coursesSynced, runsSynced, chunksSynced };
 }
 
 // ── Check if there's any pending data ────────────────────
 
 export async function hasPendingData(): Promise<boolean> {
-  const [profile, courses, runs] = await Promise.all([
+  const [profile, courses, runs, chunks] = await Promise.all([
     getPendingProfile(),
     getPendingCourses(),
     getPendingRunRecords(),
+    getPendingChunks(),
   ]);
-  return profile !== null || courses.length > 0 || runs.length > 0;
+  return profile !== null || courses.length > 0 || runs.length > 0 || chunks.length > 0;
 }

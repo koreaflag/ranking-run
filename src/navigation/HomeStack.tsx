@@ -14,6 +14,9 @@ import CommunityPostDetailScreen from '../screens/community/CommunityPostDetailS
 import CommunityPostCreateScreen from '../screens/community/CommunityPostCreateScreen';
 import CrewBoardScreen from '../screens/community/CrewBoardScreen';
 import CrewEditScreen from '../screens/crew/CrewEditScreen';
+import CrewManageScreen from '../screens/crew/CrewManageScreen';
+import CrewNotificationsScreen from '../screens/crew/CrewNotificationsScreen';
+import RunDetailScreen from '../screens/mypage/RunDetailScreen';
 import CommunityPostEditScreen from '../screens/community/CommunityPostEditScreen';
 import WorldScreen from '../screens/world/WorldScreen';
 import CourseListScreen from '../screens/course/CourseListScreen';
@@ -35,6 +38,7 @@ export default function HomeStack() {
     >
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="RunHistory" component={RunHistoryScreen} />
+      <Stack.Screen name="RunDetail" component={RunDetailScreen} />
       <Stack.Screen name="CourseDetail" component={CourseDetailScreen} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
       <Stack.Screen name="CrewCreate" component={CrewCreateScreen} />
@@ -46,6 +50,8 @@ export default function HomeStack() {
       <Stack.Screen name="CommunityPostCreate" component={CommunityPostCreateScreen} />
       <Stack.Screen name="CrewBoard" component={CrewBoardScreen} />
       <Stack.Screen name="CrewEdit" component={CrewEditScreen} />
+      <Stack.Screen name="CrewManage" component={CrewManageScreen} />
+      <Stack.Screen name="CrewNotifications" component={CrewNotificationsScreen} />
       <Stack.Screen name="CommunityPostEdit" component={CommunityPostEditScreen} />
       <Stack.Screen name="World" component={WorldScreen} />
       <Stack.Screen name="CourseList" component={CourseListScreen} />

@@ -25,7 +25,8 @@ export type MainTabParamList = {
 
 export type WorldStackParamList = {
   World: undefined;
-  CourseDetail: { courseId: string };
+  CourseDetail: { courseId: string; selectForRaid?: string };
+  CrewDetail: { crewId: string };
   UserProfile: { userId: string };
   RunningMain: { courseId?: string } | undefined;
   RunResult: { sessionId: string; alreadyCompleted?: boolean };
@@ -33,8 +34,9 @@ export type WorldStackParamList = {
 
 export type HomeStackParamList = {
   Home: undefined;
-  CourseDetail: { courseId: string };
+  CourseDetail: { courseId: string; selectForRaid?: string };
   RunHistory: undefined;
+  RunDetail: { runId: string };
   UserProfile: { userId: string };
   CrewCreate: undefined;
   CrewDetail: { crewId: string };
@@ -45,7 +47,9 @@ export type HomeStackParamList = {
   CommunityPostCreate: { crewId?: string } | undefined;
   CrewBoard: { crewId: string; crewName: string };
   CrewEdit: { crewId: string };
-  CommunityPostEdit: { postId: string; title: string; content: string; imageUrl?: string; postType: string };
+  CrewManage: { crewId: string };
+  CrewNotifications: { crewId: string };
+  CommunityPostEdit: { postId: string; title?: string; content: string; imageUrl?: string; postType: string };
   World: undefined;
   CourseList: undefined;
   FollowList: { userId: string; type: 'followers' | 'following' };
@@ -55,8 +59,9 @@ export type HomeStackParamList = {
 export type CourseStackParamList = {
   CourseList: undefined;
   CourseSearch: { initialSort?: 'total_runs' | 'created_at' | 'distance_meters' } | undefined;
-  CourseDetail: { courseId: string; openReview?: boolean };
+  CourseDetail: { courseId: string; openReview?: boolean; selectForRaid?: string };
   CourseRanking: { courseId: string };
+  CrewDetail: { crewId: string };
   CourseCreate: {
     runRecordId: string;
     routePoints: Array<{ latitude: number; longitude: number }>;
@@ -87,7 +92,9 @@ export type CommunityStackParamList = {
   FindFriends: undefined;
   CrewBoard: { crewId: string; crewName: string };
   CrewEdit: { crewId: string };
-  CommunityPostEdit: { postId: string; title: string; content: string; imageUrl?: string; postType: string };
+  CrewManage: { crewId: string };
+  CrewNotifications: { crewId: string };
+  CommunityPostEdit: { postId: string; title?: string; content: string; imageUrl?: string; postType: string };
   FollowList: { userId: string; type: 'followers' | 'following' };
   Friends: undefined;
 };

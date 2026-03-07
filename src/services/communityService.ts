@@ -34,12 +34,13 @@ class CommunityService {
 
   /** Create a new community post. */
   async createPost(data: {
-    title: string;
+    title?: string;
     content: string;
     post_type: CommunityPostType;
     event_id?: string;
     crew_id?: string;
     image_url?: string;
+    image_urls?: string[];
   }): Promise<CommunityPostItem> {
     return api.post<CommunityPostItem>('/community/posts', data);
   }

@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import type { AuthStackParamList } from '../../types/navigation';
 import { useAuthStore } from '../../stores/authStore';
 import { useTheme } from '../../hooks/useTheme';
@@ -26,6 +26,7 @@ import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constan
 
 GoogleSignin.configure({
   iosClientId: '61103557165-n17ms089q66usovminu6atdoruj0udq6.apps.googleusercontent.com',
+  webClientId: '61103557165-8483ddhkn2ds739saiodr41a4sbod450.apps.googleusercontent.com',
 });
 
 export default function LoginScreen() {

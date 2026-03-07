@@ -47,46 +47,62 @@ export function formatDuration(totalSeconds: number): string {
 }
 
 /**
- * Converts an ISO date string to a Korean-friendly relative time.
- * e.g., "방금 전", "5분 전", "3시간 전", "2일 전", "2026.01.15"
+ * Returns the user's locale string for Intl APIs.
+ */
+function getUserLocale(): string {
+  const localeMap: Record<string, string> = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP' };
+  return localeMap[i18n.language] ?? 'en-US';
+}
+
+/**
+ * Formats a date string using the device locale.
+ * ko: 2026. 1. 15.  en: 1/15/2026  ja: 2026/1/15
+ */
+export function formatLocalDate(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleDateString(getUserLocale(), {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  });
+}
+
+/**
+ * Converts an ISO date string to a locale-aware relative time.
+ * Under 5s: "방금 전", under 1min: "30초 전", under 1h: "5분 전",
+ * under 24h: "3시간 전", under 7d: "2일 전", else: locale date.
  */
 export function formatRelativeTime(isoString: string): string {
   const date = new Date(isoString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
   const diffMinutes = Math.floor(diffMs / (1000 * 60));
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffMinutes < 1) return i18n.t('format.justNow');
+  if (diffSeconds < 5) return i18n.t('format.justNow');
+  if (diffSeconds < 60) return i18n.t('format.secondsAgo', { count: diffSeconds });
   if (diffMinutes < 60) return i18n.t('format.minutesAgo', { count: diffMinutes });
   if (diffHours < 24) return i18n.t('format.hoursAgo', { count: diffHours });
   if (diffDays < 7) return i18n.t('format.daysAgo', { count: diffDays });
 
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
-  return `${year}.${month}.${day}`;
+  return formatLocalDate(isoString);
 }
 
 /**
  * Formats a date string to "YYYY.MM.DD" format.
+ * @deprecated Use formatLocalDate for locale-aware formatting.
  */
 export function formatDate(isoString: string): string {
-  const date = new Date(isoString);
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
-  return `${year}.${month}.${day}`;
+  return formatLocalDate(isoString);
 }
 
 /**
  * Formats a number with commas for thousands separator.
  */
 export function formatNumber(num: number): string {
-  const localeMap: Record<string, string> = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP' };
-  const locale = localeMap[i18n.language] ?? 'en-US';
-  return num.toLocaleString(locale);
+  return num.toLocaleString(getUserLocale());
 }
 
 /**

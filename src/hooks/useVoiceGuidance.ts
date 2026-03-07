@@ -6,7 +6,7 @@
 // ============================================================
 
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 import type { CourseNavigation } from './useCourseNavigation';
 import type { RunningPhase } from '../stores/runningStore';
@@ -67,6 +67,12 @@ interface UseVoiceGuidanceProps {
   distanceMeters: number;
   phase: RunningPhase;
   enabled: boolean;
+  /** When provided, pace coaching TTS replaces the generic km milestone announcement */
+  paceCoachingMessage?: string | null;
+  /** Off-course warning level: 0=on-course, 1=grace period, 2=penalty active */
+  offCourseLevel?: number;
+  /** Elevation profile of the course (per-point altitudes in meters) */
+  elevationProfile?: number[] | null;
 }
 
 export function useVoiceGuidance({
@@ -74,6 +80,9 @@ export function useVoiceGuidance({
   distanceMeters,
   phase,
   enabled,
+  paceCoachingMessage,
+  offCourseLevel = 0,
+  elevationProfile,
 }: UseVoiceGuidanceProps) {
   const voiceIdRef = useRef<string | undefined>(undefined);
   const lastAnnouncementTimeRef = useRef(0);
@@ -82,6 +91,8 @@ export function useVoiceGuidance({
   const lastTurnThresholdRef = useRef<number>(0);
   const lastMilestoneKmRef = useRef(0);
   const wasOffCourseRef = useRef(false);
+  const lastOffCourseLevelRef = useRef(0);
+  const lastElevationAlertIdxRef = useRef(-999);
 
   // Pre-fetch best voice on mount
   useEffect(() => {
@@ -111,13 +122,17 @@ export function useVoiceGuidance({
 
     let announcement: string | null = null;
 
-    // Priority 1: Off-course transitions
+    // Priority 1: Off-course transitions + escalating warnings
     if (navigation.isOffCourse && !wasOffCourseRef.current) {
       announcement = i18n.t('voice.offCourse');
     } else if (!navigation.isOffCourse && wasOffCourseRef.current) {
       announcement = i18n.t('voice.backOnCourse');
+    } else if (offCourseLevel === 2 && lastOffCourseLevelRef.current < 2) {
+      // Escalation: grace period expired → penalty active
+      announcement = i18n.t('voice.offCoursePenalty');
     }
     wasOffCourseRef.current = navigation.isOffCourse;
+    lastOffCourseLevelRef.current = offCourseLevel;
 
     // Priority 2: Turn execution/approach (only if no off-course announcement)
     if (!announcement && navigation.distanceToNextTurn >= 0) {
@@ -143,24 +158,54 @@ export function useVoiceGuidance({
       }
     }
 
-    // Priority 3: Kilometer milestones
+    // Priority 2.5: Elevation pre-alerts (with index-based hysteresis)
+    const MIN_ELEVATION_ALERT_GAP = 200; // ~400-800m between alerts
+    if (!announcement && elevationProfile && elevationProfile.length > 0 && navigation) {
+      const idx = navigation.nearestPointIndex;
+      if (idx - lastElevationAlertIdxRef.current >= MIN_ELEVATION_ALERT_GAP) {
+        const aheadIdx = Math.min(idx + 50, elevationProfile.length - 1);
+        if (idx < elevationProfile.length && aheadIdx > idx) {
+          const diff = elevationProfile[aheadIdx] - elevationProfile[idx];
+          if (diff > 10) {
+            announcement = i18n.t('voice.uphillAhead', { meters: Math.round(diff) });
+            lastElevationAlertIdxRef.current = idx;
+          } else if (diff < -10) {
+            announcement = i18n.t('voice.downhillAhead', { meters: Math.round(Math.abs(diff)) });
+            lastElevationAlertIdxRef.current = idx;
+          }
+        }
+      }
+    }
+
+    // Priority 3: Kilometer milestones (with optional pace coaching overlay)
     if (!announcement) {
       const currentKm = Math.floor(distanceMeters / 1000);
       if (currentKm > lastMilestoneKmRef.current && currentKm > 0) {
-        announcement = i18n.t('voice.kmCompleted', { km: currentKm });
+        const kmMsg = i18n.t('voice.kmCompleted', { km: currentKm });
+        // Append pace coaching message if available (program goal running)
+        announcement = paceCoachingMessage
+          ? `${kmMsg}. ${paceCoachingMessage}`
+          : kmMsg;
         lastMilestoneKmRef.current = currentKm;
       }
     }
 
     if (announcement) {
       Speech.stop();
+      // Configure audio session to play through mute switch (iOS)
+      const gps = Platform.OS === 'ios' ? NativeModules.GPSTrackerModule : null;
+      gps?.configureAudioForSpeech?.().catch(() => {});
       Speech.speak(announcement, {
         language: getTTSLocale(),
         voice: voiceIdRef.current,
         rate: 1.0,
         pitch: 1.0,
+        onDone: () => {
+          // Restore audio session so background audio unducks
+          gps?.restoreAudioAfterSpeech?.().catch(() => {});
+        },
       });
       lastAnnouncementTimeRef.current = now;
     }
-  }, [enabled, phase, navigation, distanceMeters]);
+  }, [enabled, phase, navigation, distanceMeters, offCourseLevel, elevationProfile]);
 }

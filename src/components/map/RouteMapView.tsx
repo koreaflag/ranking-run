@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo, useState } from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 import Mapbox, { UserTrackingMode } from '@rnmapbox/maps';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import { COLORS, DIFFICULTY_COLORS, type DifficultyLevel } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
 import { MAPBOX_DARK_STYLE, MAPBOX_LIGHT_STYLE } from '../../config/env';
@@ -90,6 +90,8 @@ interface RouteMapViewProps {
   onEventMarkerPress?: (eventId: string) => void;
   onRegionChange?: (region: Region) => void;
   onMapPress?: () => void;
+  /** Called when user manually pans/zooms the map (user gesture, not programmatic) */
+  onUserMapInteraction?: () => void;
   showUserLocation?: boolean;
   followsUserLocation?: boolean;
   onUserLocationChange?: (coordinate: { latitude: number; longitude: number; heading?: number }) => void;
@@ -106,6 +108,14 @@ interface RouteMapViewProps {
   use3DStyle?: boolean;
   /** Camera padding when following user — shifts center to account for overlapping UI */
   followPadding?: { paddingTop?: number; paddingBottom?: number; paddingLeft?: number; paddingRight?: number };
+  /** Zoom level to use when followsUserLocation is true */
+  followZoomLevel?: number;
+  /** Camera follow mode: 'normal' (default), 'compass' (heading-locked), 'course' (GPS bearing, nav-style) */
+  followUserMode?: 'normal' | 'compass' | 'course';
+  /** Camera pitch angle in degrees (e.g. 45 for tilted 3D view) */
+  followPitch?: number;
+  /** Off-course deviation segments to render in red: [startIdx, endIdx] pairs */
+  deviationSegments?: Array<[number, number]>;
 }
 
 export interface Camera {
@@ -123,6 +133,8 @@ export interface RouteMapViewHandle {
     edgePadding?: { top: number; right: number; bottom: number; left: number },
     animated?: boolean,
   ) => void;
+  /** Toggle follow off→on to force Camera re-engage follow mode (centers on user) */
+  recenterOnUser: () => void;
 }
 
 // ---- Helpers ----
@@ -180,6 +192,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   onEventMarkerPress,
   onRegionChange,
   onMapPress,
+  onUserMapInteraction,
   showUserLocation = false,
   followsUserLocation = false,
   onUserLocationChange,
@@ -193,12 +206,55 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   hideRouteMarkers = false,
   use3DStyle = true,
   followPadding,
+  followZoomLevel,
+  followUserMode: followUserModeProp,
+  followPitch: followPitchProp,
+  deviationSegments,
 }, ref) {
   const cameraRef = useRef<Mapbox.Camera>(null);
   const colors = useTheme();
   const isDark = colors.statusBar === 'light-content';
   const mapBearingRef = useRef(0);
   const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM);
+
+  // ---------- Internal follow state ----------
+  // Mapbox Camera silently blocks ALL setCamera/fitBounds calls when
+  // followUserLocation=true. We manage follow internally so imperative
+  // camera methods can disable it before animating.
+  const [internalFollow, setInternalFollow] = useState(followsUserLocation);
+
+  // When customUserLocation is provided, we center the camera on IT instead
+  // of using Mapbox's native followUserLocation (which tracks raw GPS and
+  // can diverge from the Kalman-filtered orange dot).
+  const useCustomFollow = internalFollow && customUserLocation != null;
+
+  // Sync external prop → internal state
+  useEffect(() => {
+    setInternalFollow(followsUserLocation);
+  }, [followsUserLocation]);
+
+  // Queue: animations waiting for follow=false to take effect
+  const pendingAnimRef = useRef<(() => void) | null>(null);
+
+  // After internalFollow becomes false, run pending animation
+  useEffect(() => {
+    if (!internalFollow && pendingAnimRef.current) {
+      const fn = pendingAnimRef.current;
+      pendingAnimRef.current = null;
+      // requestAnimationFrame ensures Camera has committed follow=false to native
+      requestAnimationFrame(() => fn());
+    }
+  }, [internalFollow]);
+
+  /** Disable follow (if needed) then run the animation. */
+  const runCameraAction = useCallback((action: () => void) => {
+    if (internalFollow) {
+      pendingAnimRef.current = action;
+      setInternalFollow(false);
+    } else {
+      action();
+    }
+  }, [internalFollow]);
 
   // Determine mode
   const isRouteMode = routePoints.length > 0;
@@ -209,22 +265,26 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   useImperativeHandle(ref, () => ({
     animateToRegion: (region: Region, duration = 500) => {
       if (!isFinite(region.longitude) || !isFinite(region.latitude)) return;
-      cameraRef.current?.setCamera({
-        centerCoordinate: [region.longitude, region.latitude],
-        zoomLevel: deltaToZoom(region.latitudeDelta),
-        animationDuration: duration,
-        animationMode: 'easeTo',
+      runCameraAction(() => {
+        cameraRef.current?.setCamera({
+          centerCoordinate: [region.longitude, region.latitude],
+          zoomLevel: deltaToZoom(region.latitudeDelta),
+          animationDuration: duration,
+          animationMode: 'easeTo',
+        });
       });
     },
     animateCamera: (camera: Camera, duration = 1500) => {
-      const config: any = { animationDuration: duration, animationMode: 'flyTo' };
-      if (camera.center) {
-        config.centerCoordinate = [camera.center.longitude, camera.center.latitude];
-      }
-      if (camera.pitch != null) config.pitch = camera.pitch;
-      if (camera.heading != null) config.heading = camera.heading;
-      if (camera.zoom != null) config.zoomLevel = camera.zoom;
-      cameraRef.current?.setCamera(config);
+      runCameraAction(() => {
+        const config: any = { animationDuration: duration, animationMode: 'flyTo' };
+        if (camera.center) {
+          config.centerCoordinate = [camera.center.longitude, camera.center.latitude];
+        }
+        if (camera.pitch != null) config.pitch = camera.pitch;
+        if (camera.heading != null) config.heading = camera.heading;
+        if (camera.zoom != null) config.zoomLevel = camera.zoom;
+        cameraRef.current?.setCamera(config);
+      });
     },
     fitToCoordinates: (
       coords: Array<{ latitude: number; longitude: number }>,
@@ -232,19 +292,26 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
       animated = true,
     ) => {
       if (coords.length === 0) return;
-      const { ne, sw } = computeBounds(coords);
-      cameraRef.current?.fitBounds(
-        ne,
-        sw,
-        [edgePadding.top, edgePadding.right, edgePadding.bottom, edgePadding.left],
-        animated ? 500 : 0,
-      );
+      runCameraAction(() => {
+        const { ne, sw } = computeBounds(coords);
+        cameraRef.current?.fitBounds(
+          ne,
+          sw,
+          [edgePadding.top, edgePadding.right, edgePadding.bottom, edgePadding.left],
+          animated ? 500 : 0,
+        );
+      });
     },
-  }));
+    recenterOnUser: () => {
+      // Toggle follow off→on to force Camera re-engage follow mode
+      setInternalFollow(false);
+      requestAnimationFrame(() => setInternalFollow(true));
+    },
+  }), [runCameraAction]);
 
-  // Initial camera config
+  // Initial camera config (skip route bounds when following user — Camera centers on user automatically)
   const cameraDefaults = useMemo(() => {
-    if (isRouteMode && routePoints.length >= 2) {
+    if (isRouteMode && routePoints.length >= 2 && !followsUserLocation) {
       const { ne, sw } = computeBounds(routePoints);
       const latDelta = Math.max((ne[1] - sw[1]) * 2.5, 0.01);
       return {
@@ -258,9 +325,9 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     };
   }, []);
 
-  // Fit map to route bounds after map loads
+  // Fit map to route bounds after map loads (skip when following user — Camera handles centering)
   const handleDidFinishLoadingMap = useCallback(() => {
-    if (isRouteMode && routePoints.length >= 2) {
+    if (isRouteMode && routePoints.length >= 2 && !followsUserLocation) {
       // Immediate fit + delayed retry to ensure bounds are applied
       const { ne, sw } = computeBounds(routePoints);
       cameraRef.current?.fitBounds(ne, sw, [40, 40, 40, 40], 0);
@@ -268,7 +335,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         cameraRef.current?.fitBounds(ne, sw, [40, 40, 40, 40], 0);
       }, 500);
     }
-  }, [isRouteMode, routePoints]);
+  }, [isRouteMode, routePoints, followsUserLocation]);
 
   // Re-fit when routePoints change
   useEffect(() => {
@@ -281,6 +348,23 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     }
   }, [isRouteMode, routePoints, followsUserLocation]);
 
+  // Custom follow: center camera on customUserLocation (Kalman-filtered)
+  // instead of relying on Mapbox's native follow which tracks raw GPS.
+  useEffect(() => {
+    if (useCustomFollow && customUserLocation) {
+      // Offset center slightly south so the user dot appears in the upper 40% of the map,
+      // giving more visibility to the route ahead.
+      const zoomLevel = followZoomLevel ?? 16;
+      const offsetLat = 0.0004; // ~40m south offset at zoom 16
+      cameraRef.current?.setCamera({
+        centerCoordinate: [customUserLocation.longitude, customUserLocation.latitude - offsetLat],
+        zoomLevel,
+        animationDuration: 300,
+        animationMode: 'easeTo',
+      });
+    }
+  }, [useCustomFollow, customUserLocation?.latitude, customUserLocation?.longitude, followZoomLevel]);
+
   // Region change callback
   const handleRegionDidChange = useCallback(
     (feature: any) => {
@@ -291,6 +375,14 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
       // Track zoom level for conditional marker rendering
       const zoom = feature?.properties?.zoomLevel;
       if (zoom != null) setCurrentZoom(zoom);
+
+      // Detect user-initiated map gesture (pan/zoom/rotate)
+      const isUserInteraction = feature?.properties?.isUserInteraction;
+      if (isUserInteraction) {
+        // Disengage custom follow when user pans/zooms
+        if (useCustomFollow) setInternalFollow(false);
+        if (onUserMapInteraction) onUserMapInteraction();
+      }
 
       if (!onRegionChange) return;
       const bounds = feature?.properties?.visibleBounds;
@@ -305,7 +397,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
       };
       onRegionChange(region);
     },
-    [onRegionChange],
+    [onRegionChange, onUserMapInteraction, useCustomFollow],
   );
 
   // User location update
@@ -344,6 +436,25 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     return toLineGeoJSON(routePoints);
   }, [isRouteMode, routePoints]);
 
+  // Deviation overlay GeoJSON (red segments where runner went off-course)
+  const deviationGeoJSON = useMemo<GeoJSON.Feature<GeoJSON.MultiLineString> | null>(() => {
+    if (!deviationSegments || deviationSegments.length === 0 || routePoints.length < 2) return null;
+    const lines: number[][][] = [];
+    for (const [start, end] of deviationSegments) {
+      const s = Math.max(0, start);
+      const e = Math.min(routePoints.length - 1, end);
+      if (e - s < 1) continue;
+      const coords = routePoints.slice(s, e + 1).map(p => [p.longitude, p.latitude]);
+      if (coords.length >= 2) lines.push(coords);
+    }
+    if (lines.length === 0) return null;
+    return {
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'MultiLineString', coordinates: lines },
+    };
+  }, [deviationSegments, routePoints]);
+
   // Preview polyline GeoJSON
   const previewGeoJSON = useMemo(() => {
     if (!previewPolyline || previewPolyline.length < 2) return null;
@@ -369,11 +480,11 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         scaleBarEnabled={false}
         scrollEnabled={isInteractive}
         zoomEnabled={isInteractive}
-        rotateEnabled={!!pitchEnabledProp}
-        pitchEnabled={!!pitchEnabledProp}
+        rotateEnabled={!!pitchEnabledProp || followUserModeProp === 'course'}
+        pitchEnabled={!!pitchEnabledProp || followPitchProp != null}
         onPress={onMapPress ? () => onMapPress() : undefined}
         onDidFinishLoadingMap={handleDidFinishLoadingMap}
-        onRegionDidChange={isMarkersMode ? handleRegionDidChange : undefined}
+        onRegionDidChange={isMarkersMode || useCustomFollow ? handleRegionDidChange : undefined}
         style={styles.map}
       >
         {/* Camera */}
@@ -381,8 +492,16 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
           ref={cameraRef}
           key={followPadding ? `pad-${followPadding.paddingBottom ?? 0}` : 'default'}
           defaultSettings={cameraDefaults}
-          followUserLocation={followsUserLocation}
-          followUserMode={followsUserLocation ? UserTrackingMode.Follow : undefined}
+          followUserLocation={internalFollow && !useCustomFollow}
+          followUserMode={internalFollow && !useCustomFollow
+            ? (followUserModeProp === 'course'
+              ? UserTrackingMode.FollowWithCourse
+              : followUserModeProp === 'compass'
+                ? UserTrackingMode.FollowWithHeading
+                : UserTrackingMode.Follow)
+            : undefined}
+          followZoomLevel={internalFollow && !useCustomFollow ? (followZoomLevel ?? 15) : undefined}
+          followPitch={internalFollow && followPitchProp != null ? followPitchProp : undefined}
           followPadding={followPadding}
           padding={followPadding ? {
             paddingTop: followPadding.paddingTop ?? 0,
@@ -405,6 +524,21 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
                 lineCap: 'round',
                 lineJoin: 'round',
                 lineEmissiveStrength: 1,
+              }}
+            />
+          </Mapbox.ShapeSource>
+        )}
+        {deviationGeoJSON && (
+          <Mapbox.ShapeSource id="deviation-source" shape={deviationGeoJSON}>
+            <Mapbox.LineLayer
+              id="deviation-line"
+              aboveLayerID="route-line"
+              style={{
+                lineColor: '#FF3B30',
+                lineWidth: 6,
+                lineOpacity: 0.9,
+                lineCap: 'round',
+                lineJoin: 'round',
               }}
             />
           </Mapbox.ShapeSource>

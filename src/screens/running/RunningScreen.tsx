@@ -14,7 +14,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../lib/icons';
 import * as Haptics from 'expo-haptics';
 import { useRunningStore, RunningPhase } from '../../stores/runningStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -31,7 +31,10 @@ import type { RouteMapViewHandle } from '../../components/map/RouteMapView';
 import { useCompassHeading } from '../../hooks/useCompassHeading';
 import { useCheckpointTracker } from '../../hooks/useCheckpointTracker';
 import { useLiveActivity } from '../../hooks/useLiveActivity';
+import { useRunningChunkUpload } from '../../hooks/useRunningChunkUpload';
+import { usePaceCoaching } from '../../hooks/usePaceCoaching';
 import { useTheme } from '../../hooks/useTheme';
+import i18n from '../../i18n';
 import type { ThemeColors } from '../../utils/constants';
 import type { WorldStackParamList } from '../../types/navigation';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
@@ -47,6 +50,7 @@ export default function RunningScreen() {
   const [dismissedCourse, setDismissedCourse] = useState(false);
   const courseId = dismissedCourse ? null : (route.params?.courseId ?? null);
   const [courseRoute, setCourseRoute] = useState<Array<{ latitude: number; longitude: number }> | null>(null);
+  const [courseElevationProfile, setCourseElevationProfile] = useState<number[] | null>(null);
   const [courseCheckpoints, setCourseCheckpoints] = useState<import('../../types/api').CourseCheckpoint[] | null>(null);
 
   const {
@@ -57,6 +61,7 @@ export default function RunningScreen() {
     currentPaceSecondsPerKm,
     avgPaceSecondsPerKm,
     gpsStatus,
+    gpsAccuracy,
     routePoints,
     calories,
     heartRate,
@@ -69,6 +74,8 @@ export default function RunningScreen() {
     loopDetected,
     distanceToStart,
     isAutoPaused,
+    runGoal,
+    splits,
     startSession,
     updateSessionId,
     pause,
@@ -77,6 +84,7 @@ export default function RunningScreen() {
     reset,
     setPhase,
     setCheckpointPasses,
+    addDeviationPoint,
   } = useRunningStore();
 
   // Only use GPS course heading when actually moving. When stationary, magnetometer
@@ -95,6 +103,35 @@ export default function RunningScreen() {
     useGPSTracker();
   useRunTimer();
   useLiveActivity();
+  useRunningChunkUpload();
+
+  // Pace coaching (program goal only)
+  const paceCoaching = usePaceCoaching({
+    enabled: runGoal?.type === 'program',
+    targetDistance: runGoal?.type === 'program' ? (runGoal.value ?? 0) : 0,
+    targetTime: runGoal?.type === 'program' ? (runGoal.targetTime ?? 0) : 0,
+    currentDistance: distanceMeters,
+    elapsedTime: durationSeconds,
+    avgPace: avgPaceSecondsPerKm,
+    phase,
+    splits,
+  });
+
+  // Metronome auto-start/stop
+  const [metronomeMuted, setMetronomeMuted] = useState(false);
+  const MetronomeModule = NativeModules.MetronomeModule;
+
+  useEffect(() => {
+    if (!MetronomeModule) return;
+    const bpm = runGoal?.type === 'program' ? (runGoal.cadenceBPM ?? 0) : 0;
+
+    if (phase === 'running' && bpm > 0 && !metronomeMuted) {
+      MetronomeModule.start(bpm);
+    } else {
+      MetronomeModule.stop();
+    }
+    return () => { MetronomeModule.stop(); };
+  }, [phase, runGoal?.type, runGoal?.cadenceBPM, metronomeMuted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [countdown, setCountdown] = useState<number | null>(null);
   const [loopHapticFired, setLoopHapticFired] = useState(false);
@@ -167,9 +204,11 @@ export default function RunningScreen() {
       }));
       setCourseRoute(points);
       setCourseCheckpoints((detail as any).checkpoints ?? null);
+      setCourseElevationProfile(detail.elevation_profile?.length ? detail.elevation_profile : null);
     }).catch(() => {
       setCourseRoute(null);
       setCourseCheckpoints(null);
+      setCourseElevationProfile(null);
     });
   }, [courseId]);
 
@@ -200,6 +239,13 @@ export default function RunningScreen() {
     }
   }, [currentLocation, phase, courseId, cpUpdateLocation]);
 
+  // Log deviation for result screen visualization
+  useEffect(() => {
+    if (courseNavigation && courseId && phase === 'running') {
+      addDeviationPoint(routePoints.length - 1, courseNavigation.deviationMeters);
+    }
+  }, [courseNavigation, routePoints.length, courseId, phase, addDeviationPoint]);
+
   // Countdown before starting
   const handleStart = useCallback(async () => {
     setPhase('countdown');
@@ -227,9 +273,9 @@ export default function RunningScreen() {
 
     setCountdown(null);
 
-    // Start GPS tracking IMMEDIATELY with a local session ID.
-    // The server session is created in the background — network latency
-    // must never block the running experience.
+    // Start GPS tracking with a local session ID first, then try to get
+    // a server session ID with a 3-second timeout. Network latency must
+    // never block the running experience.
     const localSessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     startSession(localSessionId, courseId);
     await startTracking();
@@ -238,10 +284,9 @@ export default function RunningScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
 
-    // Register session on server in background (non-blocking).
-    // When successful, update the store with the real server session ID
-    // so that completeRun uses the correct ID.
-    runService.createSession({
+    // Register session on server with timeout — update session ID if successful.
+    // This ensures chunks and completion use the same (server) ID when possible.
+    const sessionPromise = runService.createSession({
       course_id: courseId,
       started_at: new Date().toISOString(),
       device_info: {
@@ -250,7 +295,10 @@ export default function RunningScreen() {
         device_model: 'Unknown',
         app_version: '1.0.0',
       },
-    }).then((response) => {
+    });
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
+
+    Promise.race([sessionPromise, timeoutPromise]).then((response) => {
       if (response?.session_id) {
         updateSessionId(response.session_id);
       }
@@ -337,12 +385,27 @@ export default function RunningScreen() {
     justPassed: !!cpJustPassed,
   });
 
-  // Voice guidance for course navigation
+  // Voice guidance for course navigation + program goal pace coaching
+  const paceCoachingTTSMessage: string | null = paceCoaching
+    ? (() => {
+        const absDelta = Math.abs(Math.round(paceCoaching.timeDelta));
+        switch (paceCoaching.status) {
+          case 'ahead': return String(i18n.t('voice.paceAhead', { seconds: absDelta }));
+          case 'on_pace': return String(i18n.t('voice.paceOnTrack'));
+          case 'behind': return String(i18n.t('voice.paceBehind', { seconds: absDelta }));
+          case 'critical': return String(i18n.t('voice.paceCritical'));
+        }
+      })()
+    : null;
+
   useVoiceGuidance({
     navigation: courseNavigation,
     distanceMeters,
     phase,
-    enabled: voiceGuidance && !!courseId,
+    enabled: voiceGuidance && (!!courseId || runGoal?.type === 'program'),
+    paceCoachingMessage: paceCoachingTTSMessage,
+    offCourseLevel: 0,
+    elevationProfile: courseElevationProfile,
   });
 
   // Cleanup on unmount only — stop GPS if still running when user navigates away.
@@ -374,6 +437,7 @@ export default function RunningScreen() {
         <IdleView
           courseId={courseId}
           gpsStatus={gpsStatus}
+          gpsAccuracy={useRunningStore.getState().gpsAccuracy}
           onStart={handleStart}
           onDismissCourse={() => setDismissedCourse(true)}
         />
@@ -401,10 +465,20 @@ export default function RunningScreen() {
     );
   }
 
-  // During running, GPS is active — only show error for truly disabled state
+  // During running, show live GPS accuracy instead of binary status
   const gpsDisabled = gpsStatus === 'disabled';
-  const gpsLabel = gpsDisabled ? t('running.status.gpsPermissionNeeded') : t('running.status.gpsConnected');
-  const gpsColor = gpsDisabled ? colors.error : colors.success;
+  const gpsColor = gpsDisabled
+    ? colors.error
+    : gpsAccuracy != null && gpsAccuracy < 10
+      ? colors.success
+      : gpsAccuracy != null && gpsAccuracy < 25
+        ? colors.warning
+        : colors.error;
+  const gpsLabel = gpsDisabled
+    ? t('running.status.gpsPermissionNeeded')
+    : gpsAccuracy != null
+      ? `±${Math.round(gpsAccuracy)}m`
+      : 'GPS';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -426,7 +500,26 @@ export default function RunningScreen() {
               <Ionicons name="watch-outline" size={12} color={colors.success} />
             </View>
           )}
-          {courseId && (
+          {runGoal?.type === 'program' && (runGoal.cadenceBPM ?? 0) > 0 && (
+            <TouchableOpacity
+              style={styles.metronomeChip}
+              onPress={() => setMetronomeMuted(!metronomeMuted)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={metronomeMuted ? 'musical-note' : 'musical-notes'}
+                size={12}
+                color={metronomeMuted ? colors.textTertiary : colors.primary}
+              />
+              <Text style={[
+                styles.metronomeChipText,
+                !metronomeMuted && { color: colors.primary },
+              ]}>
+                {runGoal.cadenceBPM}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {(courseId || runGoal?.type === 'program') && (
             <TouchableOpacity
               style={styles.voiceChip}
               onPress={() => setVoiceGuidance(!voiceGuidance)}
@@ -441,6 +534,34 @@ export default function RunningScreen() {
           )}
         </View>
 
+        {/* Persistent course navigation bar — always visible during course running */}
+        {courseNavigation && courseId && (
+          <View style={styles.persistentNavBar}>
+            <Ionicons
+              name={turnDirectionIcon(courseNavigation.nextTurnDirection) as any}
+              size={28}
+              color={colors.primary}
+            />
+            <View style={styles.navBarCenter}>
+              <Text style={styles.navBarDistance}>
+                {courseNavigation.distanceToNextTurn >= 0
+                  ? courseNavigation.distanceToNextTurn < 1000
+                    ? `${Math.round(courseNavigation.distanceToNextTurn)}m`
+                    : `${(courseNavigation.distanceToNextTurn / 1000).toFixed(1)}km`
+                  : '--'}
+              </Text>
+              <Text style={styles.navBarInstruction} numberOfLines={1}>
+                {courseNavigation.distanceToNextTurn >= 0
+                  ? formatTurnInstruction(courseNavigation.distanceToNextTurn, courseNavigation.nextTurnDirection)
+                  : t('running.nav.straightAhead')}
+              </Text>
+            </View>
+            <Text style={styles.navBarRemaining}>
+              {courseNavigation.instructionsRemaining}
+            </Text>
+          </View>
+        )}
+
         {/* Mini Map — flex fills remaining space, shrinks when banners appear */}
         <View style={styles.miniMapContainer}>
           <RouteMapView
@@ -451,6 +572,7 @@ export default function RunningScreen() {
             checkpoints={cpMarkerData.length > 0 ? cpMarkerData : undefined}
             showUserLocation
             followsUserLocation={followUser}
+            followZoomLevel={16}
             interactive
             customUserLocation={myLocation ?? undefined}
             customUserHeading={headingValue}
@@ -459,7 +581,6 @@ export default function RunningScreen() {
           <TouchableOpacity
             style={styles.miniMapLocateBtn}
             onPress={() => {
-              // Re-engage follow mode by toggling off→on
               setFollowUser(false);
               requestAnimationFrame(() => setFollowUser(true));
             }}
@@ -468,23 +589,6 @@ export default function RunningScreen() {
             <Ionicons name="locate" size={18} color={colors.text} />
           </TouchableOpacity>
         </View>
-
-        {/* Turn instruction bar */}
-        {courseNavigation && courseNavigation.distanceToNextTurn >= 0 && (
-          <View style={styles.turnInstructionBar}>
-            <Ionicons
-              name={turnDirectionIcon(courseNavigation.nextTurnDirection) as any}
-              size={24}
-              color={colors.primary}
-            />
-            <Text style={styles.turnInstructionText}>
-              {formatTurnInstruction(
-                courseNavigation.distanceToNextTurn,
-                courseNavigation.nextTurnDirection,
-              )}
-            </Text>
-          </View>
-        )}
 
         {/* Paused Banner */}
         {phase === 'paused' && (
@@ -502,11 +606,44 @@ export default function RunningScreen() {
           </View>
         )}
 
-        {/* Off-course warning */}
+        {/* Off-course warning with return arrow */}
         {courseNavigation?.isOffCourse && (
           <View style={styles.offCourseBanner}>
-            <Ionicons name="warning" size={16} color={colors.white} />
-            <Text style={styles.offCourseText}>{t('running.status.offCourse')}</Text>
+            <View style={{
+              transform: [{ rotate: `${((courseNavigation.bearingToCourse - (headingValue ?? 0) + 360) % 360)}deg` }],
+            }}>
+              <Ionicons name="navigate" size={22} color={colors.white} />
+            </View>
+            <View style={{ flex: 1, marginLeft: 4 }}>
+              <Text style={styles.offCourseText}>{t('running.status.offCourse')}</Text>
+              <Text style={styles.offCourseDistText}>
+                {Math.round(courseNavigation.deviationMeters)}m {t('running.status.fromCourse')}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Pace coaching banner (program goal) */}
+        {paceCoaching && phase === 'running' && (
+          <View style={[
+            styles.paceCoachingBanner,
+            paceCoaching.status === 'ahead' && { backgroundColor: colors.success + 'CC' },
+            paceCoaching.status === 'on_pace' && { backgroundColor: colors.primary + 'CC' },
+            paceCoaching.status === 'behind' && { backgroundColor: colors.warning + 'CC' },
+            paceCoaching.status === 'critical' && { backgroundColor: colors.error + 'CC' },
+          ]}>
+            <Ionicons
+              name={paceCoaching.timeDelta >= 0 ? 'arrow-up' : 'arrow-down'}
+              size={16}
+              color={colors.white}
+            />
+            <Text style={styles.paceCoachingText}>
+              {paceCoaching.timeDelta >= 0
+                ? `+${Math.abs(Math.round(paceCoaching.timeDelta))}s`
+                : `-${Math.abs(Math.round(paceCoaching.timeDelta))}s`}
+              {' · '}
+              {formatPace(paceCoaching.requiredPace)} → {formatPace(paceCoaching.currentPace)}
+            </Text>
           </View>
         )}
 
@@ -663,11 +800,13 @@ export default function RunningScreen() {
 function IdleView({
   courseId,
   gpsStatus,
+  gpsAccuracy,
   onStart,
   onDismissCourse,
 }: {
   courseId: string | null;
   gpsStatus: string;
+  gpsAccuracy: number | null;
   onStart: () => void;
   onDismissCourse: () => void;
 }) {
@@ -676,8 +815,13 @@ function IdleView({
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   // On idle screen, show GPS ready if native module exists
-  const gpsColor = gpsStatus === 'disabled' ? colors.error : colors.success;
-  const gpsLabel = gpsStatus === 'disabled' ? t('running.status.gpsPermissionNeeded') : t('running.status.gpsReady');
+  const gpsColor = gpsStatus === 'disabled' ? colors.error
+    : gpsAccuracy != null && gpsAccuracy < 10 ? colors.success
+    : gpsAccuracy != null && gpsAccuracy < 25 ? colors.warning
+    : colors.success;
+  const gpsLabel = gpsStatus === 'disabled' ? t('running.status.gpsPermissionNeeded')
+    : gpsAccuracy != null ? `GPS ±${Math.round(gpsAccuracy)}m`
+    : t('running.status.gpsReady');
 
   const handleDismissCourse = () => {
     Alert.alert(
@@ -713,11 +857,27 @@ function IdleView({
         </Text>
       </View>
 
-      {/* GPS status chip */}
+      {/* GPS status chip + accuracy bar */}
       <View style={styles.gpsChipIdle}>
         <View style={[styles.gpsDot, { backgroundColor: gpsColor }]} />
         <Text style={styles.gpsChipText}>{gpsLabel}</Text>
       </View>
+      {gpsAccuracy != null && (
+        <View style={styles.gpsAccuracyRow}>
+          <View style={styles.gpsAccuracyBarTrack}>
+            <View style={[styles.gpsAccuracyBarFill, {
+              width: `${Math.max(5, Math.min(100, (1 - gpsAccuracy / 50) * 100))}%`,
+              backgroundColor: gpsAccuracy < 10 ? colors.success
+                : gpsAccuracy < 25 ? colors.warning : colors.error,
+            }]} />
+          </View>
+          <Text style={styles.gpsAccuracyLabel}>
+            {gpsAccuracy < 10 ? t('running.gps.excellent')
+              : gpsAccuracy < 25 ? t('running.gps.good')
+              : t('running.gps.acquiring')}
+          </Text>
+        </View>
+      )}
 
       {/* Large circular START button */}
       <TouchableOpacity
@@ -797,6 +957,29 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.sm + 2,
     borderRadius: BORDER_RADIUS.full,
+  },
+  gpsAccuracyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    width: 200,
+    marginTop: SPACING.xs,
+  },
+  gpsAccuracyBarTrack: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: c.divider,
+    overflow: 'hidden' as const,
+  },
+  gpsAccuracyBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  gpsAccuracyLabel: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textSecondary,
+    fontWeight: '600',
   },
   startButton: {
     width: 180,
@@ -941,24 +1124,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 3,
     elevation: 3,
-  },
-
-  // Turn instruction bar
-  turnInstructionBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    backgroundColor: c.surface,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: BORDER_RADIUS.md,
-    marginTop: SPACING.md,
-  },
-  turnInstructionText: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '700',
-    color: c.text,
-    flex: 1,
   },
 
   // Paused banner
@@ -1163,14 +1328,47 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '700',
   },
 
+  // Persistent navigation bar
+  persistentNavBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: c.surface,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    marginTop: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  navBarCenter: {
+    flex: 1,
+  },
+  navBarDistance: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '800',
+    color: c.text,
+    fontVariant: ['tabular-nums'] as const,
+  },
+  navBarInstruction: {
+    fontSize: FONT_SIZES.sm,
+    color: c.textSecondary,
+    marginTop: 2,
+  },
+  navBarRemaining: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    color: c.textTertiary,
+    minWidth: 20,
+    textAlign: 'center',
+  },
+
   // Off-course banner
   offCourseBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: SPACING.sm,
     backgroundColor: c.warning,
     paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
     borderRadius: BORDER_RADIUS.sm,
     marginTop: SPACING.md,
   },
@@ -1178,6 +1376,46 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: FONT_SIZES.md,
     fontWeight: '700',
     color: c.white,
+  },
+  offCourseDistText: {
+    fontSize: FONT_SIZES.xs,
+    color: c.white + 'CC',
+    marginTop: 1,
+  },
+
+  // Pace coaching banner
+  paceCoachingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: BORDER_RADIUS.sm,
+    marginTop: SPACING.md,
+  },
+  paceCoachingText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: c.white,
+    fontVariant: ['tabular-nums'] as const,
+  },
+
+  // Metronome chip
+  metronomeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    padding: SPACING.xs + 2,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: c.surface,
+  },
+  metronomeChipText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '700',
+    color: c.textSecondary,
+    fontVariant: ['tabular-nums'] as const,
   },
 
   // Checkpoint pass banner

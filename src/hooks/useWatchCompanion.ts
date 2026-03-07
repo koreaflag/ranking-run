@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
 import { useRunningStore } from '../stores/runningStore';
-import { useSettingsStore } from '../stores/settingsStore';
 import type {
   WatchHeartRateEvent,
   WatchCommandEvent,
@@ -42,6 +41,7 @@ export function useWatchCompanion(
     gpsStatus,
     calories,
     isAutoPaused,
+    runGoal,
     updateHeartRate,
     setWatchConnected,
   } = useRunningStore();
@@ -63,11 +63,35 @@ export function useWatchCompanion(
       gpsStatus,
       calories,
       isAutoPaused,
-      // Countdown sync: send start timestamp so watch can compensate for WCSession latency
-      ...(phase === 'countdown' ? {
-        countdownStartedAt: Date.now(),
-        countdownTotal: useSettingsStore.getState().countdownSeconds,
-      } : {}),
+      // Countdown sync is handled natively by GPSTrackerModule.notifyCountdownStart()
+      // which captures the exact start timestamp. Do NOT send countdownStartedAt here —
+      // useEffect runs later than the native call, so Date.now() would be stale and
+      // cause the watch countdown to desync.
+      // Run goal
+      goalType: runGoal.type ?? '',
+      goalValue: runGoal.value ?? 0,
+      // Program running (pace target) data — always send explicitly to prevent
+      // carryForwardKeys from reusing stale values from a previous session
+      programTargetDistance: runGoal.type === 'program' ? (runGoal.value ?? 0) : 0,
+      programTargetTime: runGoal.type === 'program' ? (runGoal.targetTime ?? 0) : 0,
+      programTimeDelta: runGoal.type === 'program' ? (() => {
+        if (!runGoal.value || !runGoal.targetTime || distanceMeters < 200) return 0;
+        const projectedFinish = (runGoal.value / distanceMeters) * durationSeconds;
+        return runGoal.targetTime - projectedFinish;
+      })() : 0,
+      programRequiredPace: runGoal.type === 'program' && runGoal.value && runGoal.targetTime
+        ? Math.round(runGoal.targetTime / (runGoal.value / 1000))
+        : 0,
+      programStatus: runGoal.type === 'program' ? (() => {
+        if (!runGoal.value || !runGoal.targetTime || distanceMeters < 200) return '';
+        const projectedFinish = (runGoal.value / distanceMeters) * durationSeconds;
+        const delta = runGoal.targetTime - projectedFinish;
+        if (delta > 30) return 'ahead';
+        if (delta >= -30) return 'on_pace';
+        if (delta >= -60) return 'behind';
+        return 'critical';
+      })() : '',
+      metronomeBPM: runGoal.type === 'program' ? (runGoal.cadenceBPM ?? 0) : 0,
       // Course navigation data
       isCourseRun: !!navigation,
       navBearing: navigation?.bearingToNext ?? -1,
@@ -87,8 +111,8 @@ export function useWatchCompanion(
       // Silently ignore send failures (Watch may be unreachable)
     });
   }, [phase, distanceMeters, durationSeconds, currentPaceSecondsPerKm,
-      avgPaceSecondsPerKm, gpsStatus, calories, isAutoPaused, navigation,
-      checkpointData?.passedCount, checkpointData?.totalCount, checkpointData?.justPassed]);
+      avgPaceSecondsPerKm, gpsStatus, calories, isAutoPaused, runGoal,
+      navigation, checkpointData]);
 
   // Subscribe to Watch events during active running
   useEffect(() => {
