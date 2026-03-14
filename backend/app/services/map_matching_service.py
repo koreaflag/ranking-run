@@ -2,10 +2,15 @@
 
 Snaps raw GPS coordinates to the nearest road/path network
 to correct GPS drift that causes routes to go through buildings.
+
+Signal-gap aware: detects GPS signal loss (tunnels, underpasses) by
+looking for large inter-point distances and skips map matching for
+those segments to avoid Mapbox routing them onto wrong roads.
 """
 
 import logging
-from typing import Optional
+import math
+from typing import NamedTuple, Optional
 
 import httpx
 
@@ -17,6 +22,17 @@ logger = logging.getLogger(__name__)
 MAX_COORDS_PER_REQUEST = 100
 CHUNK_SIZE = 90  # Leave room for overlap
 OVERLAP = 10  # Overlap between chunks for smooth stitching (reduced boundary discontinuity)
+
+# Signal gap detection: if two consecutive points are > this distance apart
+# (meters), treat the gap as a tunnel/underpass and skip map matching.
+SIGNAL_GAP_THRESHOLD_M = 80.0
+
+
+class MatchResult(NamedTuple):
+    """Result of a map-matching operation."""
+    coordinates: list[list[float]]
+    confidence: float | None  # Average Mapbox confidence (0.0–1.0), None if no matching
+    gap_indices: list[list[int]]  # Signal gap segments as [[start_idx, end_idx], ...]
 
 
 class MapMatchingService:
@@ -33,37 +49,97 @@ class MapMatchingService:
     async def match_route(
         self,
         coordinates: list[list[float]],
-    ) -> list[list[float]]:
+    ) -> MatchResult:
         """Snap a route to the road/path network.
+
+        Signal-gap aware: splits the route at GPS signal gaps (tunnels,
+        underpasses) and only map-matches the normal segments. Gap segments
+        are kept as straight lines between the last good point and the
+        first good point after the gap.
 
         Args:
             coordinates: List of [lng, lat] or [lng, lat, alt] arrays.
 
         Returns:
-            Matched coordinates as [[lng, lat, alt], ...].
+            MatchResult with matched coordinates, confidence, and gap indices.
             Falls back to original if matching fails.
         """
         settings = get_settings()
         if not settings.MAPBOX_ACCESS_TOKEN:
             logger.warning("[MapMatching] No Mapbox token configured, skipping")
-            return coordinates
+            return MatchResult(coordinates=coordinates, confidence=None, gap_indices=[])
 
         if len(coordinates) < 2:
-            return coordinates
+            return MatchResult(coordinates=coordinates, confidence=None, gap_indices=[])
 
         # Pre-process: downsample dense points to reduce noise before matching
         downsampled = self._downsample(coordinates, min_spacing_m=5.0)
         logger.info(f"[MapMatching] Downsampled {len(coordinates)} → {len(downsampled)} points")
 
-        try:
-            if len(downsampled) <= MAX_COORDS_PER_REQUEST:
-                matched = await self._match_chunk(downsampled, settings.MAPBOX_ACCESS_TOKEN)
-                return matched if matched else coordinates
+        # Split into segments at signal gaps and collect gap positions
+        segments, gap_positions = self._split_at_gaps_with_indices(downsampled)
+
+        if len(segments) == 1:
+            # No gaps detected — match the whole route
+            logger.info("[MapMatching] No signal gaps detected")
+            matched, confidence = await self._match_segment_with_confidence(
+                segments[0], settings.MAPBOX_ACCESS_TOKEN, coordinates,
+            )
+            return MatchResult(coordinates=matched, confidence=confidence, gap_indices=[])
+
+        # Multiple segments — match each normal segment, keep gaps as-is
+        logger.info(f"[MapMatching] Detected {len(segments)} segments (signal gaps found)")
+        result: list[list[float]] = []
+        confidences: list[float] = []
+        # Build gap_indices relative to output coordinates
+        gap_indices: list[list[int]] = []
+
+        for i, seg in enumerate(segments):
+            if len(seg) < 2:
+                result.extend(seg)
+                continue
+            matched, conf = await self._match_segment_with_confidence(
+                seg, settings.MAPBOX_ACCESS_TOKEN, seg,
+            )
+            if conf is not None:
+                confidences.append(conf)
+            if result and matched:
+                # Avoid duplicate junction point
+                result.extend(matched[1:])
             else:
-                return await self._match_long_route(downsampled, settings.MAPBOX_ACCESS_TOKEN)
+                result.extend(matched)
+
+        # Convert original gap positions to output coordinate indices
+        # Each gap_position is the index in the downsampled array where a gap starts
+        out_idx = 0
+        seg_offset = 0
+        for gi, gp in enumerate(gap_positions):
+            # gp is the index in downsampled coordinates where the gap was detected
+            # Map to approximate index in the result
+            gap_start = max(0, gp - 1)
+            gap_end = gp
+            gap_indices.append([gap_start, gap_end])
+
+        avg_confidence = sum(confidences) / len(confidences) if confidences else None
+        return MatchResult(coordinates=result, confidence=avg_confidence, gap_indices=gap_indices)
+
+    async def _match_segment_with_confidence(
+        self,
+        segment: list[list[float]],
+        access_token: str,
+        fallback: list[list[float]],
+    ) -> tuple[list[list[float]], float | None]:
+        """Match a single contiguous segment and return (coords, confidence)."""
+        try:
+            if len(segment) <= MAX_COORDS_PER_REQUEST:
+                matched, conf = await self._match_chunk_with_confidence(segment, access_token)
+                return (matched if matched else fallback, conf)
+            else:
+                coords = await self._match_long_route(segment, access_token)
+                return (coords, None)
         except Exception as e:
-            logger.error(f"[MapMatching] Failed: {e}")
-            return coordinates
+            logger.error(f"[MapMatching] Segment match failed: {e}")
+            return (fallback, None)
 
     async def _match_chunk(
         self,
@@ -71,7 +147,15 @@ class MapMatchingService:
         access_token: str,
     ) -> list[list[float]] | None:
         """Match a single chunk of coordinates (max 100)."""
-        # Build coordinate string: lng,lat;lng,lat;...
+        matched, _ = await self._match_chunk_with_confidence(coordinates, access_token)
+        return matched
+
+    async def _match_chunk_with_confidence(
+        self,
+        coordinates: list[list[float]],
+        access_token: str,
+    ) -> tuple[list[list[float]] | None, float | None]:
+        """Match a single chunk and return (coords, confidence)."""
         coord_str = ";".join(
             f"{c[0]:.6f},{c[1]:.6f}" for c in coordinates
         )
@@ -82,10 +166,9 @@ class MapMatchingService:
             "geometries": "geojson",
             "overview": "full",
             "steps": "false",
-            "tidy": "true",  # Remove repeated/redundant points
+            "tidy": "true",
         }
 
-        # Tighter snap radius: endpoints 35m (more flexible), interior 20m (avoids building cuts)
         radiuses = []
         for i in range(len(coordinates)):
             if i == 0 or i == len(coordinates) - 1:
@@ -99,18 +182,19 @@ class MapMatchingService:
 
         if response.status_code != 200:
             logger.warning(f"[MapMatching] API returned {response.status_code}")
-            return None
+            return None, None
 
         data = response.json()
         if data.get("code") != "Ok" or not data.get("matchings"):
             logger.warning(f"[MapMatching] No match: {data.get('code')}")
-            return None
+            return None, None
 
-        matched_coords = data["matchings"][0]["geometry"]["coordinates"]
+        matching = data["matchings"][0]
+        matched_coords = matching["geometry"]["coordinates"]
+        confidence = matching.get("confidence")
 
-        # Preserve original altitude values by interpolating
         matched_with_alt = self._restore_altitude(coordinates, matched_coords)
-        return matched_with_alt
+        return matched_with_alt, confidence
 
     async def _match_long_route(
         self,
@@ -140,6 +224,95 @@ class MapMatchingService:
             i = end - OVERLAP if end < len(coordinates) else end
 
         return all_matched
+
+    @staticmethod
+    def _haversine_m(lng1: float, lat1: float, lng2: float, lat2: float) -> float:
+        """Haversine distance in meters between two WGS-84 points."""
+        R = 6_371_000  # Earth radius in meters
+        dlat = math.radians(lat2 - lat1)
+        dlng = math.radians(lng2 - lng1)
+        a = (
+            math.sin(dlat / 2) ** 2
+            + math.cos(math.radians(lat1))
+            * math.cos(math.radians(lat2))
+            * math.sin(dlng / 2) ** 2
+        )
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    @classmethod
+    def _split_at_gaps(
+        cls,
+        coordinates: list[list[float]],
+    ) -> list[list[list[float]]]:
+        """Split a coordinate list into segments at signal gaps.
+
+        A gap is detected when two consecutive points are farther than
+        SIGNAL_GAP_THRESHOLD_M apart, indicating a tunnel or GPS loss.
+        The boundary points are included in both adjacent segments so
+        the route remains continuous.
+        """
+        if len(coordinates) < 2:
+            return [coordinates]
+
+        segments: list[list[list[float]]] = []
+        current: list[list[float]] = [coordinates[0]]
+
+        for i in range(1, len(coordinates)):
+            dist = cls._haversine_m(
+                coordinates[i - 1][0], coordinates[i - 1][1],
+                coordinates[i][0], coordinates[i][1],
+            )
+            if dist > SIGNAL_GAP_THRESHOLD_M:
+                # End current segment, start a new one
+                segments.append(current)
+                logger.info(
+                    f"[MapMatching] Signal gap at point {i}: {dist:.0f}m "
+                    f"(threshold {SIGNAL_GAP_THRESHOLD_M}m) — skipping map match for this gap"
+                )
+                # Bridge: include last point of prev segment as first of next
+                current = [coordinates[i - 1], coordinates[i]]
+            else:
+                current.append(coordinates[i])
+
+        segments.append(current)
+        return segments
+
+    @classmethod
+    def _split_at_gaps_with_indices(
+        cls,
+        coordinates: list[list[float]],
+    ) -> tuple[list[list[list[float]]], list[int]]:
+        """Split coordinates at signal gaps and return gap positions.
+
+        Returns:
+            (segments, gap_positions) where gap_positions are the indices
+            in the original coordinate list where gaps were detected.
+        """
+        if len(coordinates) < 2:
+            return [coordinates], []
+
+        segments: list[list[list[float]]] = []
+        gap_positions: list[int] = []
+        current: list[list[float]] = [coordinates[0]]
+
+        for i in range(1, len(coordinates)):
+            dist = cls._haversine_m(
+                coordinates[i - 1][0], coordinates[i - 1][1],
+                coordinates[i][0], coordinates[i][1],
+            )
+            if dist > SIGNAL_GAP_THRESHOLD_M:
+                segments.append(current)
+                gap_positions.append(i)
+                logger.info(
+                    f"[MapMatching] Signal gap at point {i}: {dist:.0f}m "
+                    f"(threshold {SIGNAL_GAP_THRESHOLD_M}m)"
+                )
+                current = [coordinates[i - 1], coordinates[i]]
+            else:
+                current.append(coordinates[i])
+
+        segments.append(current)
+        return segments, gap_positions
 
     @staticmethod
     def _downsample(

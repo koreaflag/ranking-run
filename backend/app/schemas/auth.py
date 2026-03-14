@@ -48,6 +48,11 @@ class RefreshResponse(BaseModel):
     expires_in: int
 
 
+class LogoutRequest(BaseModel):
+    """Logout request - optionally specify the refresh token to revoke."""
+    refresh_token: str | None = Field(None, description="If provided, revoke only this token; otherwise revoke all")
+
+
 class ErrorResponse(BaseModel):
     """Standard API error response."""
     code: str

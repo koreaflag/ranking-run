@@ -24,7 +24,8 @@
     "permissionTitle": "권한 필요",
     "permissionPhoto": "사진에 접근하려면 권한을 허용해 주세요.",
     "social": "소셜",
-    "preparing": "준비중입니다"
+    "preparing": "준비중입니다",
+    "endOfList": "모든 항목을 확인했습니다"
   },
   "tabs": {
     "home": "홈",
@@ -97,6 +98,7 @@
       "currentPace": "현재 페이스"
     },
     "controls": {
+      "start": "시작",
       "pause": "일시정지",
       "resume": "재개",
       "stop": "종료",
@@ -129,6 +131,9 @@
       "switchToFreeMsg": "코스 러닝을 취소하고 자유 러닝으로 전환할까요?",
       "switchBtn": "전환"
     },
+    "exitTitle": "러닝 화면을 나가시겠습니까?",
+    "exitMessage": "러닝이 진행 중입니다. 정말 나가시겠습니까?",
+    "exitConfirm": "나가기",
     "nav": {
       "straightAhead": "직진"
     },
@@ -156,6 +161,7 @@
       "registerCourseDisabled": "코스 등록 ({{min}}m 이상 필요)",
       "registerWaiting": "업로드 완료 후 등록 가능",
       "goHome": "홈으로",
+      "locateMe": "내 위치로 이동",
       "minDistance": "500m 이상 달려야 코스 등록이 가능합니다.",
       "localSavedNoUpload": "서버 업로드가 완료되지 않았습니다. 잠시 후 다시 시도해주세요.",
       "uploadNotDone": "기록 업로드 중입니다. 잠시만 기다려주세요.",
@@ -174,7 +180,9 @@
       "courseAdherence": "코스 준수",
       "routeMatch": "경로 일치율",
       "maxDeviation": "최대 이탈",
-      "offCourseSegments": "코스 이탈 구간"
+      "offCourseSegments": "코스 이탈 구간",
+      "pointsEarned": "획득 포인트",
+      "signalGap": "신호 끊김 구간"
     }
   },
   "world": {
@@ -202,11 +210,13 @@
     "cancelNavigate": "취소",
     "startCompetition": "경쟁 시작하기",
     "arrivedAtStart": "출발점에 도착했어요!",
-    "goToStart": "출발지로 이동"
+    "goToStart": "출발지로 이동",
+    "distanceToStart": "출발지까지 {{distance}}km (5km 이내에서 도전 가능)"
   },
   "course": {
     "title": "코스",
     "discover": "코스 탐색",
+    "favorites": "즐겨찾는 코스",
     "nearbySection": "내 주변",
     "popularSection": "인기 코스",
     "newSection": "새로운 코스",
@@ -270,6 +280,9 @@
       "gap": "격차 {{gap}}",
       "challenge": "도전하기",
       "viewInWorld": "월드에서 보기",
+      "tooFarFromStart": "출발지에서 {{distance}}km (5km 이내에서 가능)",
+      "distanceFromStart": "출발지에서 {{distance}}km",
+      "details": "상세보기",
       "editTitle": "코스 편집",
       "fieldTitle": "제목",
       "fieldTitlePlaceholder": "코스 이름",
@@ -306,7 +319,8 @@
       "minDistanceError": "500m 이상의 기록만 코스로 등록할 수 있습니다.",
       "courseSaved": "코스 저장 완료",
       "courseSavedMsg": "\"{{title}}\" 코스가 저장되었습니다."
-    }
+    },
+    "streak": "{{count}}회 연속 완주"
   },
   "home": {
     "weeklyChallenge": "주간 챌린지",
@@ -405,7 +419,15 @@
       "morning": "오전",
       "afternoon": "오후",
       "evening": "저녁"
-    }
+    },
+    "emptyStateTitle": "첫 러닝을 시작하세요!",
+    "emptyStateDesc": "러닝 데이터가 쌓이면\n통계와 기록을 확인할 수 있어요",
+    "startRunning": "러닝 시작하기",
+    "showMoreCharts": "차트 더 보기",
+    "showLessCharts": "접기",
+    "dailyCheckin": "오늘의 출석체크",
+    "checkinSuccess": "출석 완료!",
+    "checkinPoints": "+{{points}}P 적립되었습니다"
   },
   "settings": {
     "title": "설정",
@@ -493,6 +515,7 @@
     "crewNotFound": "크루를 찾을 수 없습니다.",
     "loadError": "크루 정보를 불러올 수 없습니다.",
     "joinFailed": "참여에 실패했습니다.",
+    "joinedSuccess": "크루에 가입되었습니다!",
     "leaveTitle": "크루 탈퇴",
     "leaveMsg": "정말 이 크루에서 탈퇴하시겠습니까?",
     "leaveFailed": "탈퇴에 실패했습니다.",
@@ -501,6 +524,8 @@
     "disbandMsg": "크루를 해체하면 모든 멤버가 탈퇴되고 게시물이 삭제됩니다. 정말 해체하시겠습니까?",
     "disbandFailed": "크루 해체에 실패했습니다.",
     "crewLimitReached": "크루는 최대 5개까지 만들 수 있습니다.",
+    "insufficientPoints": "크루 생성에 {{cost}}P 필요 (현재 {{current}}P)",
+    "pointsCost": "생성 비용 {{cost}}P",
     "participantCount": "{{count}}명 참여",
     "noMembers": "아직 멤버가 없습니다.",
     "joinBtn": "참여하기",
@@ -513,6 +538,11 @@
     "maxParticipants": "최대 인원",
     "noLimit": "제한 없음",
     "badgeColor": "배지 색상",
+    "region": "활동지역",
+    "regionPlaceholder": "예: 서울 강남구",
+    "selectRegion": "지역 선택",
+    "resetRegion": "초기화",
+    "allRegion": "전체",
     "createFailed": "크루 생성에 실패했습니다. 다시 시도해주세요.",
     "messagePlaceholder": "메시지를 입력하세요",
     "connectionLost": "연결 끊김",
@@ -603,7 +633,10 @@
     "noNotifications": "새로운 알림이 없습니다",
     "noNotificationsDesc": "가입 신청이 들어오면 여기에 표시됩니다",
     "approveFailed": "승인에 실패했습니다.",
-    "rejectFailed": "거절에 실패했습니다."
+    "rejectFailed": "거절에 실패했습니다.",
+    "weeklyRanking": "이번 주 랭킹",
+    "level": "Lv.{{level}}",
+    "xpProgress": "{{current}} / {{next}} XP"
   },
   "format": {
     "justNow": "방금 전",
@@ -849,7 +882,8 @@
     "primaryGear": "대표",
     "loadError": "프로필을 불러올 수 없습니다.",
     "loadDetailError": "프로필 정보를 불러올 수 없습니다.",
-    "defaultNickname": "러너"
+    "defaultNickname": "러너",
+    "likes": "좋아요"
   },
   "social": {
     "title": "소셜",
@@ -964,7 +998,37 @@
   "ranking": {
     "individual": "개인",
     "crew": "크루",
-    "noCrewRankings": "아직 크루 랭킹이 없습니다"
+    "noCrewRankings": "아직 크루 랭킹이 없습니다",
+    "weeklyTopRunners": "이번 주 Top 러너",
+    "runs": "{{count}}회",
+    "tabLabel": "랭킹",
+    "myRanking": "내 랭킹"
+  },
+  "points": {
+    "history": "포인트 내역",
+    "earned": "+{{points}}P 획득",
+    "runEarn": "런닝 적립",
+    "courseBonus": "코스 보너스",
+    "crewCreate": "크루 생성",
+    "dailyCheckin": "출석 체크",
+    "courseCreate": "코스 등록"
+  },
+  "explore": {
+    "searchPlaceholder": "크루 또는 러너 검색",
+    "crewSection": "크루",
+    "runnerSection": "러너",
+    "noResults": "검색 결과가 없습니다",
+    "searchHint": "크루 이름이나 러너 닉네임을 검색해보세요"
+  },
+  "notification": {
+    "title": "알림",
+    "noNotifications": "알림이 없습니다",
+    "markAllRead": "모두 읽음",
+    "postComment": "님이 댓글을 남겼습니다",
+    "postLike": "님이 게시글을 좋아합니다",
+    "crewJoinRequest": "님이 {{crew}}에 가입을 신청했습니다",
+    "followed": "님이 팔로우했습니다",
+    "friendRequest": "님이 친구 요청을 보냈습니다"
   },
   "guide": {
     "step1Title": "달리며 코스를 만드세요",
@@ -976,5 +1040,55 @@
     "skip": "건너뛰기",
     "next": "다음",
     "start": "시작하기"
+  },
+  "runnerLevel": {
+    "tier1": { "name": "아기 거북이", "desc": "느려도 괜찮아, 일단 출발!" },
+    "tier2": { "name": "부지런한 다람쥐", "desc": "조금씩 빨라지는 중..." },
+    "tier3": { "name": "초원의 토끼", "desc": "제법 뛰는데?" },
+    "tier4": { "name": "야생마", "desc": "이제 누구도 못 잡아" },
+    "tier5": { "name": "사냥하는 늑대", "desc": "무리를 이끄는 리더" },
+    "tier6": { "name": "초원의 치타", "desc": "지상 최고 속도" },
+    "tier7": { "name": "하늘의 매", "desc": "땅 위를 초월하다" },
+    "tier8": { "name": "번개 표범", "desc": "번개보다 빠르게" },
+    "tier9": { "name": "폭풍의 용", "desc": "전설이 시작된다" },
+    "tier10": { "name": "불사조", "desc": "지치지 않는 영원한 불꽃" },
+    "tier11": { "name": "유니콘", "desc": "존재 자체가 전설" },
+    "tier12": { "name": "신수 기린", "desc": "신화의 영역에 도달하다" }
+  },
+  "crewLevel": {
+    "guideTitle": "크루 레벨 가이드",
+    "current": "현재",
+    "maxMembers": "최대 {{count}}명",
+    "unlimited": "인원 무제한",
+    "lockedAt": "Lv.{{level}} 에서 해금",
+    "unlockHint": "크루 레벨을 올려 해금하세요",
+    "unlock": {
+      "challenge1": "챌린지 1개",
+      "weeklyRanking": "주간 랭킹",
+      "maxMembers20": "최대 멤버 20명",
+      "announcements": "공지사항",
+      "maxMembers30": "최대 멤버 30명",
+      "badgeColor": "배지 색상 커스텀",
+      "coverImage": "커버 이미지",
+      "maxMembers50": "최대 멤버 50명",
+      "gradeNameCustom": "등급 이름 커스텀",
+      "challenge2": "동시 챌린지 2개",
+      "maxMembers80": "최대 멤버 80명",
+      "crewBattle": "크루 대결",
+      "inviteLink": "초대 링크",
+      "maxMembers120": "최대 멤버 120명",
+      "crewStats": "크루 통계",
+      "challenge3": "동시 챌린지 3개",
+      "maxMembers200": "최대 멤버 200명",
+      "searchPriority": "검색 우선 노출",
+      "challenge5": "동시 챌린지 5개",
+      "maxMembers300": "최대 멤버 300명",
+      "crewCourse": "크루 전용 코스",
+      "unlimitedMembers": "인원 무제한",
+      "featured": "추천 등재",
+      "challengeUnlimited": "챌린지 무제한",
+      "legendBadge": "레전드 배지 애니메이션",
+      "officialCert": "공식 인증 마크"
+    }
   }
 }

@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '../../lib/icons';
 import { useTheme } from '../../hooks/useTheme';
@@ -61,7 +61,7 @@ export default function RunDetailScreen() {
     (async () => {
       try {
         const data = await userService.getRunDetail(runId);
-        console.log('[RunDetail] loaded:', runId, 'distance:', data.distance_meters, 'splits:', data.splits?.length ?? 0);
+        if (__DEV__) console.log('[RunDetail] loaded:', runId, 'distance:', data.distance_meters, 'splits:', data.splits?.length ?? 0, 'route:', data.route_geometry?.coordinates?.length ?? 0, 'course:', !!data.course);
         setDetail(data);
       } catch (e) {
         console.warn('[RunDetail] API error:', e);
@@ -231,10 +231,46 @@ export default function RunDetailScreen() {
               <RouteMapView
                 ref={mapRef}
                 routePoints={routePoints}
-                interactive
+                interactive={false}
                 style={styles.mapPreview}
               />
             </View>
+          )}
+
+          {/* Save as Course */}
+          {!detail.course && detail.distance_meters >= 500 && routePoints.length >= 2 && (
+            <TouchableOpacity
+              style={styles.saveAsCourseBtn}
+              activeOpacity={0.7}
+              onPress={() => {
+                const first = routePoints[0];
+                const last = routePoints[routePoints.length - 1];
+                const dlat = first.latitude - last.latitude;
+                const dlng = first.longitude - last.longitude;
+                const gapM = Math.sqrt(dlat * dlat + dlng * dlng) * 111_320;
+                const isLoop = gapM < 200;
+
+                navigation.dispatch(
+                  CommonActions.navigate({
+                    name: 'CourseTab',
+                    params: {
+                      screen: 'CourseCreate',
+                      params: {
+                        runRecordId: detail.id,
+                        routePoints,
+                        distanceMeters: detail.distance_meters,
+                        durationSeconds: detail.duration_seconds,
+                        elevationGainMeters: detail.elevation_gain_meters,
+                        isLoop,
+                      },
+                    },
+                  }),
+                );
+              }}
+            >
+              <Ionicons name="map-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.saveAsCourseBtnText}>{t('running.result.registerCourse')}</Text>
+            </TouchableOpacity>
           )}
 
           {/* Split Times */}
@@ -496,6 +532,24 @@ const createStyles = (c: ThemeColors) =>
     mapPreview: {
       height: SCREEN_WIDTH - SPACING.xxl * 2,
       width: '100%',
+    },
+
+    // Save as Course
+    saveAsCourseBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: SPACING.sm,
+      marginHorizontal: SPACING.xxl,
+      marginBottom: SPACING.lg,
+      paddingVertical: SPACING.md,
+      backgroundColor: c.primary,
+      borderRadius: BORDER_RADIUS.lg,
+    },
+    saveAsCourseBtnText: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '700',
+      color: '#FFFFFF',
     },
 
     // Splits

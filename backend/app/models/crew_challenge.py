@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,12 +15,6 @@ class CrewChallenge(Base, UUIDPrimaryKeyMixin):
     __table_args__ = (
         Index("idx_crew_challenges_crew_status", "crew_id", "status"),
         Index("idx_crew_challenges_course", "course_id"),
-        Index(
-            "idx_crew_challenges_active_unique",
-            "crew_id",
-            unique=True,
-            postgresql_where=text("status = 'active'"),
-        ),
     )
 
     crew_id: Mapped[uuid.UUID] = mapped_column(

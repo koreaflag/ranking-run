@@ -11,6 +11,7 @@ class RankingUserInfo(BaseModel):
     nickname: str | None
     avatar_url: str | None
     crew_name: str | None = None
+    runner_level: int = 1
 
 
 class RankingEntry(BaseModel):

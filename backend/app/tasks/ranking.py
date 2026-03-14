@@ -1,6 +1,7 @@
 """Background task: ranking recalculation after a course run."""
 
 import logging
+from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -136,6 +137,38 @@ async def recalculate_course_ranking(
                     duration_seconds=run_record.duration_seconds,
                     pace_seconds_per_km=pace,
                 )
+
+            # Update course streak for the user
+            from app.models.course_streak import CourseStreak
+
+            today = run_record.finished_at.date()
+            streak_result = await db.execute(
+                select(CourseStreak).where(
+                    CourseStreak.user_id == user_id,
+                    CourseStreak.course_id == course_id,
+                )
+            )
+            streak = streak_result.scalar_one_or_none()
+
+            if streak is None:
+                streak = CourseStreak(
+                    user_id=user_id,
+                    course_id=course_id,
+                    current_streak=1,
+                    best_streak=1,
+                    last_run_date=today,
+                )
+                db.add(streak)
+            else:
+                if streak.last_run_date == today:
+                    pass  # Same day, no update
+                elif streak.last_run_date == today - timedelta(days=1):
+                    streak.current_streak += 1
+                    streak.best_streak = max(streak.best_streak, streak.current_streak)
+                    streak.last_run_date = today
+                else:
+                    streak.current_streak = 1
+                    streak.last_run_date = today
 
             await db.commit()
             logger.info("Ranking recalculated for course %s", course_id)

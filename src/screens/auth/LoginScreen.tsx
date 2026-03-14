@@ -79,7 +79,9 @@ export default function LoginScreen() {
       setLoadingProvider('google');
 
       await GoogleSignin.hasPlayServices();
-      await GoogleSignin.signOut().catch(() => {});
+      await GoogleSignin.signOut().catch((err) => {
+        console.warn('[Login] Google 로그아웃 정리 실패:', err);
+      });
       const userInfo = await GoogleSignin.signIn();
 
       const idToken = userInfo.data?.idToken;

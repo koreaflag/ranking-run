@@ -15,20 +15,21 @@ import { useTranslation } from 'react-i18next';
 import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useCourseStore } from '../../stores/courseStore';
+import { useCourseListStore } from '../../stores/courseListStore';
 import EmptyState from '../../components/common/EmptyState';
 import DifficultyBadge from '../../components/course/DifficultyBadge';
 import CourseThumbnailMap from '../../components/course/CourseThumbnailMap';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import type { CourseStackParamList } from '../../types/navigation';
-import type { CourseListItem, NearbyCourse } from '../../types/api';
+import type { CourseListItem, FavoriteCourseItem, NearbyCourse } from '../../types/api';
 import { formatDistance, formatNumber } from '../../utils/format';
 import {
   FONT_SIZES,
   SPACING,
   BORDER_RADIUS,
   SHADOWS,
+  inferDifficulty,
   type DifficultyLevel,
 } from '../../utils/constants';
 
@@ -54,16 +55,6 @@ const DIFFICULTY_ACCENT_COLORS: Record<DifficultyLevel, string> = {
 const DEFAULT_LAT = 37.5665;
 const DEFAULT_LNG = 126.978;
 
-// ---- Utilities ----
-
-function inferDifficulty(distanceMeters: number, elevationGain: number): DifficultyLevel {
-  const km = distanceMeters / 1000;
-  if (km >= 15 || elevationGain >= 300) return 'expert';
-  if (km >= 7 || elevationGain >= 150) return 'hard';
-  if (km >= 3) return 'normal';
-  return 'easy';
-}
-
 // ---- Main Screen ----
 
 export default function CourseListScreen() {
@@ -80,10 +71,12 @@ export default function CourseListScreen() {
     nearbyCourses,
     popularCourses,
     newCourses,
+    favoriteCourses,
     fetchNearbyCourses,
     fetchPopularCourses,
     fetchNewCourses,
-  } = useCourseStore();
+    fetchFavoriteCourses,
+  } = useCourseListStore();
 
   const loadLocation = useCallback(async () => {
     try {
@@ -108,18 +101,20 @@ export default function CourseListScreen() {
   useEffect(() => {
     fetchPopularCourses();
     fetchNewCourses();
+    fetchFavoriteCourses();
     loadLocation();
-  }, [fetchPopularCourses, fetchNewCourses, loadLocation]);
+  }, [fetchPopularCourses, fetchNewCourses, fetchFavoriteCourses, loadLocation]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([
       fetchPopularCourses(),
       fetchNewCourses(),
+      fetchFavoriteCourses(),
       fetchNearbyCourses(userLat, userLng),
     ]);
     setRefreshing(false);
-  }, [fetchPopularCourses, fetchNewCourses, fetchNearbyCourses, userLat, userLng]);
+  }, [fetchPopularCourses, fetchNewCourses, fetchFavoriteCourses, fetchNearbyCourses, userLat, userLng]);
 
   const handleCoursePress = useCallback(
     (courseId: string) => {
@@ -178,6 +173,49 @@ export default function CourseListScreen() {
             <Ionicons name="search" size={22} color={colors.text} />
           </TouchableOpacity>
         </View>
+
+        {/* Section 0: Favorites */}
+        {favoriteCourses.length > 0 && (
+          <View style={styles.section}>
+            <SectionHeader title={t('course.favorites')} ionicon="heart" iconColor="#FF3B30" />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.nearbyScrollContent}
+            >
+              {favoriteCourses.map((course: FavoriteCourseItem) => (
+                <TouchableOpacity
+                  key={course.id}
+                  style={styles.nearbyCard}
+                  onPress={() => handleCoursePress(course.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.nearbyThumbContainer}>
+                    {course.route_preview && course.route_preview.length >= 2 ? (
+                      <CourseThumbnailMap
+                        routePreview={course.route_preview}
+                        width={NEARBY_CARD_WIDTH}
+                        height={NEARBY_THUMB_HEIGHT}
+                        borderRadius={0}
+                      />
+                    ) : (
+                      <View style={[styles.nearbyThumb, styles.nearbyThumbPlaceholder]}>
+                        <Ionicons name="map-outline" size={28} color={colors.textTertiary} />
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.nearbyInfo}>
+                    <Text style={styles.nearbyTitle} numberOfLines={1}>{course.title}</Text>
+                    <Text style={styles.nearbyDistance}>
+                      {formatDistance(course.distance_meters)}
+                    </Text>
+                    <Text style={styles.nearbyFromUser}>{course.creator_nickname}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Section 1: Nearby */}
         <View style={styles.section}>

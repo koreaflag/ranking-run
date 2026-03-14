@@ -20,6 +20,8 @@ from app.schemas.crew import (
     CrewResponse,
     CrewRoleUpdateRequest,
     CrewUpdateRequest,
+    CrewWeeklyRankingItem,
+    CrewWeeklyRankingResponse,
 )
 
 
@@ -293,3 +295,21 @@ async def get_management_stats(
         db=db, crew_id=crew_id, user_id=current_user.id
     )
     return CrewManagementStats(**result)
+
+
+@router.get(
+    "/{crew_id}/weekly-ranking",
+    response_model=CrewWeeklyRankingResponse,
+)
+@inject
+async def get_weekly_ranking(
+    crew_id: UUID,
+    current_user: CurrentUser,
+    db: DbSession,
+    crew_service: CrewService = Depends(Provide[Container.crew_service]),
+) -> CrewWeeklyRankingResponse:
+    """Get this week's distance ranking for crew members."""
+    rows = await crew_service.get_weekly_ranking(db=db, crew_id=crew_id)
+    return CrewWeeklyRankingResponse(
+        data=[CrewWeeklyRankingItem(**r) for r in rows],
+    )

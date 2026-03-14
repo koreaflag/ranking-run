@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
-import { useCourseStore } from '../../stores/courseStore';
+import { useCourseListStore } from '../../stores/courseListStore';
 import EmptyState from '../../components/common/EmptyState';
 import DifficultyBadge from '../../components/course/DifficultyBadge';
 import CourseThumbnailMap from '../../components/course/CourseThumbnailMap';
@@ -23,14 +23,16 @@ import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import type { CourseStackParamList } from '../../types/navigation';
 import type { CourseListItem } from '../../types/api';
-import type { DifficultyLevel } from '../../utils/constants';
 import { formatDistance, formatNumber } from '../../utils/format';
 import {
   FONT_SIZES,
   SPACING,
   BORDER_RADIUS,
   SHADOWS,
+  inferDifficulty,
+  type DifficultyLevel,
 } from '../../utils/constants';
+import { ListEndIndicator } from '../../components/common/Skeleton';
 
 // ---- Navigation types ----
 
@@ -72,16 +74,6 @@ const DISTANCE_FILTERS: DistanceFilterOption[] = [
   { key: '10k', labelKey: 'course.filter10k', min: 7000, max: 15000 },
   { key: 'half', labelKey: 'course.filterHalf', min: 15000 },
 ];
-
-// ---- Helpers ----
-
-function inferDifficulty(distanceMeters: number, elevationGain: number): DifficultyLevel {
-  const km = distanceMeters / 1000;
-  if (km >= 15 || elevationGain >= 300) return 'expert';
-  if (km >= 7 || elevationGain >= 150) return 'hard';
-  if (km >= 3) return 'normal';
-  return 'easy';
-}
 
 // ---- Thumbnail size ----
 
@@ -178,7 +170,7 @@ export default function CourseSearchScreen() {
     fetchCourses,
     fetchMoreCourses,
     setFilters,
-  } = useCourseStore();
+  } = useCourseListStore();
 
   // Initial fetch on mount
   useEffect(() => {
@@ -300,13 +292,18 @@ export default function CourseSearchScreen() {
   );
 
   const renderFooter = useCallback(() => {
-    if (!isLoadingMore) return null;
-    return (
-      <View style={styles.loadingFooter}>
-        <ActivityIndicator size="small" color={colors.text} />
-      </View>
-    );
-  }, [isLoadingMore, styles, colors]);
+    if (isLoadingMore) {
+      return (
+        <View style={styles.loadingFooter}>
+          <ActivityIndicator size="small" color={colors.text} />
+        </View>
+      );
+    }
+    if (!hasNext && courses.length > 0) {
+      return <ListEndIndicator text={t('common.endOfList')} />;
+    }
+    return null;
+  }, [isLoadingMore, hasNext, courses.length, styles, colors, t]);
 
   const keyExtractor = useCallback((item: CourseListItem) => item.id, []);
 

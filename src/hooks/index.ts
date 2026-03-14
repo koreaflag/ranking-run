@@ -1,5 +1,6 @@
 export { useCourseNavigation } from './useCourseNavigation';
 export { useGPSTracker } from './useGPSTracker';
+export { useNetworkStatus } from './useNetworkStatus';
 export { useRunTimer } from './useRunTimer';
 export { useTheme } from './useTheme';
 export { useVoiceGuidance } from './useVoiceGuidance';

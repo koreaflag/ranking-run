@@ -38,6 +38,7 @@ struct ContentView: View {
                 IdleView()
             }
         }
-        .animation(.easeInOut(duration: 0.1), value: viewModel.state.phase)
+        .animation(.easeInOut(duration: 0.3), value: viewModel.state.phase)
+        .transition(.opacity)
     }
 }

@@ -32,8 +32,10 @@ import { useCompassHeading } from '../../hooks/useCompassHeading';
 import { useCheckpointTracker } from '../../hooks/useCheckpointTracker';
 import { useLiveActivity } from '../../hooks/useLiveActivity';
 import { useRunningChunkUpload } from '../../hooks/useRunningChunkUpload';
+import { useRunningSessionPersistence } from '../../hooks/useRunningSessionPersistence';
 import { usePaceCoaching } from '../../hooks/usePaceCoaching';
 import { useTheme } from '../../hooks/useTheme';
+import SplitHistoryPanel from '../../components/running/SplitHistoryPanel';
 import i18n from '../../i18n';
 import type { ThemeColors } from '../../utils/constants';
 import type { WorldStackParamList } from '../../types/navigation';
@@ -85,6 +87,8 @@ export default function RunningScreen() {
     setPhase,
     setCheckpointPasses,
     addDeviationPoint,
+    snappedRoutePoints,
+    addSnappedPoint,
   } = useRunningStore();
 
   // Only use GPS course heading when actually moving. When stationary, magnetometer
@@ -104,6 +108,7 @@ export default function RunningScreen() {
   useRunTimer();
   useLiveActivity();
   useRunningChunkUpload();
+  useRunningSessionPersistence();
 
   // Pace coaching (program goal only)
   const paceCoaching = usePaceCoaching({
@@ -135,6 +140,7 @@ export default function RunningScreen() {
 
   const [countdown, setCountdown] = useState<number | null>(null);
   const [loopHapticFired, setLoopHapticFired] = useState(false);
+  const [splitPanelExpanded, setSplitPanelExpanded] = useState(false);
 
   // Haptic feedback on loop detection (free running only)
   useEffect(() => {
@@ -179,9 +185,33 @@ export default function RunningScreen() {
         if (response?.session_id) {
           updateSessionId(response.session_id);
         }
-      }).catch(() => {});
+      }).catch((err) => {
+        console.warn('[RunningScreen] 세션 생성 실패:', err);
+      });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Prevent accidental back navigation during active running
+  const isRunActive = phase === 'running' || phase === 'paused' || phase === 'countdown';
+  useEffect(() => {
+    if (!isRunActive) return;
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      e.preventDefault();
+      Alert.alert(
+        t('running.exitTitle'),
+        t('running.exitMessage'),
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          {
+            text: t('running.exitConfirm'),
+            style: 'destructive',
+            onPress: () => navigation.dispatch(e.data.action),
+          },
+        ],
+      );
+    });
+    return unsubscribe;
+  }, [navigation, isRunActive, t]);
 
   // Track user location from store for custom map marker
   useEffect(() => {
@@ -246,6 +276,20 @@ export default function RunningScreen() {
     }
   }, [courseNavigation, routePoints.length, courseId, phase, addDeviationPoint]);
 
+  // Collect snapped route points during course running
+  useEffect(() => {
+    if (courseNavigation && courseId && phase === 'running') {
+      const pos = courseNavigation.snappedPosition;
+      if (pos) {
+        // On-course: use snapped position
+        addSnappedPoint(pos);
+      } else if (currentLocation) {
+        // Off-course: fall back to real GPS
+        addSnappedPoint({ latitude: currentLocation.latitude, longitude: currentLocation.longitude });
+      }
+    }
+  }, [courseNavigation, currentLocation, courseId, phase, addSnappedPoint]);
+
   // Countdown before starting
   const handleStart = useCallback(async () => {
     setPhase('countdown');
@@ -257,10 +301,12 @@ export default function RunningScreen() {
     const countdownStartedAt = Date.now();
     try {
       if (Platform.OS === 'ios' && NativeModules.GPSTrackerModule?.notifyCountdownStart) {
-        NativeModules.GPSTrackerModule.notifyCountdownStart(countdownSeconds, countdownStartedAt).catch(() => {});
+        NativeModules.GPSTrackerModule.notifyCountdownStart(countdownSeconds, countdownStartedAt).catch((err: any) => {
+          console.warn('[RunningScreen] 카운트다운 알림 실패:', err);
+        });
       }
-    } catch {
-      // Native method may not exist yet — safe to ignore
+    } catch (err) {
+      console.warn('[RunningScreen] 카운트다운 네이티브 호출 실패:', err);
     }
 
     for (let i = countdownSeconds; i > 0; i--) {
@@ -566,28 +612,25 @@ export default function RunningScreen() {
         <View style={styles.miniMapContainer}>
           <RouteMapView
             ref={mapRef}
-            routePoints={routePoints}
+            routePoints={courseId && snappedRoutePoints.length > 0 ? snappedRoutePoints : routePoints}
             hideRouteMarkers
             previewPolyline={courseRoute ?? undefined}
             checkpoints={cpMarkerData.length > 0 ? cpMarkerData : undefined}
             showUserLocation
             followsUserLocation={followUser}
             followZoomLevel={16}
-            interactive
-            customUserLocation={myLocation ?? undefined}
+            followUserMode="course"
+            followPitch={30}
+            interactive={false}
+            customUserLocation={
+              courseId && courseNavigation?.snappedPosition
+                ? courseNavigation.snappedPosition
+                : myLocation ?? undefined
+            }
             customUserHeading={headingValue}
             style={styles.miniMap}
           />
-          <TouchableOpacity
-            style={styles.miniMapLocateBtn}
-            onPress={() => {
-              setFollowUser(false);
-              requestAnimationFrame(() => setFollowUser(true));
-            }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="locate" size={18} color={colors.text} />
-          </TouchableOpacity>
+          {/* Locate button hidden — map is locked to heading during running */}
         </View>
 
         {/* Paused Banner */}
@@ -748,6 +791,13 @@ export default function RunningScreen() {
           </View>
         </View>
 
+        {/* Split history */}
+        <SplitHistoryPanel
+          splits={splits}
+          expanded={splitPanelExpanded}
+          onToggle={() => setSplitPanelExpanded(!splitPanelExpanded)}
+        />
+
         {/* Controls */}
         <View style={styles.controls}>
           {phase === 'paused' ? (
@@ -756,6 +806,8 @@ export default function RunningScreen() {
                 style={styles.resumeButton}
                 onPress={handleResume}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={t('running.controls.resume')}
               >
                 <Ionicons name="play" size={28} color={colors.white} />
                 <Text style={styles.resumeLabel}>{t('running.controls.resume')}</Text>
@@ -764,6 +816,8 @@ export default function RunningScreen() {
                 style={styles.stopButton}
                 onPress={handleStop}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={t('running.controls.stop')}
               >
                 <Ionicons name="stop" size={28} color={colors.white} />
                 <Text style={styles.stopLabel}>{t('running.controls.stop')}</Text>
@@ -775,6 +829,8 @@ export default function RunningScreen() {
                 style={styles.pauseButton}
                 onPress={handlePause}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={t('running.controls.pause')}
               >
                 <Ionicons name="pause" size={28} color={colors.text} />
                 <Text style={styles.pauseLabel}>{t('running.controls.pause')}</Text>
@@ -783,6 +839,8 @@ export default function RunningScreen() {
                 style={styles.stopButton}
                 onPress={handleStop}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={t('running.controls.stop')}
               >
                 <Ionicons name="stop" size={28} color={colors.white} />
                 <Text style={styles.stopLabel}>{t('running.controls.stop')}</Text>
@@ -884,6 +942,8 @@ function IdleView({
         style={styles.startButton}
         onPress={onStart}
         activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={t('running.controls.start')}
       >
         <Text style={styles.startButtonText}>START</Text>
       </TouchableOpacity>

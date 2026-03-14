@@ -24,7 +24,8 @@
     "permissionTitle": "Permission Required",
     "permissionPhoto": "Please allow access to your photos.",
     "social": "Social",
-    "preparing": "Coming Soon"
+    "preparing": "Coming Soon",
+    "endOfList": "You've seen everything"
   },
   "tabs": {
     "home": "Home",
@@ -97,6 +98,7 @@
       "currentPace": "Current Pace"
     },
     "controls": {
+      "start": "Start",
       "pause": "Pause",
       "resume": "Resume",
       "stop": "Stop",
@@ -129,6 +131,9 @@
       "switchToFreeMsg": "Cancel course run and switch to free run?",
       "switchBtn": "Switch"
     },
+    "exitTitle": "Leave Running?",
+    "exitMessage": "Your run is still in progress. Are you sure you want to leave?",
+    "exitConfirm": "Leave",
     "nav": {
       "straightAhead": "Go straight"
     },
@@ -156,6 +161,7 @@
       "registerCourseDisabled": "Register Course (min {{min}}m)",
       "registerWaiting": "Available after upload",
       "goHome": "Home",
+      "locateMe": "Go to my location",
       "minDistance": "You need to run at least 500m to register a course.",
       "localSavedNoUpload": "Upload not complete. Please try again later.",
       "uploadNotDone": "Still uploading. Please wait.",
@@ -174,7 +180,9 @@
       "courseAdherence": "Course Adherence",
       "routeMatch": "Route Match",
       "maxDeviation": "Max Deviation",
-      "offCourseSegments": "Off-course segments"
+      "offCourseSegments": "Off-course segments",
+      "pointsEarned": "Points earned",
+      "signalGap": "Signal gap segments"
     }
   },
   "world": {
@@ -202,11 +210,13 @@
     "cancelNavigate": "Cancel",
     "startCompetition": "Start Competition",
     "arrivedAtStart": "Arrived at start!",
-    "goToStart": "Go to Start"
+    "goToStart": "Go to Start",
+    "distanceToStart": "{{distance}}km to start (available within 5km)"
   },
   "course": {
     "title": "Courses",
     "discover": "Discover",
+    "favorites": "Favorites",
     "nearbySection": "Nearby",
     "popularSection": "Popular Courses",
     "newSection": "New Courses",
@@ -270,6 +280,9 @@
       "gap": "Gap {{gap}}",
       "challenge": "Challenge",
       "viewInWorld": "View in World",
+      "tooFarFromStart": "{{distance}}km away (must be within 5km)",
+      "distanceFromStart": "{{distance}}km from start",
+      "details": "Details",
       "editTitle": "Edit Course",
       "fieldTitle": "Title",
       "fieldTitlePlaceholder": "Course name",
@@ -306,7 +319,8 @@
       "minDistanceError": "Only runs of 500m or more can be registered as a course.",
       "courseSaved": "Course Saved",
       "courseSavedMsg": "\"{{title}}\" course has been saved."
-    }
+    },
+    "streak": "{{count}} consecutive completions"
   },
   "home": {
     "weeklyChallenge": "Weekly Challenge",
@@ -405,7 +419,15 @@
       "morning": "Morning",
       "afternoon": "Afternoon",
       "evening": "Evening"
-    }
+    },
+    "emptyStateTitle": "Start your first run!",
+    "emptyStateDesc": "Your stats and records will\nappear here after running",
+    "startRunning": "Start Running",
+    "showMoreCharts": "Show more charts",
+    "showLessCharts": "Collapse",
+    "dailyCheckin": "Daily Check-in",
+    "checkinSuccess": "Checked in!",
+    "checkinPoints": "+{{points}}P earned"
   },
   "profileEdit": {
     "title": "Edit Profile",
@@ -484,7 +506,8 @@
     "primaryGear": "Primary",
     "loadError": "Failed to load profile.",
     "loadDetailError": "Failed to load profile details.",
-    "defaultNickname": "Runner"
+    "defaultNickname": "Runner",
+    "likes": "Likes"
   },
   "community": {
     "title": "Social",
@@ -545,6 +568,7 @@
     "crewNotFound": "Crew not found.",
     "loadError": "Failed to load crew info.",
     "joinFailed": "Failed to join.",
+    "joinedSuccess": "You have joined the crew!",
     "leaveTitle": "Leave Crew",
     "leaveMsg": "Are you sure you want to leave this crew?",
     "leaveFailed": "Failed to leave.",
@@ -564,7 +588,15 @@
     "maxParticipants": "Max Members",
     "noLimit": "No Limit",
     "badgeColor": "Badge Color",
+    "region": "Activity Region",
+    "regionPlaceholder": "e.g. Seoul, Gangnam",
+    "selectRegion": "Select Region",
+    "resetRegion": "Reset",
+    "allRegion": "All",
     "createFailed": "Failed to create crew. Please try again.",
+    "crewLimitReached": "You can create up to 5 crews.",
+    "insufficientPoints": "Need {{cost}}P to create a crew (current: {{current}}P)",
+    "pointsCost": "Cost: {{cost}}P",
     "messagePlaceholder": "Type a message",
     "connectionLost": "Connection Lost",
     "searchCrews": "Find Crews",
@@ -654,7 +686,10 @@
     "noNotifications": "No new notifications",
     "noNotificationsDesc": "Join requests will appear here",
     "approveFailed": "Failed to approve request.",
-    "rejectFailed": "Failed to reject request."
+    "rejectFailed": "Failed to reject request.",
+    "weeklyRanking": "This Week's Ranking",
+    "level": "Lv.{{level}}",
+    "xpProgress": "{{current}} / {{next}} XP"
   },
   "format": {
     "justNow": "Just now",
@@ -963,7 +998,37 @@
   "ranking": {
     "individual": "Individual",
     "crew": "Crew",
-    "noCrewRankings": "No crew rankings yet"
+    "noCrewRankings": "No crew rankings yet",
+    "weeklyTopRunners": "Top Runners This Week",
+    "runs": "{{count}} runs",
+    "tabLabel": "Ranking",
+    "myRanking": "My Ranking"
+  },
+  "points": {
+    "history": "Point History",
+    "earned": "+{{points}}P earned",
+    "runEarn": "Running reward",
+    "courseBonus": "Course bonus",
+    "crewCreate": "Crew creation",
+    "dailyCheckin": "Daily check-in",
+    "courseCreate": "Course registration"
+  },
+  "explore": {
+    "searchPlaceholder": "Search crews or runners",
+    "crewSection": "Crews",
+    "runnerSection": "Runners",
+    "noResults": "No results found",
+    "searchHint": "Search by crew name or runner nickname"
+  },
+  "notification": {
+    "title": "Notifications",
+    "noNotifications": "No notifications yet",
+    "markAllRead": "Mark all read",
+    "postComment": " commented on your post",
+    "postLike": " liked your post",
+    "crewJoinRequest": " requested to join {{crew}}",
+    "followed": " started following you",
+    "friendRequest": " sent you a friend request"
   },
   "guide": {
     "step1Title": "Create Courses by Running",
@@ -975,5 +1040,55 @@
     "skip": "Skip",
     "next": "Next",
     "start": "Get Started"
+  },
+  "runnerLevel": {
+    "tier1": { "name": "Baby Turtle", "desc": "Slow and steady, let's go!" },
+    "tier2": { "name": "Busy Squirrel", "desc": "Getting faster bit by bit..." },
+    "tier3": { "name": "Meadow Rabbit", "desc": "Not bad at all!" },
+    "tier4": { "name": "Wild Horse", "desc": "No one can catch me now" },
+    "tier5": { "name": "Hunting Wolf", "desc": "Leader of the pack" },
+    "tier6": { "name": "Savanna Cheetah", "desc": "Fastest on land" },
+    "tier7": { "name": "Sky Hawk", "desc": "Beyond the ground" },
+    "tier8": { "name": "Lightning Panther", "desc": "Faster than lightning" },
+    "tier9": { "name": "Storm Dragon", "desc": "A legend begins" },
+    "tier10": { "name": "Phoenix", "desc": "An eternal, tireless flame" },
+    "tier11": { "name": "Unicorn", "desc": "A living legend" },
+    "tier12": { "name": "Divine Qilin", "desc": "Realm of the mythical" }
+  },
+  "crewLevel": {
+    "guideTitle": "Crew Level Guide",
+    "current": "Current",
+    "maxMembers": "Max {{count}} members",
+    "unlimited": "Unlimited members",
+    "lockedAt": "Unlocks at Lv.{{level}}",
+    "unlockHint": "Level up your crew to unlock",
+    "unlock": {
+      "challenge1": "1 Challenge",
+      "weeklyRanking": "Weekly Ranking",
+      "maxMembers20": "Max 20 members",
+      "announcements": "Announcements",
+      "maxMembers30": "Max 30 members",
+      "badgeColor": "Badge Color Customization",
+      "coverImage": "Cover Image",
+      "maxMembers50": "Max 50 members",
+      "gradeNameCustom": "Grade Name Customization",
+      "challenge2": "2 Concurrent Challenges",
+      "maxMembers80": "Max 80 members",
+      "crewBattle": "Crew Battle",
+      "inviteLink": "Invite Link",
+      "maxMembers120": "Max 120 members",
+      "crewStats": "Crew Statistics",
+      "challenge3": "3 Concurrent Challenges",
+      "maxMembers200": "Max 200 members",
+      "searchPriority": "Search Priority",
+      "challenge5": "5 Concurrent Challenges",
+      "maxMembers300": "Max 300 members",
+      "crewCourse": "Crew Exclusive Courses",
+      "unlimitedMembers": "Unlimited members",
+      "featured": "Featured Listing",
+      "challengeUnlimited": "Unlimited Challenges",
+      "legendBadge": "Legend Badge Animation",
+      "officialCert": "Official Certification"
+    }
   }
 }

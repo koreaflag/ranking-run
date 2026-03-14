@@ -5,23 +5,59 @@ import { API_BASE_URL, SECURE_STORE_KEYS } from '../utils/constants';
  * Central fetch wrapper for all API calls.
  * - Automatically attaches JWT Bearer token from SecureStore.
  * - On 401 responses, attempts a token refresh and retries the original request.
+ * - Single refresh path: all refresh attempts go through performTokenRefresh()
+ *   to prevent race conditions with concurrent 401s.
  */
 
 let isRefreshing = false;
-let failedQueue: Array<{
-  resolve: (token: string) => void;
-  reject: (error: unknown) => void;
-}> = [];
+let refreshPromise: Promise<string> | null = null;
 
-function processQueue(error: unknown, token: string | null) {
-  failedQueue.forEach((promise) => {
-    if (error) {
-      promise.reject(error);
-    } else if (token) {
-      promise.resolve(token);
+/**
+ * Single entry point for token refresh. Deduplicates concurrent calls —
+ * if a refresh is already in flight, returns the same promise.
+ * Used by both the 401 interceptor and authStore.refreshAuth().
+ */
+async function performTokenRefresh(): Promise<string> {
+  if (isRefreshing && refreshPromise) {
+    return refreshPromise;
+  }
+
+  isRefreshing = true;
+  refreshPromise = (async () => {
+    try {
+      const refreshToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
+      if (!refreshToken) {
+        throw new ApiError(401, { message: 'No refresh token' });
+      }
+
+      const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!refreshResponse.ok) {
+        const errorData = await refreshResponse.json().catch(() => null);
+        if (refreshResponse.status >= 400 && refreshResponse.status < 500) {
+          await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
+          await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
+        }
+        throw new ApiError(refreshResponse.status, errorData);
+      }
+
+      const { access_token, refresh_token: newRefreshToken } = await refreshResponse.json();
+
+      await SecureStore.setItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN, access_token);
+      await SecureStore.setItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN, newRefreshToken);
+
+      return access_token;
+    } finally {
+      isRefreshing = false;
+      refreshPromise = null;
     }
-  });
-  failedQueue = [];
+  })();
+
+  return refreshPromise;
 }
 
 interface ApiOptions extends RequestInit {
@@ -38,12 +74,41 @@ class ApiError extends Error {
   }
 }
 
+/** Decode JWT payload without verification (base64url) */
+function decodeJwtPayload(token: string): { exp?: number } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(payload));
+  } catch {
+    return null;
+  }
+}
+
+/** Pre-emptive refresh threshold: 10 minutes before expiry */
+const REFRESH_AHEAD_SEC = 600;
+
 async function request<T = unknown>(
   endpoint: string,
   options: ApiOptions = {},
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  const token = await SecureStore.getItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
+  let token = await SecureStore.getItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
+
+  // Pre-emptive refresh: if token expires within 10 minutes, refresh now
+  // to avoid multiple concurrent 401s triggering a race condition.
+  if (token && !endpoint.includes('/auth/refresh')) {
+    const payload = decodeJwtPayload(token);
+    if (payload?.exp && payload.exp - Date.now() / 1000 < REFRESH_AHEAD_SEC) {
+      try {
+        token = await performTokenRefresh();
+      } catch {
+        // Pre-emptive refresh failed — continue with current token,
+        // the 401 interceptor below will handle it if needed.
+      }
+    }
+  }
 
   const isFormData = options.body instanceof FormData;
   const headers: Record<string, string> = {
@@ -72,64 +137,18 @@ async function request<T = unknown>(
       return (await response.json()) as T;
     }
 
-    // Handle 401 with token refresh
+    // Handle 401 with token refresh (single path via performTokenRefresh)
     if (response.status === 401 && !options._retry && !endpoint.includes('/auth/refresh')) {
-      if (isRefreshing) {
-        return new Promise<string>((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        }).then((newToken) => {
-          return request<T>(endpoint, {
-            ...options,
-            _retry: true,
-            headers: { ...headers, Authorization: `Bearer ${newToken}` },
-          });
-        });
-      }
-
-      isRefreshing = true;
-
       try {
-        const refreshToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
-        if (!refreshToken) {
-          processQueue(new Error('No refresh token'), null);
-          throw new ApiError(401, { message: 'No refresh token' });
-        }
-
-        const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
-
-        if (!refreshResponse.ok) {
-          const errorData = await refreshResponse.json().catch(() => null);
-          // Only clear tokens on definitive auth failures (400/401/403)
-          // NOT on server errors (5xx) or network issues
-          if (refreshResponse.status >= 400 && refreshResponse.status < 500) {
-            await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
-            await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
-          }
-          processQueue(new Error('Refresh failed'), null);
-          throw new ApiError(refreshResponse.status, errorData);
-        }
-
-        const { access_token, refresh_token: newRefreshToken } = await refreshResponse.json();
-
-        await SecureStore.setItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN, access_token);
-        await SecureStore.setItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN, newRefreshToken);
-
-        processQueue(null, access_token);
+        const newAccessToken = await performTokenRefresh();
 
         return request<T>(endpoint, {
           ...options,
           _retry: true,
-          headers: { ...headers, Authorization: `Bearer ${access_token}` },
+          headers: { ...headers, Authorization: `Bearer ${newAccessToken}` },
         });
       } catch (refreshError) {
-        processQueue(refreshError, null);
         throw refreshError;
-      } finally {
-        isRefreshing = false;
       }
     }
 
@@ -158,5 +177,5 @@ const api = {
     request<T>(endpoint, { ...options, method: 'DELETE' }),
 };
 
-export { ApiError };
+export { ApiError, performTokenRefresh };
 export default api;

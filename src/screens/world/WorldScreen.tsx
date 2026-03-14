@@ -18,7 +18,7 @@ import { Ionicons } from '../../lib/icons';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useCourseStore } from '../../stores/courseStore';
+import { useCourseListStore } from '../../stores/courseListStore';
 import { useRunningStore } from '../../stores/runningStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { courseService } from '../../services/courseService';
@@ -143,17 +143,6 @@ function calcBearing(a: LatLng, b: LatLng): number {
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
-/** Compute center from a set of points */
-function computeCenter(points: LatLng[]): LatLng {
-  let sumLat = 0;
-  let sumLng = 0;
-  for (const p of points) {
-    sumLat += p.latitude;
-    sumLng += p.longitude;
-  }
-  return { latitude: sumLat / points.length, longitude: sumLng / points.length };
-}
-
 // ============================================================
 // Goal helpers
 // ============================================================
@@ -240,12 +229,14 @@ export default function WorldScreen() {
   const colors = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { mapMarkers, fetchMapMarkers, pendingFocusCourseId, pendingStartCourseId } = useCourseStore();
+  const { mapMarkers, fetchMapMarkers, pendingFocusCourseId, pendingStartCourseId } = useCourseListStore();
   const { map3DStyle, countdownSeconds, hapticFeedback, voiceGuidance } = useSettingsStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<RouteMapViewHandle>(null);
   const [userRegion, setUserRegion] = useState<Region | null>(null);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const myLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  useEffect(() => { myLocationRef.current = myLocation; }, [myLocation]);
   const [followUser, setFollowUser] = useState(true);
   const hasInitializedRef = useRef(false);
 
@@ -258,6 +249,7 @@ export default function WorldScreen() {
   const [selectedMarker, setSelectedMarker] = useState<CourseMarkerData | null>(null);
   const [hudRankings, setHudRankings] = useState<RankingEntry[]>([]);
   const [hudRankingVisible, setHudRankingVisible] = useState(true);
+  const [distanceToMarkerM, setDistanceToMarkerM] = useState<number | null>(null);
   const rankingAnim = useRef(new Animated.Value(1)).current;
 
   // Run start controls
@@ -332,7 +324,7 @@ export default function WorldScreen() {
   // DEBUG: remove after confirming pace coaching works
   useEffect(() => {
     if (phase === 'running' && paceCoachingEnabled) {
-      console.log('[PaceCoaching] enabled:', paceCoachingEnabled,
+      if (__DEV__) console.log('[PaceCoaching] enabled:', paceCoachingEnabled,
         'targetDist:', paceCoachingTargetDist, 'targetTime:', paceCoachingTargetTime,
         'dist:', distanceMeters, 'result:', paceCoaching ? paceCoaching.status : 'null');
     }
@@ -594,7 +586,9 @@ export default function WorldScreen() {
 
   // Request location permission on mount (Android requires explicit runtime request)
   useEffect(() => {
-    Location.requestForegroundPermissionsAsync().catch(() => {});
+    Location.requestForegroundPermissionsAsync().catch((err) => {
+      console.warn('[WorldScreen] 위치 권한 요청 실패:', err);
+    });
   }, []);
 
   // Feed GPS to checkpoint tracker during course running
@@ -646,7 +640,9 @@ export default function WorldScreen() {
         );
         return;
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[WorldScreen] 위치 권한 확인 실패:', err);
+    }
 
     // Clear any 3D preview
     if (selectedMarker) {
@@ -666,7 +662,9 @@ export default function WorldScreen() {
           ...center, latitudeDelta: 0.005, longitudeDelta: 0.005,
         }, 600);
       }
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn('[WorldScreen] 마지막 위치 조회 실패:', err);
+    });
 
     setPhase('countdown');
     setCountdown(countdownSeconds);
@@ -675,10 +673,12 @@ export default function WorldScreen() {
     const countdownStartedAt = Date.now();
     try {
       if (Platform.OS === 'ios' && NativeModules.GPSTrackerModule?.notifyCountdownStart) {
-        NativeModules.GPSTrackerModule.notifyCountdownStart(countdownSeconds, countdownStartedAt).catch(() => {});
+        NativeModules.GPSTrackerModule.notifyCountdownStart(countdownSeconds, countdownStartedAt).catch((err: any) => {
+          console.warn('[WorldScreen] 카운트다운 알림 실패:', err);
+        });
       }
-    } catch {
-      // Safe to ignore
+    } catch (err) {
+      console.warn('[WorldScreen] 카운트다운 네이티브 호출 실패:', err);
     }
 
     for (let i = countdownSeconds; i > 0; i--) {
@@ -691,11 +691,36 @@ export default function WorldScreen() {
 
     setCountdown(null);
 
+    // Capture current position before session reset (for seeding first route point)
+    const initialLocation = myLocationRef.current;
+
     // Start GPS tracking with local session ID
     const localSessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     startSession(localSessionId, courseId ?? null);
+
+    // Seed the first route point from last known position so there's no gap
+    // (especially important when user is already moving at start)
+    if (initialLocation && useRunningStore.getState().routePoints.length === 0) {
+      useRunningStore.setState({
+        routePoints: [initialLocation],
+        startPoint: initialLocation,
+      });
+    }
+
     if (!trackingStartedRef.current) {
       await startTracking();
+    } else {
+      // Tracking already started (e.g. navigate-to-start flow) — startTracking() skipped,
+      // but Watch needs the "running" phase notification that startTracking() normally sends.
+      try {
+        if (Platform.OS === 'ios' && NativeModules.GPSTrackerModule?.notifyRunningPhase) {
+          NativeModules.GPSTrackerModule.notifyRunningPhase().catch((err: any) => {
+            console.warn('[WorldScreen] 런닝 페이즈 알림 실패:', err);
+          });
+        }
+      } catch (err) {
+        console.warn('[WorldScreen] 런닝 페이즈 네이티브 호출 실패:', err);
+      }
     }
     trackingStartedRef.current = true;
 
@@ -720,7 +745,9 @@ export default function WorldScreen() {
       if (response?.session_id) {
         updateSessionId(response.session_id);
       }
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn('[WorldScreen] 세션 생성 실패:', err);
+    });
   }, [
     countdownSeconds, hapticFeedback, selectedMarker,
     setPhase, startSession, updateSessionId, startTracking,
@@ -883,7 +910,9 @@ export default function WorldScreen() {
     setNavRoute([]);
     // Reset watch to idle
     if (Platform.OS === 'ios' && NativeModules.WatchBridgeModule) {
-      NativeModules.WatchBridgeModule.sendRunState({ phase: 'idle' }).catch(() => {});
+      NativeModules.WatchBridgeModule.sendRunState({ phase: 'idle' }).catch((err: any) => {
+        console.warn('[WorldScreen] 워치 상태 전송 실패:', err);
+      });
     }
     // Stop follow first so camera animation isn't overridden
     setFollowUser(false);
@@ -949,7 +978,9 @@ export default function WorldScreen() {
       navToStartBearing: bearing,
       navToStartDistance: distanceToStartCP,
       navToStartReady: readyToStart,
-    }).catch(() => {});
+    }).catch((err: any) => {
+      console.warn('[WorldScreen] 워치 네비게이션 상태 전송 실패:', err);
+    });
   }, [navigatingToStart, startCheckpoint, currentLocation, distanceToStartCP, readyToStart]);
 
   // Handle "경쟁 시작하기" button press
@@ -1079,7 +1110,9 @@ export default function WorldScreen() {
     try {
       const response = await runService.completeRun(sid, runPayload);
       setResultRunRecordId(response?.run_record_id ?? null);
-      await removePendingRunRecord(pendingId).catch(() => {});
+      await removePendingRunRecord(pendingId).catch((err) => {
+        console.warn('[WorldScreen] 로컬 대기 기록 삭제 실패:', err);
+      });
     } catch {
       // Server failed — local data is safe
     } finally {
@@ -1247,18 +1280,18 @@ export default function WorldScreen() {
         if (!detail.route_geometry?.coordinates?.length) return;
 
         const routePoints = geoJsonToLatLng(detail.route_geometry);
-        const center = computeCenter(routePoints);
 
         const cps = (detail as any).checkpoints as CourseCheckpoint[] | null | undefined;
         setPreviewCheckpoints(
           cps?.map((cp) => ({ id: cp.id, order: cp.order, lat: cp.lat, lng: cp.lng })) ?? [],
         );
 
+        const startCoord = routePoints[0];
         setSelectedMarker({
           id: detail.id,
           title: detail.title,
-          start_lat: center.latitude,
-          start_lng: center.longitude,
+          start_lat: startCoord.latitude,
+          start_lng: startCoord.longitude,
           distance_meters: detail.distance_meters,
           elevation_gain_meters: detail.elevation_gain_meters,
           total_runs: 0,
@@ -1266,6 +1299,18 @@ export default function WorldScreen() {
           avg_rating: null,
         } as CourseMarkerData);
         setIs3DMode(true);
+
+        // Calculate distance from user to course start
+        const loc = myLocationRef.current;
+        if (loc) {
+          const dist = haversineDistance(
+            { latitude: loc.latitude, longitude: loc.longitude },
+            { latitude: startCoord.latitude, longitude: startCoord.longitude },
+          );
+          setDistanceToMarkerM(dist);
+        } else {
+          setDistanceToMarkerM(null);
+        }
 
         // Wait until mapRef is ready (may be lazy-loaded)
         const waitForMap = () =>
@@ -1298,7 +1343,7 @@ export default function WorldScreen() {
       } catch {
         // Silent fail
       } finally {
-        useCourseStore.getState().setPendingFocusCourseId(null);
+        useCourseListStore.getState().setPendingFocusCourseId(null);
       }
     };
 
@@ -1313,7 +1358,7 @@ export default function WorldScreen() {
   useEffect(() => {
     if (!pendingStartCourseId) return;
     const courseId = pendingStartCourseId;
-    useCourseStore.getState().setPendingStartCourseId(null);
+    useCourseListStore.getState().setPendingStartCourseId(null);
 
     // Wait for tab transition, then start the run flow (navigate-to-start)
     const interaction = InteractionManager.runAfterInteractions(() => {
@@ -1353,6 +1398,18 @@ export default function WorldScreen() {
       setFollowUser(false);
       setSelectedMarker(marker);
       setIs3DMode(true);
+
+      // Calculate distance from user to course start
+      const loc = myLocationRef.current;
+      if (loc) {
+        const dist = haversineDistance(
+          { latitude: loc.latitude, longitude: loc.longitude },
+          { latitude: marker.start_lat, longitude: marker.start_lng },
+        );
+        setDistanceToMarkerM(dist);
+      } else {
+        setDistanceToMarkerM(null);
+      }
 
       try {
         const [detail, rankings] = await Promise.all([
@@ -1406,6 +1463,7 @@ export default function WorldScreen() {
       resetTo2D();
       setSelectedMarker(null);
       setHudRankings([]);
+      setDistanceToMarkerM(null);
     }
   }, [selectedMarker, resetTo2D]);
 
@@ -1424,7 +1482,9 @@ export default function WorldScreen() {
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           setMyLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
         }
-      } catch {}
+      } catch (err) {
+        console.warn('[WorldScreen] 위치 재조회 실패:', err);
+      }
     }
     // Force Camera to re-engage follow mode (works even if followUser is already true)
     mapRef.current?.recenterOnUser();
@@ -1491,15 +1551,15 @@ export default function WorldScreen() {
         }}
         followsUserLocation={followUser}
         followZoomLevel={isInRun ? (runCourseId ? 17 : 16) : 15}
-        followUserMode={isInRun && runCourseId ? 'course' : undefined}
-        followPitch={isInRun && runCourseId ? 45 : undefined}
+        followUserMode={phase === 'running' ? 'course' : undefined}
+        followPitch={phase === 'running' ? (runCourseId ? 45 : 30) : undefined}
         followPadding={panelHeight > 0 ? { paddingBottom: panelHeight + 60 } : undefined}
         showUserLocation={true}
         hideRouteMarkers={isInRun}
         customUserLocation={myLocation ?? undefined}
         customUserHeading={isInRun ? runHeadingValue : headingAnim}
-        interactive
-        pitchEnabled={map3DStyle || is3DMode || (isInRun && !!runCourseId)}
+        interactive={!isInRun || phase !== 'running'}
+        pitchEnabled={map3DStyle || is3DMode || isInRun}
         use3DStyle={map3DStyle}
         style={styles.map}
       />
@@ -1649,15 +1709,30 @@ export default function WorldScreen() {
             )}
 
             <View style={styles.hudBottomOverlay} pointerEvents="box-none">
+              {distanceToMarkerM !== null && distanceToMarkerM > 5000 && (
+                <View style={styles.hudDistanceBanner}>
+                  <Ionicons name="location-outline" size={14} color="#FF9500" />
+                  <Text style={styles.hudDistanceText}>
+                    {t('world.distanceToStart', { distance: (distanceToMarkerM / 1000).toFixed(1) })}
+                  </Text>
+                </View>
+              )}
               <View style={styles.hudActions}>
                 <TouchableOpacity style={styles.hudDetailBtn} onPress={handleGoDetail} activeOpacity={0.7}>
                   <Ionicons name="information-circle" size={16} color={COLORS.black} />
-                  <Text style={styles.hudDetailText}>상세보기</Text>
+                  <Text style={styles.hudDetailText}>{t('course.detail.details')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.hudRunBtn} onPress={handleStartCourseRun} activeOpacity={0.85}>
-                  <Ionicons name="navigate" size={16} color={COLORS.white} />
-                  <Text style={styles.hudRunText}>{t('world.goToStart')}</Text>
-                </TouchableOpacity>
+                {distanceToMarkerM === null || distanceToMarkerM > 5000 ? (
+                  <View style={styles.hudRunBtnDisabled}>
+                    <Ionicons name="navigate" size={16} color="rgba(255,255,255,0.4)" />
+                    <Text style={styles.hudRunTextDisabled}>{t('world.goToStart')}</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.hudRunBtn} onPress={handleStartCourseRun} activeOpacity={0.85}>
+                    <Ionicons name="navigate" size={16} color={COLORS.white} />
+                    <Text style={styles.hudRunText}>{t('world.goToStart')}</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </>
@@ -2407,6 +2482,22 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     gap: SPACING.md,
   },
+  hudDistanceBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    marginBottom: SPACING.sm,
+  },
+  hudDistanceText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '700',
+    color: '#FF9500',
+  },
   hudDetailBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -2432,10 +2523,25 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: COLORS.primary,
     gap: SPACING.xs,
   },
+  hudRunBtnDisabled: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    gap: SPACING.xs,
+  },
   hudRunText: {
     fontSize: FONT_SIZES.md,
     fontWeight: '800',
     color: COLORS.white,
+  },
+  hudRunTextDisabled: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.4)',
   },
 
   // -- Right controls --

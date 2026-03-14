@@ -1940,6 +1940,8 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - Yoga
+  - RNSVG (15.8.0):
+    - React-Core
   - SocketRocket (0.7.1)
   - Turf (4.0.0)
   - Yoga (0.0.0)
@@ -2047,6 +2049,7 @@ DEPENDENCIES:
   - "RNGoogleSignin (from `../node_modules/@react-native-google-signin/google-signin`)"
   - "rnmapbox-maps (from `../node_modules/@rnmapbox/maps`)"
   - RNScreens (from `../node_modules/react-native-screens`)
+  - RNSVG (from `../node_modules/react-native-svg`)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 SPEC REPOS:
@@ -2266,6 +2269,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@rnmapbox/maps"
   RNScreens:
     :path: "../node_modules/react-native-screens"
+  RNSVG:
+    :path: "../node_modules/react-native-svg"
   Yoga:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
@@ -2380,6 +2385,7 @@ SPEC CHECKSUMS:
   RNGoogleSignin: 5782dd7dad559608a06f3c6b1d4142c395fb5308
   rnmapbox-maps: 86eb3e67a73a722933c6bb5679d977af64a27a98
   RNScreens: 295d9c0aaeb7f680d03d7e9b476569a4959aae89
+  RNSVG: 8542aa11770b27563714bbd8494a8436385fc85f
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Turf: c9eb11a65d96af58cac523460fd40fec5061b081
   Yoga: feb4910aba9742cfedc059e2b2902e22ffe9954a

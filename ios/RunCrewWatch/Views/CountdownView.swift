@@ -10,20 +10,9 @@ struct CountdownView: View {
     @State private var opacity: Double = 1.0
     @State private var timer: Timer?
     @State private var lastShownNumber = -1
-    @State private var showGo = false
-    @State private var goPulse: CGFloat = 1.0
-    @State private var goOpacity: Double = 1.0
-
     var body: some View {
         VStack(spacing: 12) {
-            if showGo {
-                // "GO!" — stays visible until phase changes to "running"
-                Text("GO!")
-                    .font(.system(size: 64, weight: .heavy, design: .rounded))
-                    .foregroundColor(appOrange)
-                    .scaleEffect(goPulse)
-                    .opacity(goOpacity)
-            } else if displayNumber > 0 {
+            if displayNumber > 0 {
                 // Countdown numbers
                 Text("\(displayNumber)")
                     .font(.system(size: 72, weight: .heavy, design: .rounded))
@@ -43,6 +32,11 @@ struct CountdownView: View {
     }
 
     private func startCountdown() {
+        // Invalidate any existing timer to prevent double-timers if onAppear fires again
+        timer?.invalidate()
+        timer = nil
+        lastShownNumber = -1
+
         updateDisplay()
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
@@ -61,8 +55,6 @@ struct CountdownView: View {
             if newNumber > 0 {
                 displayNumber = newNumber
                 animateTick()
-            } else if newNumber == 0 {
-                showGoAnimation()
             }
         }
 
@@ -81,26 +73,6 @@ struct CountdownView: View {
         let remaining = Double(total) - elapsedSec
         if remaining <= 0 { return 0 }
         return Int(ceil(remaining))
-    }
-
-    private func showGoAnimation() {
-        showGo = true
-        WKInterfaceDevice.current().play(.start)
-
-        // Animate GO! entrance
-        goPulse = 0.3
-        goOpacity = 0.0
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
-            goPulse = 1.0
-            goOpacity = 1.0
-        }
-
-        // Subtle breathing pulse while waiting for running phase
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                goPulse = 1.08
-            }
-        }
     }
 
     private func animateTick() {

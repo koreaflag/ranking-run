@@ -29,12 +29,15 @@ import type { HomeStackParamList } from '../../types/navigation';
 import type { WeeklySummary, RecentRun, AnnouncementItem, FavoriteCourseItem, CrewChallengeItem, CrewItem } from '../../types/api';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { useCourseStore } from '../../stores/courseStore';
+import { useCourseListStore } from '../../stores/courseListStore';
 import { userService } from '../../services/userService';
 import { announcementService } from '../../services/announcementService';
 import { crewChallengeService } from '../../services/crewChallengeService';
 import { crewService } from '../../services/crewService';
+import { notificationService } from '../../services/notificationService';
 import BlurredBackground from '../../components/common/BlurredBackground';
+import HomeSkeleton from '../../components/skeleton/HomeSkeleton';
+import CourseThumbnailMap from '../../components/course/CourseThumbnailMap';
 import {
   formatDistance,
   formatDuration,
@@ -49,6 +52,8 @@ import {
 } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
+import { useToastStore } from '../../stores/toastStore';
+import CrewLevelBadge from '../../components/crew/CrewLevelBadge';
 
 const heroImage = require('../../assets/home-hero.jpg');
 
@@ -119,9 +124,11 @@ export default function HomeScreen() {
   const [recentRuns, setRecentRuns] = useState<RecentRun[]>(_cachedRuns);
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>(_cachedAnnouncements);
   const [myCrewRaids, setMyCrewRaids] = useState<Array<{ crew: CrewItem; raid: CrewChallengeItem }>>(_cachedRaids);
+  const [loading, setLoading] = useState(!_cachedWeekly && _cachedRuns.length === 0);
   const [refreshing, setRefreshing] = useState(false);
-  const favoriteCourses = useCourseStore((s) => s.favoriteCourses);
-  const fetchFavoriteCourses = useCourseStore((s) => s.fetchFavoriteCourses);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const favoriteCourses = useCourseListStore((s) => s.favoriteCourses);
+  const fetchFavoriteCourses = useCourseListStore((s) => s.fetchFavoriteCourses);
 
   // Primary data: loads immediately (above the fold)
   const loadPrimaryData = useCallback(async () => {
@@ -129,12 +136,21 @@ export default function HomeScreen() {
       const [weekly, runs] = await Promise.all([
         userService.getWeeklySummary().catch(() => null),
         userService.getRecentRuns(3).catch(() => []),
-        fetchFavoriteCourses().catch(() => {}),
+        fetchFavoriteCourses().catch((err) => {
+          console.warn('[Home] 즐겨찾기 코스 조회 실패:', err);
+        }),
+        notificationService.getUnreadCount()
+          .then((r) => setUnreadCount(r.count))
+          .catch((err) => {
+            console.warn('[Home] 알림 카운트 조회 실패:', err);
+          }),
       ]);
       setWeeklySummary(weekly); _cachedWeekly = weekly;
       setRecentRuns(runs); _cachedRuns = runs;
     } catch {
-      // partial failures ok
+      useToastStore.getState().showToast('error', '홈 데이터를 불러올 수 없습니다');
+    } finally {
+      setLoading(false);
     }
   }, [fetchFavoriteCourses]);
 
@@ -264,8 +280,21 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.logoText}>RUNVS</Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('NotificationInbox')}
+            activeOpacity={0.6}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="notifications-outline" size={24} color={colors.text} />
+            {unreadCount > 0 && <View style={styles.unreadBadge} />}
+          </TouchableOpacity>
         </View>
 
+        {loading ? (
+          <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+            <HomeSkeleton />
+          </ScrollView>
+        ) : (
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.content}
@@ -338,6 +367,16 @@ export default function HomeScreen() {
               </View>
             </ImageBackground>
           </View>
+
+          {/* Start Running CTA */}
+          <TouchableOpacity
+            style={styles.ctaButton}
+            activeOpacity={0.85}
+            onPress={() => navigation.getParent()?.navigate('WorldTab')}
+          >
+            <Ionicons name="play" size={18} color="#FFFFFF" />
+            <Text style={styles.ctaButtonText}>{t('home.startRunning')}</Text>
+          </TouchableOpacity>
 
           {/* Announcements / Events */}
           {announcements.length > 0 && (
@@ -423,7 +462,7 @@ export default function HomeScreen() {
                   <Text style={styles.favTitle}>{t('home.favoriteCourses')}</Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => navigation.navigate('CourseList')}
+                  onPress={() => navigation.getParent()?.navigate('CourseTab')}
                   activeOpacity={0.7}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
@@ -442,8 +481,8 @@ export default function HomeScreen() {
                     activeOpacity={0.7}
                     onPress={() => navigation.navigate('CourseDetail', { courseId: course.id })}
                   >
-                    {course.thumbnail_url ? (
-                      <Image source={{ uri: course.thumbnail_url }} style={styles.favThumbnail} />
+                    {course.route_preview && course.route_preview.length >= 2 ? (
+                      <CourseThumbnailMap routePreview={course.route_preview} width={160} height={90} />
                     ) : (
                       <View style={[styles.favThumbnail, styles.favThumbnailPlaceholder]}>
                         <Ionicons name="map-outline" size={24} color={colors.textTertiary} />
@@ -486,7 +525,10 @@ export default function HomeScreen() {
                       activeOpacity={0.7}
                       onPress={() => navigation.navigate('CrewDetail', { crewId: crew.id })}
                     >
-                      <Text style={styles.raidCardCrewName} numberOfLines={1}>{crew.name}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <CrewLevelBadge level={crew.level} size="sm" />
+                        <Text style={[styles.raidCardCrewName, { flex: 1 }]} numberOfLines={1}>{crew.name}</Text>
+                      </View>
                       {raid.course_name && (
                         <Text style={styles.raidCardCourseName} numberOfLines={1}>
                           {raid.course_name}
@@ -532,10 +574,17 @@ export default function HomeScreen() {
                   <TouchableOpacity
                     key={run.id}
                     style={[styles.recentRunCard, idx > 0 && styles.recentRunCardBorder]}
+                    onPress={() => navigation.navigate('RunDetail', { runId: run.id })}
                     activeOpacity={0.7}
                   >
                     <View style={styles.recentRunInner}>
-                      <View style={[styles.recentRunAccent, { backgroundColor: colors.primary }]} />
+                      {run.route_preview && run.route_preview.length >= 2 ? (
+                        <CourseThumbnailMap routePreview={run.route_preview} width={56} height={56} borderRadius={8} />
+                      ) : (
+                        <View style={styles.recentRunIconPlaceholder}>
+                          <Ionicons name="footsteps" size={20} color={colors.textTertiary} />
+                        </View>
+                      )}
                       <View style={styles.recentRunBody}>
                         <View style={styles.recentRunHeader}>
                           <Text style={styles.recentRunTitle} numberOfLines={1}>
@@ -575,6 +624,7 @@ export default function HomeScreen() {
 
           <View style={styles.bottomSpacer} />
         </ScrollView>
+        )}
       </SafeAreaView>
 
       {/* Onboarding Guide */}
@@ -771,6 +821,9 @@ const createStyles = (c: ThemeColors) =>
 
     // Header
     header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
       paddingHorizontal: SPACING.xxl,
       paddingTop: SPACING.sm,
       paddingBottom: SPACING.sm,
@@ -780,6 +833,15 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '900',
       color: c.text,
       letterSpacing: 1.5,
+    },
+    unreadBadge: {
+      position: 'absolute',
+      top: -2,
+      right: -2,
+      width: 9,
+      height: 9,
+      borderRadius: 4.5,
+      backgroundColor: COLORS.primary,
     },
 
     // Greeting
@@ -1078,8 +1140,12 @@ const createStyles = (c: ThemeColors) =>
     // Recent run cards
     recentRunCard: { paddingVertical: SPACING.sm },
     recentRunCardBorder: { borderTopWidth: 1, borderTopColor: c.divider },
-    recentRunInner: { flexDirection: 'row', gap: SPACING.md },
-    recentRunAccent: { width: 3, borderRadius: 2, alignSelf: 'stretch' },
+    recentRunInner: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
+    recentRunIconPlaceholder: {
+      width: 56, height: 56, borderRadius: 8,
+      backgroundColor: c.surface,
+      justifyContent: 'center', alignItems: 'center',
+    },
     recentRunBody: { flex: 1, gap: 3 },
     recentRunHeader: {
       flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -1114,6 +1180,30 @@ const createStyles = (c: ThemeColors) =>
       fontSize: FONT_SIZES.sm,
       fontWeight: '400',
       color: c.textTertiary,
+    },
+
+    // CTA Button
+    ctaButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: SPACING.sm,
+      marginHorizontal: SPACING.xxl,
+      marginBottom: SPACING.md,
+      paddingVertical: SPACING.lg,
+      borderRadius: BORDER_RADIUS.lg,
+      backgroundColor: c.primary,
+      shadowColor: c.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 6,
+    },
+    ctaButtonText: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '800',
+      color: '#FFFFFF',
+      letterSpacing: 0.3,
     },
 
     bottomSpacer: {

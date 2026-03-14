@@ -23,6 +23,7 @@ import { communityService } from '../../services/communityService';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import { FONT_SIZES, SPACING } from '../../utils/constants';
+import { ListEndIndicator } from '../../components/common/Skeleton';
 import { formatRelativeTime } from '../../utils/format';
 
 type Nav = NativeStackNavigationProp<CommunityStackParamList, 'CrewBoard'>;
@@ -189,14 +190,18 @@ export default function CrewBoardScreen() {
     [isLoading, colors, styles, t, navigation, crewId],
   );
 
+  const hasMorePosts = posts.length < totalCount;
+
   const ListFooter = useMemo(
     () =>
       loadingMore ? (
         <View style={styles.footerLoader}>
           <ActivityIndicator size="small" color={colors.primary} />
         </View>
+      ) : !hasMorePosts && posts.length > 0 ? (
+        <ListEndIndicator text={t('common.endOfList')} />
       ) : null,
-    [loadingMore, colors, styles],
+    [loadingMore, hasMorePosts, posts.length, colors, styles, t],
   );
 
   return (

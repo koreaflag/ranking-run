@@ -194,7 +194,9 @@ export function useVoiceGuidance({
       Speech.stop();
       // Configure audio session to play through mute switch (iOS)
       const gps = Platform.OS === 'ios' ? NativeModules.GPSTrackerModule : null;
-      gps?.configureAudioForSpeech?.().catch(() => {});
+      gps?.configureAudioForSpeech?.().catch((err: any) => {
+        console.warn('[useVoiceGuidance] 오디오 세션 설정 실패:', err);
+      });
       Speech.speak(announcement, {
         language: getTTSLocale(),
         voice: voiceIdRef.current,
@@ -202,7 +204,9 @@ export function useVoiceGuidance({
         pitch: 1.0,
         onDone: () => {
           // Restore audio session so background audio unducks
-          gps?.restoreAudioAfterSpeech?.().catch(() => {});
+          gps?.restoreAudioAfterSpeech?.().catch((err: any) => {
+            console.warn('[useVoiceGuidance] 오디오 세션 복원 실패:', err);
+          });
         },
       });
       lastAnnouncementTimeRef.current = now;

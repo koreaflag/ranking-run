@@ -57,6 +57,7 @@ class WatchPedometerManager {
         print("[WatchPedometer] Stopping (steps: \(totalSteps), dist: \(String(format: "%.0f", totalDistance))m)")
         isTracking = false
         pedometer.stopUpdates()
+        onUpdate = nil  // Remove callback reference to prevent retain cycles
     }
 
     func pauseTracking() {
@@ -99,9 +100,13 @@ class WatchPedometerManager {
     }
 
     /// Build a run summary for syncing (no route points for indoor).
-    func buildRunSummary() -> [String: Any] {
+    /// - Parameter activeDuration: The paused-adjusted duration in seconds.
+    ///   If provided, avgPace is calculated from this instead of wall-clock time.
+    func buildRunSummary(activeDuration: Int? = nil) -> [String: Any] {
         let elapsed: TimeInterval
-        if let start = startTime {
+        if let active = activeDuration {
+            elapsed = Double(active)
+        } else if let start = startTime {
             elapsed = Date().timeIntervalSince(start)
         } else {
             elapsed = 0
@@ -118,9 +123,10 @@ class WatchPedometerManager {
             "type": "standaloneRunComplete",
             "isIndoor": true,
             "distanceMeters": totalDistance,
-            "durationSeconds": Int(elapsed),
+            "durationSeconds": activeDuration ?? Int(elapsed),
             "avgPace": avgPace,
             "totalSteps": totalSteps,
+            "cadence": currentCadence,
             "routePoints": [] as [[String: Double]],  // no GPS route
             "startedAt": (startTime ?? Date()).timeIntervalSince1970,
             "finishedAt": Date().timeIntervalSince1970,

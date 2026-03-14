@@ -94,4 +94,11 @@ export const GPS_EVENTS = {
   LOCATION_UPDATE: 'GPSTracker_onLocationUpdate',
   GPS_STATUS_CHANGE: 'GPSTracker_onGPSStatusChange',
   RUNNING_STATE_CHANGE: 'GPSTracker_onRunningStateChange',
+  MILESTONE_REACHED: 'GPSTracker_onMilestoneReached',
 } as const;
+
+export interface MilestoneReachedEvent {
+  km: number;
+  splitPaceSecondsPerKm: number;
+  totalTimeSeconds: number;
+}

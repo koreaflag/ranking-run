@@ -19,9 +19,13 @@ import { useTranslation } from 'react-i18next';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import type { HomeStackParamList } from '../../types/navigation';
 import { crewService } from '../../services/crewService';
+import { useAuthStore } from '../../stores/authStore';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
+import RegionPickerModal from '../../components/crew/RegionPickerModal';
+
+const CREW_CREATION_COST = 500;
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'CrewCreate'>;
 
@@ -39,6 +43,8 @@ export default function CrewCreateScreen() {
   const colors = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const userPoints = useAuthStore((s) => s.user?.total_points ?? 0);
+  const hasEnoughPoints = userPoints >= CREW_CREATION_COST;
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -48,9 +54,10 @@ export default function CrewCreateScreen() {
   const [maxMembers, setMaxMembers] = useState('');
   const [selectedColor, setSelectedColor] = useState<string>(BADGE_COLORS[0]);
   const [requiresApproval, setRequiresApproval] = useState(false);
+  const [regionPickerVisible, setRegionPickerVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const canSubmit = name.trim().length > 0 && !isSubmitting;
+  const canSubmit = name.trim().length > 0 && !isSubmitting && hasEnoughPoints;
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
@@ -79,6 +86,8 @@ export default function CrewCreateScreen() {
       const errorCode = (err as { code?: string })?.code;
       if (errorCode === 'CREW_LIMIT_REACHED') {
         Alert.alert(t('common.notification'), t('crew.crewLimitReached'));
+      } else if (errorCode === 'INSUFFICIENT_POINTS') {
+        Alert.alert(t('common.notification'), t('crew.insufficientPoints', { cost: CREW_CREATION_COST, current: userPoints }));
       } else {
         Alert.alert(t('common.errorTitle'), t('crew.createFailed'));
       }
@@ -126,6 +135,24 @@ export default function CrewCreateScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
+            {/* Points Info */}
+            <View style={[styles.pointsBanner, !hasEnoughPoints && styles.pointsBannerInsufficient]}>
+              <View style={styles.pointsRow}>
+                <Ionicons name="flash" size={18} color={hasEnoughPoints ? colors.primary : colors.error} />
+                <Text style={[styles.pointsLabel, !hasEnoughPoints && { color: colors.error }]}>
+                  {t('crew.pointsCost', { cost: CREW_CREATION_COST })}
+                </Text>
+              </View>
+              <Text style={[styles.pointsCurrent, !hasEnoughPoints && { color: colors.error }]}>
+                {userPoints.toLocaleString()}P
+              </Text>
+              {!hasEnoughPoints && (
+                <Text style={styles.pointsWarning}>
+                  {t('crew.insufficientPoints', { cost: CREW_CREATION_COST, current: userPoints })}
+                </Text>
+              )}
+            </View>
+
             {/* Crew Name */}
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>
@@ -163,16 +190,23 @@ export default function CrewCreateScreen() {
             {/* Region */}
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>{t('crew.region')}</Text>
-              <TextInput
+              <TouchableOpacity
                 style={styles.input}
-                placeholder={t('crew.regionPlaceholder')}
-                placeholderTextColor={colors.textTertiary}
-                value={region}
-                onChangeText={setRegion}
-                maxLength={50}
-                returnKeyType="next"
-              />
+                onPress={() => setRegionPickerVisible(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={region ? styles.inputText : styles.placeholderText}>
+                  {region || t('crew.selectRegion')}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+              </TouchableOpacity>
             </View>
+            <RegionPickerModal
+              visible={regionPickerVisible}
+              onClose={() => setRegionPickerVisible(false)}
+              onSelect={(r) => setRegion(r ?? '')}
+              selectedRegion={region || null}
+            />
 
             {/* Recurring Schedule */}
             <View style={styles.fieldGroup}>
@@ -332,6 +366,42 @@ const createStyles = (c: ThemeColors) =>
     },
     headerSpacer: { width: 40 },
 
+    // Points banner
+    pointsBanner: {
+      backgroundColor: c.primary + '10',
+      borderRadius: BORDER_RADIUS.md,
+      padding: SPACING.lg,
+      borderWidth: 1,
+      borderColor: c.primary + '30',
+      gap: SPACING.xs,
+    },
+    pointsBannerInsufficient: {
+      backgroundColor: c.error + '10',
+      borderColor: c.error + '30',
+    },
+    pointsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+    },
+    pointsLabel: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.primary,
+    },
+    pointsCurrent: {
+      fontSize: FONT_SIZES.xxl,
+      fontWeight: '900',
+      color: c.primary,
+      letterSpacing: -0.5,
+    },
+    pointsWarning: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '600',
+      color: c.error,
+      marginTop: SPACING.xs,
+    },
+
     // Form fields
     fieldGroup: { gap: SPACING.sm },
     label: {
@@ -344,6 +414,9 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '700',
     },
     input: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
       backgroundColor: c.card,
       borderRadius: BORDER_RADIUS.md,
       borderWidth: 1,
@@ -353,6 +426,18 @@ const createStyles = (c: ThemeColors) =>
       fontSize: FONT_SIZES.md,
       fontWeight: '500',
       color: c.text,
+    },
+    inputText: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '500',
+      color: c.text,
+      flex: 1,
+    },
+    placeholderText: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '500',
+      color: c.textTertiary,
+      flex: 1,
     },
     textArea: {
       minHeight: 100,

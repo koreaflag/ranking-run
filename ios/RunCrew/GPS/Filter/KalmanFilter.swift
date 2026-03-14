@@ -12,7 +12,7 @@ class KalmanFilter {
 
     // Process noise base values (higher = more responsive to actual movement)
     private let processNoisePosition: Double = 0.5
-    private let processNoiseVelocity: Double = 3.0
+    private let processNoiseVelocity: Double = 1.5
     private var dynamicProcessNoise: Double = 1.0
 
     // RTS Smoother: store intermediate states for backward pass
@@ -39,9 +39,20 @@ class KalmanFilter {
         history.removeAll()
     }
 
-    /// Update dynamic process noise based on Core Motion acceleration variance
+    /// Update dynamic process noise based on Core Motion acceleration variance.
+    ///
+    /// Accelerometer variance is in g^2 (typically 0.001 standing .. 0.1+ running hard).
+    /// We scale it into a useful range for the process noise matrix:
+    ///   - Standing still (variance ~ 0.001): dynamicProcessNoise ~ 0.5  (trust GPS, low noise)
+    ///   - Walking       (variance ~ 0.01):   dynamicProcessNoise ~ 1.5
+    ///   - Running       (variance ~ 0.05):   dynamicProcessNoise ~ 4.0  (allow more movement)
+    ///   - Sprinting     (variance ~ 0.15+):  dynamicProcessNoise ~ 8.0  (high responsiveness)
     func updateProcessNoise(accelerationVariance: Double) {
-        dynamicProcessNoise = max(0.5, min(accelerationVariance, 10.0))
+        // Scale from g^2 domain to process noise domain:
+        // Multiply by 50 to map typical range [0.001, 0.15] -> [0.05, 7.5],
+        // then add baseline of 0.3 and clamp to [0.3, 8.0].
+        let scaled = accelerationVariance * 50.0 + 0.3
+        dynamicProcessNoise = max(0.3, min(scaled, 8.0))
     }
 
     /// Predict + Update step with new GPS measurement
@@ -234,8 +245,10 @@ class KalmanFilter {
 
     private func measurementNoiseMatrix(horizontalAccuracy: Double,
                                          speedAccuracy: Double) -> [[Double]] {
+        // Floor: GPS reports optimistic accuracy; actual scatter is always larger
+        let clamped = max(horizontalAccuracy, 8.0)
         // Urban canyon inflation: when accuracy > 20m, multipath likely — trust GPS less
-        let inflated = horizontalAccuracy > 20 ? horizontalAccuracy * 2.5 : horizontalAccuracy
+        let inflated = clamped > 20 ? clamped * 2.5 : clamped
         let posVar = inflated * inflated
         let spdVar: Double
         if speedAccuracy < -100 {

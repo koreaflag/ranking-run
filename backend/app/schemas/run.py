@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # --- Device Info ---
@@ -18,21 +18,21 @@ class DeviceInfo(BaseModel):
 # --- GPS Points ---
 
 class RawGPSPoint(BaseModel):
-    lat: float
-    lng: float
+    lat: float = Field(..., ge=-90.0, le=90.0)
+    lng: float = Field(..., ge=-180.0, le=180.0)
     alt: float = 0.0
-    speed: float = 0.0
-    bearing: float = 0.0
-    accuracy: float = 0.0
+    speed: float = Field(default=0.0, ge=0.0)
+    bearing: float = Field(default=0.0, ge=0.0, le=360.0)
+    accuracy: float = Field(default=0.0, ge=0.0)
     timestamp: int = Field(description="Unix timestamp in milliseconds")
 
 
 class FilteredPoint(BaseModel):
-    lat: float
-    lng: float
+    lat: float = Field(..., ge=-90.0, le=90.0)
+    lng: float = Field(..., ge=-180.0, le=180.0)
     alt: float = 0.0
-    speed: float = 0.0
-    bearing: float = 0.0
+    speed: float = Field(default=0.0, ge=0.0)
+    bearing: float = Field(default=0.0, ge=0.0, le=360.0)
     timestamp: int
     is_interpolated: bool = False
 
@@ -123,6 +123,19 @@ class GeoJSONLineString(BaseModel):
     type: str = "LineString"
     coordinates: list[list[float]]
 
+    @field_validator("coordinates")
+    @classmethod
+    def validate_coordinates(cls, v: list[list[float]]) -> list[list[float]]:
+        for coord in v:
+            if len(coord) < 2:
+                raise ValueError("Each coordinate must have at least [lng, lat]")
+            lng, lat = coord[0], coord[1]
+            if not (-180.0 <= lng <= 180.0):
+                raise ValueError(f"Longitude {lng} out of range [-180, 180]")
+            if not (-90.0 <= lat <= 90.0):
+                raise ValueError(f"Latitude {lat} out of range [-90, 90]")
+        return v
+
 
 class RunSplitDetail(BaseModel):
     split_number: int | None = None
@@ -154,19 +167,19 @@ class CheckpointPass(BaseModel):
 
 
 class RunCompleteRequest(BaseModel):
-    distance_meters: int = Field(..., ge=0)
-    duration_seconds: int = Field(..., ge=0)
-    total_elapsed_seconds: int | None = None
-    avg_pace_seconds_per_km: int | None = None
-    best_pace_seconds_per_km: int | None = None
-    avg_speed_ms: float | None = None
-    max_speed_ms: float | None = None
-    calories: int | None = None
+    distance_meters: int = Field(..., ge=0, le=500_000)
+    duration_seconds: int = Field(..., ge=0, le=86_400)
+    total_elapsed_seconds: int | None = Field(default=None, ge=0, le=86_400)
+    avg_pace_seconds_per_km: int | None = Field(default=None, ge=0)
+    best_pace_seconds_per_km: int | None = Field(default=None, ge=0)
+    avg_speed_ms: float | None = Field(default=None, ge=0)
+    max_speed_ms: float | None = Field(default=None, ge=0)
+    calories: int | None = Field(default=None, ge=0)
     finished_at: datetime
 
     route_geometry: GeoJSONLineString | None = None
-    elevation_gain_meters: int = 0
-    elevation_loss_meters: int = 0
+    elevation_gain_meters: int = Field(default=0, ge=0)
+    elevation_loss_meters: int = Field(default=0, ge=0)
     elevation_profile: list[float] = []
 
     splits: list[RunSplitDetail] = []
@@ -191,6 +204,7 @@ class UserStatsUpdate(BaseModel):
     total_distance_meters: int
     total_runs: int
     streak_days: int = 0
+    runner_level: int = 1
 
 
 class RunCompleteResponse(BaseModel):
@@ -202,6 +216,9 @@ class RunCompleteResponse(BaseModel):
     max_deviation_meters: float | None = None
     user_stats_update: UserStatsUpdate
     missing_chunk_sequences: list[int] = []
+    points_earned: int = 0
+    course_streak: int | None = None
+    map_matching_confidence: float | None = None
 
 
 # --- Run Recover ---

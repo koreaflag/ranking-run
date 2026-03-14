@@ -54,13 +54,23 @@ class OutlierDetector {
         // Layer 2: Speed check against previous accepted point
         val lastAccepted = recentPoints.lastOrNull()
         if (lastAccepted != null) {
-            val speed = GeoMath.speed(
-                lastAccepted.latitude, lastAccepted.longitude, lastAccepted.timestamp,
-                point.latitude, point.longitude, point.timestamp
+            val dist = GeoMath.haversineDistance(
+                lastAccepted.latitude, lastAccepted.longitude,
+                point.latitude, point.longitude
             )
+            val dtSec = (point.timestamp - lastAccepted.timestamp) / 1000.0
+            val speed = if (dtSec > 0) dist / dtSec else 0.0
             if (speed > MAX_SPEED_MS) {
                 return OutlierResult.Rejected(
                     "Speed too high: %.1f m/s > %.1f m/s".format(speed, MAX_SPEED_MS)
+                )
+            }
+            // Background GPS guard: when update interval is large (>5s),
+            // GPS may report stale/cell-tower positions. Cap distance to prevent
+            // straight-line jumps across the map.
+            if (dtSec > 5.0 && dist > 30.0) {
+                return OutlierResult.Rejected(
+                    "Background jump: %.0fm in %.1fs".format(dist, dtSec)
                 )
             }
         }

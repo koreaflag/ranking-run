@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Linking,
   Platform,
   StatusBar,
+  Animated,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -40,8 +41,12 @@ import {
   formatNumber,
   metersToKm,
 } from '../../utils/format';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
+import RunnerLevelBadge from '../../components/runner/RunnerLevelBadge';
+import MyPageSkeleton from '../../components/skeleton/MyPageSkeleton';
+import { getRunnerTier, getRunnerXpProgress } from '../../utils/runnerLevelConfig';
 
 // Period option values (labels resolved via t() inside component)
 const PERIOD_VALUES: StatsPeriod[] = ['week', 'month', 'year', 'all'];
@@ -92,22 +97,91 @@ export default function MyPageScreen() {
   const [selectedPeriod, setSelectedPeriod] = useState<StatsPeriod>('month');
   const [refreshing, setRefreshing] = useState(false);
   const [socialCounts, setSocialCounts] = useState<{ following: number; followers: number; likes: number }>(_cachedSocial);
+  const [showAllCharts, setShowAllCharts] = useState(false);
+  const [checkedInToday, setCheckedInToday] = useState(true); // default hidden until we check
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(_cachedStats === null && _cachedRuns.length === 0);
+
+  // Runner level info
+  const runnerLv = user?.runner_level ?? 1;
+  const runnerTier = getRunnerTier(runnerLv);
+  const runnerXp = getRunnerXpProgress(runnerLv, stats?.total_distance_meters ?? 0);
+
+  // Animated XP bar
+  const xpAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(xpAnim, {
+      toValue: runnerXp.ratio,
+      duration: 800,
+      useNativeDriver: false,
+    }).start();
+  }, [runnerXp.ratio]);
+
+  // Check if already checked in today (calendar day)
+  useEffect(() => {
+    (async () => {
+      try {
+        const lastDate = await AsyncStorage.getItem('lastCheckinDate');
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        setCheckedInToday(lastDate === today);
+      } catch {
+        setCheckedInToday(false);
+      }
+    })();
+  }, []);
+
+  const handleDailyCheckin = useCallback(async () => {
+    if (checkedInToday || isCheckingIn) return;
+    setIsCheckingIn(true);
+    try {
+      const res = await userService.dailyCheckin();
+      const today = new Date().toISOString().slice(0, 10);
+      await AsyncStorage.setItem('lastCheckinDate', today);
+      setCheckedInToday(true);
+      if (!res.already && res.points_earned > 0) {
+        const currentUser = useAuthStore.getState().user;
+        if (currentUser) {
+          useAuthStore.getState().setUser({ ...currentUser, total_points: res.total_points });
+        }
+        Alert.alert(t('mypage.checkinSuccess'), t('mypage.checkinPoints', { points: res.points_earned }));
+      }
+    } catch {
+      // silent fail
+    } finally {
+      setIsCheckingIn(false);
+    }
+  }, [checkedInToday, isCheckingIn, t]);
 
   const loadData = useCallback(async () => {
     try {
-      const [statsData, runsData, socialData, analyticsData] = await Promise.all([
+      // Primary data: stats + social counts + profile (above the fold)
+      const [statsData, socialData, profileData] = await Promise.all([
         userService.getStats(selectedPeriod).catch(() => null),
-        userService.getRunHistory(0, 200).catch(() => ({ data: [], total_count: 0, has_next: false })),
         userService.getSocialCounts().catch(() => ({ followers_count: 0, following_count: 0, total_likes_received: 0 })),
-        userService.getAnalytics().catch(() => null),
+        authService.getProfile().catch(() => null),
       ]);
       setStats(statsData); _cachedStats = statsData;
-      setAllRuns(runsData.data); _cachedRuns = runsData.data;
       const social = { following: socialData.following_count, followers: socialData.followers_count, likes: socialData.total_likes_received };
       setSocialCounts(social); _cachedSocial = social;
-      setAnalytics(analyticsData); _cachedAnalytics = analyticsData;
+      if (profileData) {
+        useAuthStore.getState().setUser(profileData);
+      }
     } catch {
       // Partial failures are acceptable
+    } finally {
+      setIsInitialLoading(false);
+    }
+
+    // Secondary data: runs + analytics (below the fold, deferred)
+    try {
+      const [runsData, analyticsData] = await Promise.all([
+        userService.getRunHistory(0, 200).catch(() => ({ data: [], total_count: 0, has_next: false })),
+        userService.getAnalytics().catch(() => null),
+      ]);
+      setAllRuns(runsData.data); _cachedRuns = runsData.data;
+      setAnalytics(analyticsData); _cachedAnalytics = analyticsData;
+    } catch {
+      // Secondary data failures are non-blocking
     }
   }, [selectedPeriod]);
 
@@ -187,18 +261,27 @@ export default function MyPageScreen() {
   return (
     <BlurredBackground>
       <SafeAreaView style={styles.container}>
-      {/* Top Header */}
+      {/* Top Header — Instagram style */}
       <View style={styles.headerRow}>
-        <View style={styles.headerSpacer} />
+        <Text style={styles.headerUsername} numberOfLines={1}>{user?.nickname ?? 'RUNVS'}</Text>
         <TouchableOpacity
-          onPress={() => navigation.navigate('ProfileEdit')}
+          onPress={() => navigation.navigate('Settings')}
           activeOpacity={0.7}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={styles.headerEditText}>{t('mypage.editProfile')}</Text>
+          <Ionicons name="menu-outline" size={26} color={colors.text} />
         </TouchableOpacity>
       </View>
 
+      {isInitialLoading ? (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <MyPageSkeleton />
+        </ScrollView>
+      ) : (
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
@@ -215,67 +298,131 @@ export default function MyPageScreen() {
         {/* 1. Profile — Identity anchor (Gestalt: proximity)                */}
         {/*    Avatar + name grouped tightly, social counts below.           */}
         {/* ================================================================ */}
-        <View style={styles.profileSection}>
+        {/* Player Card */}
+        <View style={styles.playerCard}>
+          <View style={styles.playerCardTop}>
+            <View style={styles.avatarWrapper}>
+              {user?.avatar_url ? (
+                <Image source={{ uri: user.avatar_url }} style={styles.avatarImage} />
+              ) : (
+                <View style={styles.avatarCircle}>
+                  <Ionicons name="person" size={24} color={colors.textTertiary} />
+                </View>
+              )}
+            </View>
+            <View style={styles.playerCardStatsRow}>
+              <TouchableOpacity
+                style={styles.profileStatItem}
+                onPress={() => user?.id && navigation.navigate('FollowList', { userId: user.id, type: 'followers' })}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.profileStatValue}>{socialCounts.followers}</Text>
+                <Text style={styles.profileStatLabel}>{t('mypage.followers')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.profileStatItem}
+                onPress={() => user?.id && navigation.navigate('FollowList', { userId: user.id, type: 'following' })}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.profileStatValue}>{socialCounts.following}</Text>
+                <Text style={styles.profileStatLabel}>{t('mypage.following')}</Text>
+              </TouchableOpacity>
+              <View style={styles.profileStatItem}>
+                <Text style={styles.profileStatValue}>{socialCounts.likes}</Text>
+                <Text style={styles.profileStatLabel}>{t('mypage.likes')}</Text>
+              </View>
+            </View>
+          </View>
+          {/* Identity + Meta */}
+          <View style={styles.playerCardMeta}>
+            <View style={styles.nameRow}>
+              <Text style={styles.playerCardName} numberOfLines={1}>{user?.nickname ?? t('mypage.defaultNickname')}</Text>
+              <RunnerLevelBadge level={user?.runner_level} size="sm" />
+            </View>
+            {user?.crew_name ? (
+              <View style={styles.crewTag}>
+                <Ionicons name="people" size={11} color={colors.primary} />
+                <Text style={styles.crewTagText}>{user.crew_name}</Text>
+              </View>
+            ) : null}
+            {user?.bio ? (
+              <Text style={styles.playerCardBio} numberOfLines={2}>{user.bio}</Text>
+            ) : null}
+            {user?.instagram_username ? (
+              <TouchableOpacity
+                style={styles.instagramRow}
+                onPress={() => Linking.openURL(`https://instagram.com/${user.instagram_username}`)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="logo-instagram" size={13} color={colors.textTertiary} />
+                <Text style={styles.instagramText}>@{user.instagram_username}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          {/* Edit Profile button — Instagram style */}
           <TouchableOpacity
-            style={styles.avatarWrapper}
-            onPress={handleChangeAvatar}
+            style={styles.editProfileButton}
+            onPress={() => navigation.navigate('ProfileEdit')}
             activeOpacity={0.7}
           >
-            {user?.avatar_url ? (
-              <Image source={{ uri: user.avatar_url }} style={styles.avatarImage} />
-            ) : (
-              <View style={styles.avatarCircle}>
-                <Ionicons name="person" size={36} color={colors.textTertiary} />
-              </View>
-            )}
-            <View style={[styles.avatarCameraBadge, { backgroundColor: colors.primary }]}>
-              <Ionicons name="camera" size={12} color="#FFFFFF" />
-            </View>
+            <Text style={styles.editProfileButtonText}>{t('mypage.editProfile')}</Text>
           </TouchableOpacity>
-          <Text style={styles.nickname}>{user?.nickname ?? t('mypage.defaultNickname')}</Text>
-          {user?.crew_name ? (
-            <View style={styles.crewTag}>
-              <Ionicons name="people" size={12} color={colors.primary} />
-              <Text style={styles.crewTagText}>{user.crew_name}</Text>
+        </View>
+
+        {/* Runner Level Banner — separate section */}
+        <View style={[styles.runnerBanner, { backgroundColor: runnerTier.bgColor, borderColor: runnerTier.color + '30' }]}>
+          <View style={styles.runnerBannerText}>
+            <View style={styles.runnerBannerTitleRow}>
+              <Text style={[styles.runnerBannerTitle, { color: runnerTier.textColor }]}>{t(runnerTier.nameKey)}</Text>
+              <Text style={[styles.runnerBannerLv, { color: runnerTier.color }]}>Lv.{runnerLv}</Text>
             </View>
-          ) : null}
-          <Text style={styles.userCodeText}>#{user?.user_code || '-----'}</Text>
-          {user?.bio && <Text style={styles.bioText}>{user.bio}</Text>}
-          {user?.instagram_username && (
-            <TouchableOpacity
-              style={styles.instagramRow}
-              onPress={() => Linking.openURL(`https://instagram.com/${user.instagram_username}`)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="logo-instagram" size={14} color={colors.textSecondary} />
-              <Text style={styles.instagramText}>@{user.instagram_username}</Text>
-            </TouchableOpacity>
-          )}
-          <View style={styles.profileStatsRow}>
-            <TouchableOpacity
-              style={styles.profileStatItem}
-              onPress={() => user?.id && navigation.navigate('FollowList', { userId: user.id, type: 'following' })}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.profileStatValue}>{socialCounts.following}</Text>
-              <Text style={styles.profileStatLabel}>{t('mypage.following')}</Text>
-            </TouchableOpacity>
-            <View style={styles.profileStatDivider} />
-            <TouchableOpacity
-              style={styles.profileStatItem}
-              onPress={() => user?.id && navigation.navigate('FollowList', { userId: user.id, type: 'followers' })}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.profileStatValue}>{socialCounts.followers}</Text>
-              <Text style={styles.profileStatLabel}>{t('mypage.followers')}</Text>
-            </TouchableOpacity>
-            <View style={styles.profileStatDivider} />
-            <View style={styles.profileStatItem}>
-              <Text style={styles.profileStatValue}>{socialCounts.likes}</Text>
-              <Text style={styles.profileStatLabel}>{t('mypage.likes')}</Text>
+            <View style={styles.xpBarRow}>
+              <View style={[styles.xpBarTrack, { backgroundColor: runnerTier.color + '30' }]}>
+                <Animated.View style={[styles.xpBarFill, {
+                  width: xpAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+                  backgroundColor: runnerTier.color,
+                }]} />
+              </View>
+              <Text style={[styles.xpBarLabel, { color: runnerTier.textColor }]}>
+                {runnerXp.isMax ? 'MAX' : `${metersToKm(runnerXp.current, 1)} / ${metersToKm(runnerXp.next, 0)}km`}
+              </Text>
             </View>
           </View>
         </View>
+
+        {/* Daily Check-in Banner */}
+        {!checkedInToday && (
+          <TouchableOpacity
+            style={[styles.checkinBanner, { borderColor: colors.primary + '30' }]}
+            onPress={handleDailyCheckin}
+            activeOpacity={0.7}
+            disabled={isCheckingIn}
+          >
+            <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+            <Text style={styles.checkinText}>{t('mypage.dailyCheckin')}</Text>
+            <View style={styles.checkinBadge}>
+              <Text style={styles.checkinBadgeText}>+5P</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {!stats && (
+          <View style={styles.emptyStateCard}>
+            <View style={styles.emptyStateIconCircle}>
+              <Ionicons name="footsteps-outline" size={32} color={colors.primary} />
+            </View>
+            <Text style={styles.emptyStateTitle}>{t('mypage.emptyStateTitle')}</Text>
+            <Text style={styles.emptyStateDesc}>{t('mypage.emptyStateDesc')}</Text>
+            <TouchableOpacity
+              style={styles.emptyStateCta}
+              onPress={() => navigation.getParent()?.navigate('WorldTab', { screen: 'RunningMain' })}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="play" size={16} color="#FFFFFF" />
+              <Text style={styles.emptyStateCtaText}>{t('mypage.startRunning')}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {stats && (
           <>
@@ -303,26 +450,37 @@ export default function MyPageScreen() {
             </View>
 
             <View style={styles.heroCard}>
-              {/* Left: hero distance (biggest visual weight = most important) */}
-              {/* Right: secondary counters (횟수 + 시간)                     */}
+              {/* Hero distance centered — biggest visual weight */}
               <View style={styles.heroTop}>
-                <View>
+                <View style={styles.heroDistanceRow}>
                   <Text style={styles.heroDistance}>
                     {metersToKm(stats.total_distance_meters, 1)}
                   </Text>
                   <Text style={styles.heroUnit}>km</Text>
                 </View>
-                <View style={styles.heroSide}>
-                  <View style={styles.heroSideItem}>
-                    <Text style={styles.heroSideValue}>{stats.total_runs ?? 0}</Text>
-                    <Text style={styles.heroSideLabel}>{t('mypage.times')}</Text>
-                  </View>
-                  <View style={styles.heroSideDivider} />
-                  <View style={styles.heroSideItem}>
-                    <Text style={styles.heroSideValue}>{formatDuration(stats.total_duration_seconds)}</Text>
-                    <Text style={styles.heroSideLabel}>{t('running.metrics.time')}</Text>
-                  </View>
+              </View>
+
+              {/* Secondary stats — horizontal row */}
+              <View style={styles.heroSecondary}>
+                <View style={styles.heroSecondaryItem}>
+                  <Text style={styles.heroSecondaryValue}>{stats.total_runs ?? 0}</Text>
+                  <Text style={styles.heroSecondaryLabel}>{t('mypage.times')}</Text>
                 </View>
+                <View style={styles.heroSecondaryDivider} />
+                <View style={styles.heroSecondaryItem}>
+                  <Text style={styles.heroSecondaryValue}>{formatDuration(stats.total_duration_seconds)}</Text>
+                  <Text style={styles.heroSecondaryLabel}>{t('running.metrics.time')}</Text>
+                </View>
+                <View style={styles.heroSecondaryDivider} />
+                <TouchableOpacity style={styles.heroSecondaryItem} onPress={() => navigation.navigate('PointHistory')} activeOpacity={0.7}>
+                  <Text style={[styles.heroSecondaryValue, { color: colors.primary }]}>
+                    {(user?.total_points ?? 0).toLocaleString()}
+                  </Text>
+                  <View style={styles.heroPointLabel}>
+                    <Text style={[styles.heroSecondaryLabel, { color: colors.primary }]}>P</Text>
+                    <Ionicons name="chevron-forward" size={10} color={colors.primary} />
+                  </View>
+                </TouchableOpacity>
               </View>
 
               {/* 2x2 stat cells (Miller: 4 items, easy chunking)           */}
@@ -382,10 +540,11 @@ export default function MyPageScreen() {
                   <Text style={styles.cardSubtitle}>km</Text>
                 </View>
                 <View style={styles.monthlyChart}>
-                  {stats.monthly_distance.map((md) => {
+                  {(() => {
                     const maxDist = Math.max(
                       ...stats.monthly_distance.map((m) => m.distance_meters),
                     );
+                    return stats.monthly_distance.map((md) => {
                     const heightPercent =
                       maxDist > 0 ? (md.distance_meters / maxDist) * 100 : 0;
 
@@ -407,40 +566,55 @@ export default function MyPageScreen() {
                         </Text>
                       </View>
                     );
-                  })}
+                  });
+                  })()}
                 </View>
               </View>
             )}
 
-            {/* ============================================================ */}
-            {/* 3b. Pace Trend — Line chart showing pace evolution            */}
-            {/*     Downward line = getting faster → motivation               */}
-            {/* ============================================================ */}
-            {analytics && analytics.pace_trend.length >= 2 && (
-              <View style={styles.card}>
-                <View style={styles.cardTitleRow}>
-                  <View style={styles.cardTitleWithIcon}>
-                    <Ionicons name="analytics" size={14} color={colors.primary} />
-                    <Text style={styles.cardTitle}>{t('mypage.paceTrend')}</Text>
-                  </View>
-                  <Text style={styles.cardSubtitle}>min/km</Text>
-                </View>
-                <PaceTrendChart data={analytics.pace_trend} />
-              </View>
-            )}
-
-            {/* ============================================================ */}
-            {/* 3c. Activity Heatmap — GitHub-style calendar                  */}
-            {/*     Visual consistency tracker → habit formation              */}
-            {/* ============================================================ */}
-            {analytics && analytics.activity_calendar.length > 0 && (
-              <View style={styles.card}>
-                <View style={[styles.cardTitleWithIcon, { marginBottom: SPACING.sm }]}>
-                  <Ionicons name="grid" size={14} color={colors.primary} />
-                  <Text style={styles.cardTitle}>{t('mypage.activityCalendar')}</Text>
-                </View>
-                <ActivityHeatmap data={analytics.activity_calendar} />
-              </View>
+            {/* Charts toggle — show pace trend & heatmap on demand */}
+            {analytics && (analytics.pace_trend.length >= 2 || analytics.activity_calendar.length > 0) && (
+              <>
+                {showAllCharts && (
+                  <>
+                    {analytics.pace_trend.length >= 2 && (
+                      <View style={styles.card}>
+                        <View style={styles.cardTitleRow}>
+                          <View style={styles.cardTitleWithIcon}>
+                            <Ionicons name="analytics" size={14} color={colors.primary} />
+                            <Text style={styles.cardTitle}>{t('mypage.paceTrend')}</Text>
+                          </View>
+                          <Text style={styles.cardSubtitle}>min/km</Text>
+                        </View>
+                        <PaceTrendChart data={analytics.pace_trend} />
+                      </View>
+                    )}
+                    {analytics.activity_calendar.length > 0 && (
+                      <View style={styles.card}>
+                        <View style={[styles.cardTitleWithIcon, { marginBottom: SPACING.sm }]}>
+                          <Ionicons name="grid" size={14} color={colors.primary} />
+                          <Text style={styles.cardTitle}>{t('mypage.activityCalendar')}</Text>
+                        </View>
+                        <ActivityHeatmap data={analytics.activity_calendar} />
+                      </View>
+                    )}
+                  </>
+                )}
+                <TouchableOpacity
+                  style={styles.chartToggle}
+                  onPress={() => setShowAllCharts(!showAllCharts)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.chartToggleText}>
+                    {showAllCharts ? t('mypage.showLessCharts') : t('mypage.showMoreCharts')}
+                  </Text>
+                  <Ionicons
+                    name={showAllCharts ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color={colors.primary}
+                  />
+                </TouchableOpacity>
+              </>
             )}
 
             {/* ============================================================ */}
@@ -518,8 +692,8 @@ export default function MyPageScreen() {
                 <Text style={styles.cardTitle}>{t('mypage.personalRecords')}</Text>
               </View>
               <View style={styles.recordsRow}>
-                <View style={[styles.recordTile, { backgroundColor: colors.primary + '0D' }]}>
-                  <View style={[styles.recordIconBadge, { backgroundColor: colors.primary + '1A' }]}>
+                <View style={[styles.recordTile, { backgroundColor: colors.primary + '15' }]}>
+                  <View style={[styles.recordIconBadge, { backgroundColor: colors.primary + '22' }]}>
                     <Ionicons name="trophy" size={18} color={colors.primary} />
                   </View>
                   <Text style={styles.recordTileValue}>
@@ -527,8 +701,8 @@ export default function MyPageScreen() {
                   </Text>
                   <Text style={styles.recordTileLabel}>{t('mypage.longestDistance')}</Text>
                 </View>
-                <View style={[styles.recordTile, { backgroundColor: colors.accent + '18' }]}>
-                  <View style={[styles.recordIconBadge, { backgroundColor: colors.accent + '20' }]}>
+                <View style={[styles.recordTile, { backgroundColor: colors.accent + '20' }]}>
+                  <View style={[styles.recordIconBadge, { backgroundColor: colors.accent + '28' }]}>
                     <Ionicons name="flash" size={18} color={colors.accent} />
                   </View>
                   <Text style={styles.recordTileValue}>
@@ -538,15 +712,15 @@ export default function MyPageScreen() {
                 </View>
               </View>
               <View style={styles.recordsRow}>
-                <View style={[styles.recordTile, { backgroundColor: colors.success + '10' }]}>
-                  <View style={[styles.recordIconBadge, { backgroundColor: colors.success + '1A' }]}>
+                <View style={[styles.recordTile, { backgroundColor: colors.success + '18' }]}>
+                  <View style={[styles.recordIconBadge, { backgroundColor: colors.success + '22' }]}>
                     <Ionicons name="flame" size={18} color={colors.success} />
                   </View>
                   <Text style={styles.recordTileValue}>{stats.best_streak_days}{t('mypage.daysUnit')}</Text>
                   <Text style={styles.recordTileLabel}>{t('mypage.longestStreak')}</Text>
                 </View>
-                <View style={[styles.recordTile, { backgroundColor: colors.secondary + '12' }]}>
-                  <View style={[styles.recordIconBadge, { backgroundColor: colors.secondary + '18' }]}>
+                <View style={[styles.recordTile, { backgroundColor: colors.secondary + '1A' }]}>
+                  <View style={[styles.recordIconBadge, { backgroundColor: colors.secondary + '22' }]}>
                     <Ionicons name="calendar" size={16} color={colors.secondary} />
                   </View>
                   <Text style={styles.recordTileValue}>{stats.current_streak_days}{t('mypage.daysUnit')}</Text>
@@ -570,11 +744,11 @@ export default function MyPageScreen() {
                     <View
                       key={effort.distance_label}
                       style={[styles.effortItem, {
-                        backgroundColor: effort.best_time_seconds ? colors.primary + '0A' : colors.surfaceLight,
+                        backgroundColor: effort.best_time_seconds ? colors.primary + '15' : colors.surfaceLight,
                       }]}
                     >
                       <View style={[styles.effortIconBadge, {
-                        backgroundColor: effort.best_time_seconds ? colors.primary + '18' : colors.surfaceLight,
+                        backgroundColor: effort.best_time_seconds ? colors.primary + '22' : colors.surfaceLight,
                       }]}>
                         <Ionicons
                           name={effort.best_time_seconds ? 'medal' : 'lock-closed-outline'}
@@ -621,29 +795,56 @@ export default function MyPageScreen() {
                 <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
               </View>
               <View style={styles.courseStatsRow}>
-                <View style={styles.courseStatItem}>
-                  <Text style={styles.courseStatValue}>{stats.courses_created}</Text>
-                  <Text style={styles.courseStatLabel}>{t('mypage.created')}</Text>
+                <View style={[styles.courseTile, { backgroundColor: colors.primary + '15' }]}>
+                  <View style={[styles.courseTileIcon, { backgroundColor: colors.primary + '22' }]}>
+                    <Ionicons name="add-circle" size={16} color={colors.primary} />
+                  </View>
+                  <Text style={styles.courseTileValue}>{stats.courses_created}</Text>
+                  <Text style={styles.courseTileLabel}>{t('mypage.created')}</Text>
                 </View>
-                <View style={styles.courseStatItem}>
-                  <Text style={styles.courseStatValue}>{stats.courses_completed}</Text>
-                  <Text style={styles.courseStatLabel}>{t('mypage.completed')}</Text>
+                <View style={[styles.courseTile, { backgroundColor: colors.success + '15' }]}>
+                  <View style={[styles.courseTileIcon, { backgroundColor: colors.success + '22' }]}>
+                    <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                  </View>
+                  <Text style={styles.courseTileValue}>{stats.courses_completed}</Text>
+                  <Text style={styles.courseTileLabel}>{t('mypage.completed')}</Text>
                 </View>
-                <View style={styles.courseStatItemHighlight}>
-                  <Text style={styles.courseStatValueAccent}>{stats.ranking_top10_count}</Text>
-                  <Text style={styles.courseStatLabelAccent}>TOP 10</Text>
+                <View style={[styles.courseTile, { backgroundColor: colors.accent + '18' }]}>
+                  <View style={[styles.courseTileIcon, { backgroundColor: colors.accent + '28' }]}>
+                    <Ionicons name="trophy" size={16} color={colors.accent} />
+                  </View>
+                  <Text style={[styles.courseTileValue, { color: colors.accent }]}>{stats.ranking_top10_count}</Text>
+                  <Text style={[styles.courseTileLabel, { color: colors.accent }]}>TOP 10</Text>
                 </View>
               </View>
             </TouchableOpacity>
           </>
         )}
 
-        {/* ================================================================ */}
-        {/* 7. Tools — Utility zone (low frequency, bottom placement)        */}
-        {/*    Fitts: large tap targets. Icon → Title → Desc → Chevron.      */}
-        {/*    Grouped by function proximity.                                 */}
-        {/* ================================================================ */}
-        <View style={styles.section}>
+        {/* Section divider — separates analytics from tools */}
+        {stats && <View style={styles.sectionDivider} />}
+
+        {/* Menu Group 1: Activity tools */}
+        <View style={styles.menuGroup}>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => navigation.navigate('RunHistory')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.menuButtonLeft}>
+              <View style={styles.menuIconCircle}>
+                <Ionicons name="time-outline" size={20} color={colors.primary} />
+              </View>
+              <View>
+                <Text style={styles.menuButtonTitle}>{t('mypage.runHistory')}</Text>
+                <Text style={styles.menuButtonDesc}>{t('mypage.menuRunHistoryDesc')}</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+          </TouchableOpacity>
+
+          <View style={styles.menuDivider} />
+
           <TouchableOpacity
             style={styles.menuButton}
             onPress={() => navigation.navigate('Friends')}
@@ -660,6 +861,8 @@ export default function MyPageScreen() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
           </TouchableOpacity>
+
+          <View style={styles.menuDivider} />
 
           <TouchableOpacity
             style={styles.menuButton}
@@ -679,7 +882,46 @@ export default function MyPageScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.section}>
+        {/* Menu Group 2: Import & Settings */}
+        <View style={styles.menuGroup}>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => navigation.navigate('ImportActivity')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.menuButtonLeft}>
+              <View style={styles.menuIconCircle}>
+                <Ionicons name="download-outline" size={20} color={colors.primary} />
+              </View>
+              <View>
+                <Text style={styles.menuButtonTitle}>{t('mypage.menuImport')}</Text>
+                <Text style={styles.menuButtonDesc}>{t('mypage.menuImportDesc')}</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+          </TouchableOpacity>
+
+          <View style={styles.menuDivider} />
+
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => navigation.navigate('StravaConnect')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.menuButtonLeft}>
+              <View style={styles.menuIconCircle}>
+                <Ionicons name="sync-outline" size={20} color={colors.primary} />
+              </View>
+              <View>
+                <Text style={styles.menuButtonTitle}>{t('mypage.menuStrava')}</Text>
+                <Text style={styles.menuButtonDesc}>{t('mypage.menuStravaDesc')}</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+          </TouchableOpacity>
+
+          <View style={styles.menuDivider} />
+
           <TouchableOpacity
             style={styles.menuButton}
             onPress={() => navigation.navigate('Settings')}
@@ -698,6 +940,7 @@ export default function MyPageScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      )}
       </SafeAreaView>
     </BlurredBackground>
   );
@@ -718,84 +961,225 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     gap: SPACING.lg,
   },
 
-  // -- Header --
+  // -- Header (Instagram style) --
   headerRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: SPACING.xxl,
+    paddingHorizontal: 16,
     paddingVertical: SPACING.sm,
   },
-  headerSpacer: { flex: 1 },
-  headerEditText: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
-    color: c.primary,
+  headerUsername: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: c.text,
   },
 
-  // -- Profile --
-  profileSection: {
-    alignItems: 'center',
-    paddingTop: SPACING.sm,
-    paddingBottom: SPACING.md,
-    gap: SPACING.md,
+  // -- Profile Section (flat — no card) --
+  playerCard: {
+    // Flat layout, no card container
   },
-  avatarWrapper: { width: 88, height: 88, borderRadius: 44 },
+  playerCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 12,
+    gap: 28,
+  },
+  playerCardStatsRow: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  nameRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  playerCardName: {
+    fontSize: 17, fontWeight: '700',
+    color: c.text, letterSpacing: -0.3,
+  },
+  runnerBanner: {
+    marginHorizontal: 16,
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  runnerBannerText: {
+    flex: 1, gap: 4,
+  },
+  runnerBannerTitleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  runnerBannerTitle: {
+    fontSize: 14, fontWeight: '800',
+  },
+  runnerBannerLv: {
+    fontSize: 12, fontWeight: '900',
+  },
+  xpBarRow: {
+    gap: 4, marginTop: 2,
+  },
+  xpBarTrack: {
+    height: 6, borderRadius: 3, overflow: 'hidden',
+  },
+  xpBarFill: {
+    height: '100%', borderRadius: 3,
+  },
+  xpBarLabel: {
+    fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const,
+  },
+  playerCardMeta: {
+    paddingHorizontal: 16,
+    paddingBottom: 0,
+    gap: 4,
+  },
+  editProfileButton: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 4,
+    height: 34,
+    backgroundColor: c.surfaceLight,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editProfileButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: c.text,
+  },
+  playerCardBio: {
+    fontSize: 14, color: c.text,
+    lineHeight: 20,
+  },
+  playerCardDivider: {
+    height: StyleSheet.hairlineWidth, backgroundColor: c.divider,
+    marginHorizontal: SPACING.md,
+  },
+  playerCardStats: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.sm,
+  },
+  avatarWrapper: { width: 86, height: 86, borderRadius: 43 },
   avatarCircle: {
-    width: 88, height: 88, borderRadius: 44,
-    borderWidth: 2, borderColor: c.border,
+    width: 86, height: 86, borderRadius: 43,
+    borderWidth: 1, borderColor: c.border,
     backgroundColor: c.surfaceLight,
     justifyContent: 'center', alignItems: 'center',
   },
   avatarImage: {
-    width: 88, height: 88, borderRadius: 44,
-    borderWidth: 2, borderColor: c.border,
+    width: 86, height: 86, borderRadius: 43,
   },
   avatarCameraBadge: {
-    position: 'absolute', bottom: 0, right: 0,
-    width: 24, height: 24, borderRadius: 12,
+    position: 'absolute', bottom: -1, right: -1,
+    width: 20, height: 20, borderRadius: 10,
     justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, borderColor: '#FFFFFF',
+    borderWidth: 2, borderColor: c.card,
   },
-  nickname: {
-    fontSize: FONT_SIZES.title, fontWeight: '800',
-    color: c.text, letterSpacing: -0.3,
-  },
-  bioText: {
-    fontSize: FONT_SIZES.sm, color: c.textSecondary,
-    textAlign: 'center', lineHeight: 20, maxWidth: 280,
-  },
-  instagramRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
-  instagramText: { fontSize: FONT_SIZES.sm, color: c.textSecondary, fontWeight: '500' },
-  profileStatsRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: SPACING.xl, paddingVertical: SPACING.sm,
-  },
-  profileStatItem: { alignItems: 'center', gap: 2 },
+  instagramRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 4, marginTop: 2 },
+  instagramText: { fontSize: 14, color: c.primary, fontWeight: '600' },
+  profileStatItem: { alignItems: 'center', gap: 2, flex: 1 },
   profileStatValue: {
-    fontSize: FONT_SIZES.xl, fontWeight: '800', color: c.text,
+    fontSize: 17, fontWeight: '700', color: c.text,
     fontVariant: ['tabular-nums'],
   },
-  profileStatLabel: { fontSize: FONT_SIZES.xs, fontWeight: '600', color: c.textTertiary },
-  profileStatDivider: { width: 1, height: 24, backgroundColor: c.divider },
-  userCodeText: {
-    fontSize: FONT_SIZES.sm, fontWeight: '700', color: c.textTertiary,
-    fontVariant: ['tabular-nums'], marginTop: -4,
-  },
+  profileStatLabel: { fontSize: 13, fontWeight: '400', color: c.textSecondary },
+  profileStatDivider: { width: 1, height: 20, backgroundColor: c.divider },
   crewTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    alignSelf: 'flex-start',
+    gap: 3,
     backgroundColor: c.primary + '15',
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
     borderRadius: BORDER_RADIUS.xs,
-    marginTop: -2,
   },
   crewTagText: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
     color: c.primary,
+  },
+
+  // -- Daily Check-in --
+  checkinBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: SPACING.xxl,
+    marginBottom: SPACING.lg,
+    backgroundColor: c.primary + '0A',
+    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
+    borderWidth: 1,
+  },
+  checkinText: {
+    flex: 1,
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    color: c.text,
+  },
+  checkinBadge: {
+    backgroundColor: c.primary,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 3,
+    borderRadius: BORDER_RADIUS.xs,
+  },
+  checkinBadgeText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  // -- Empty State --
+  emptyStateCard: {
+    marginHorizontal: SPACING.xxl,
+    backgroundColor: c.card,
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.xxxl,
+    alignItems: 'center',
+    gap: SPACING.md,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  emptyStateIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: c.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+  },
+  emptyStateTitle: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '800',
+    color: c.text,
+  },
+  emptyStateDesc: {
+    fontSize: FONT_SIZES.sm,
+    color: c.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  emptyStateCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    backgroundColor: c.primary,
+    paddingVertical: SPACING.sm + 2,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: BORDER_RADIUS.lg,
+    marginTop: SPACING.sm,
+  },
+  emptyStateCtaText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: c.white,
   },
 
   // -- Period Bar --
@@ -819,31 +1203,41 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     gap: SPACING.lg, borderWidth: 1, borderColor: c.border,
   },
   heroTop: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end',
+    alignItems: 'center',
   },
   heroDistance: {
     fontSize: 48, fontWeight: '900', color: c.text,
     fontVariant: ['tabular-nums'], letterSpacing: -2, lineHeight: 52,
   },
-  heroUnit: { fontSize: FONT_SIZES.sm, fontWeight: '600', color: c.textTertiary, marginTop: 2 },
-  heroSide: { alignItems: 'flex-end', gap: SPACING.sm },
-  heroSideItem: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
-  heroSideValue: {
+  heroDistanceRow: {
+    flexDirection: 'row', alignItems: 'baseline',
+  },
+  heroUnit: { fontSize: FONT_SIZES.lg, fontWeight: '700', color: c.textTertiary, marginLeft: 4 },
+  heroSecondary: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: SPACING.lg,
+  },
+  heroSecondaryItem: { alignItems: 'center', gap: 2 },
+  heroSecondaryValue: {
     fontSize: FONT_SIZES.lg, fontWeight: '800', color: c.text,
     fontVariant: ['tabular-nums'],
   },
-  heroSideLabel: { fontSize: FONT_SIZES.xs, fontWeight: '500', color: c.textTertiary },
-  heroSideDivider: { width: 40, height: 1, backgroundColor: c.divider, alignSelf: 'flex-end' },
-
+  heroSecondaryLabel: { fontSize: FONT_SIZES.xs, fontWeight: '500', color: c.textTertiary },
+  heroSecondaryDivider: {
+    width: 1, height: 24, backgroundColor: c.divider,
+  },
+  heroPointLabel: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+  },
   // 2x2 stat grid
   statGrid: {
     flexDirection: 'row', flexWrap: 'wrap',
     borderTopWidth: 1, borderTopColor: c.divider,
-    paddingTop: SPACING.md, gap: SPACING.sm,
+    paddingTop: SPACING.md,
   },
   statGridCell: {
-    width: '47%', flexDirection: 'row', alignItems: 'center',
-    gap: SPACING.sm, paddingVertical: SPACING.xs,
+    width: '50%', flexDirection: 'row', alignItems: 'center',
+    gap: SPACING.sm, paddingVertical: SPACING.xs + 1,
   },
   statGridValue: {
     fontSize: FONT_SIZES.md, fontWeight: '800', color: c.text,
@@ -886,6 +1280,21 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   monthlyValue: {
     fontSize: 10, color: c.textSecondary, fontWeight: '700',
     fontVariant: ['tabular-nums'],
+  },
+
+  // -- Chart Toggle --
+  chartToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    marginHorizontal: SPACING.xxl,
+    paddingVertical: SPACING.sm,
+  },
+  chartToggleText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: c.primary,
   },
 
   // -- Recent Activity --
@@ -954,40 +1363,52 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
 
-  // -- Course Stats --
-  courseStatsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: SPACING.sm },
-  courseStatItem: { alignItems: 'center', gap: SPACING.xs },
-  courseStatValue: {
-    fontSize: FONT_SIZES.xxl, fontWeight: '800', color: c.text,
+  // -- Course Stats (tile-based) --
+  courseStatsRow: { flexDirection: 'row', gap: SPACING.sm },
+  courseTile: {
+    flex: 1, alignItems: 'center', gap: SPACING.xs,
+    paddingVertical: SPACING.md, borderRadius: BORDER_RADIUS.md,
+  },
+  courseTileIcon: {
+    width: 30, height: 30, borderRadius: 15,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  courseTileValue: {
+    fontSize: FONT_SIZES.xl, fontWeight: '900', color: c.text,
     fontVariant: ['tabular-nums'],
   },
-  courseStatLabel: { fontSize: FONT_SIZES.sm, fontWeight: '600', color: c.textTertiary },
-  courseStatItemHighlight: {
-    alignItems: 'center', gap: SPACING.xs,
-    backgroundColor: c.surfaceLight, paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.lg, borderRadius: BORDER_RADIUS.md,
-  },
-  courseStatValueAccent: {
-    fontSize: FONT_SIZES.xxl, fontWeight: '900', color: c.accent,
-    fontVariant: ['tabular-nums'],
-  },
-  courseStatLabelAccent: { fontSize: FONT_SIZES.sm, fontWeight: '700', color: c.accent },
+  courseTileLabel: { fontSize: FONT_SIZES.xs, fontWeight: '600', color: c.textTertiary },
 
-  // -- Section --
-  section: { paddingHorizontal: SPACING.xxl, gap: SPACING.md },
+  // -- Section Divider --
+  sectionDivider: {
+    height: SPACING.sm,
+    marginHorizontal: SPACING.xxxl + SPACING.xl,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: c.divider,
+  },
 
-  // -- Menu Buttons --
+  // -- Menu Group (grouped card) --
+  menuGroup: {
+    marginHorizontal: SPACING.xxl,
+    backgroundColor: c.card,
+    borderRadius: BORDER_RADIUS.lg,
+    borderWidth: 1,
+    borderColor: c.border,
+    overflow: 'hidden',
+  },
   menuButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: c.card, borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.lg, paddingHorizontal: SPACING.xl,
-    borderWidth: 1, borderColor: c.border,
+    paddingVertical: SPACING.md, paddingHorizontal: SPACING.lg,
   },
-  menuButtonLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.lg },
+  menuButtonLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
   menuIconCircle: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: c.surfaceLight, justifyContent: 'center', alignItems: 'center',
   },
   menuButtonTitle: { fontSize: FONT_SIZES.md, fontWeight: '700', color: c.text },
-  menuButtonDesc: { fontSize: FONT_SIZES.xs, color: c.textTertiary, marginTop: 2 },
+  menuButtonDesc: { fontSize: FONT_SIZES.xs, color: c.textTertiary, marginTop: 1 },
+  menuDivider: {
+    height: StyleSheet.hairlineWidth, backgroundColor: c.divider,
+    marginLeft: SPACING.lg + 36 + SPACING.md,
+  },
 });

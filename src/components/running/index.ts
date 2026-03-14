@@ -6,3 +6,4 @@ export { default as RunGoalSheet } from './RunGoalSheet';
 export type { RunGoal } from './RunGoalSheet';
 export { default as RunningHUD } from './RunningHUD';
 export { default as RunSettingsSheet } from './RunSettingsSheet';
+export { default as SplitHistoryPanel } from './SplitHistoryPanel';

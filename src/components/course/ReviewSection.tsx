@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
-import { useCourseStore } from '../../stores/courseStore';
+import { useCourseDetailStore } from '../../stores/courseDetailStore';
 import { formatRelativeTime } from '../../utils/format';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
@@ -40,7 +40,7 @@ export default function ReviewSection({ courseId, creatorId, currentUserId, onIn
     submitReview,
     deleteReview,
     replyToReview,
-  } = useCourseStore();
+  } = useCourseDetailStore();
 
   const isCreator = Boolean(creatorId && currentUserId && creatorId === currentUserId);
 

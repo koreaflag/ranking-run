@@ -4,6 +4,7 @@ import { useRunningStore } from '../stores/runningStore';
 import type {
   LocationUpdateEvent,
   GPSStatusChangeEvent,
+  MilestoneReachedEvent,
 } from '../types/gps';
 import { GPS_EVENTS } from '../types/gps';
 
@@ -19,7 +20,7 @@ const { GPSTrackerModule } = NativeModules;
  */
 export function useGPSTracker() {
   const subscriptionsRef = useRef<Array<{ remove: () => void }>>([]);
-  const { updateLocation, updateGPSStatus, phase } = useRunningStore();
+  const { updateLocation, updateGPSStatus, addSplit, phase } = useRunningStore();
 
   const startTracking = useCallback(async () => {
     if (!GPSTrackerModule) {
@@ -64,7 +65,7 @@ export function useGPSTracker() {
   // Subscribe to native events when the running phase is active
   useEffect(() => {
     if (!GPSTrackerModule) return;
-    if (phase !== 'running' && phase !== 'paused') return;
+    if (phase !== 'running' && phase !== 'paused' && phase !== 'countdown') return;
 
     const emitter = new NativeEventEmitter(
       Platform.OS === 'ios' ? GPSTrackerModule : undefined,
@@ -84,7 +85,20 @@ export function useGPSTracker() {
       },
     );
 
-    subscriptionsRef.current = [locationSub, statusSub];
+    const milestoneSub = emitter.addListener(
+      GPS_EVENTS.MILESTONE_REACHED,
+      (event: MilestoneReachedEvent) => {
+        addSplit({
+          split_number: event.km,
+          distance_meters: 1000,
+          duration_seconds: event.splitPaceSecondsPerKm,
+          pace_seconds_per_km: event.splitPaceSecondsPerKm,
+          elevation_change_meters: 0,
+        });
+      },
+    );
+
+    subscriptionsRef.current = [locationSub, statusSub, milestoneSub];
 
     // Fetch current GPS status in case we missed the initial event
     const pollStatus = () => {
@@ -94,7 +108,9 @@ export function useGPSTracker() {
             updateGPSStatus(status as any);
           }
         })
-        .catch(() => {});
+        .catch((err: any) => {
+          console.warn('[useGPSTracker] GPS 상태 조회 실패:', err);
+        });
     };
 
     // Initial check + poll every 3 seconds until locked
@@ -108,7 +124,7 @@ export function useGPSTracker() {
       subscriptionsRef.current = [];
       clearInterval(pollInterval);
     };
-  }, [phase, updateLocation, updateGPSStatus]);
+  }, [phase, updateLocation, updateGPSStatus, addSplit]);
 
   return {
     startTracking,

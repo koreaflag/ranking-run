@@ -14,6 +14,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
     private var cumulativeDistance: Double = 0
     private var previousCumulativeDistance: Double = 0
+    private var previousMilestoneTime: Int = 0  // elapsed seconds at last km milestone
     private var lastFilteredLocation: FilteredLocation?
     private var coldStartTimer: Timer?
     private var gpsLostTimer: Timer?
@@ -102,6 +103,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         batteryOptimizer?.reset()
         cumulativeDistance = 0
         previousCumulativeDistance = 0
+        previousMilestoneTime = 0
         lastFilteredLocation = nil
         gpsLostTime = nil
         baseAltitude = nil
@@ -325,7 +327,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
         // Cold start check
         if session.state == .starting {
-            if location.horizontalAccuracy <= 25.0 {
+            if location.horizontalAccuracy <= 20.0 {
                 session.markLocked()
                 coldStartTimer?.invalidate()
                 coldStartTimer = nil
@@ -365,6 +367,12 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             // 10 m/s generous limit (raw GPS can overshoot vs filtered position)
             let maxPlausibleDist = max(10.0 * max(timeDelta, 0.1), 5.0)
             if rawDist > maxPlausibleDist {
+                return
+            }
+            // Background GPS guard: when update interval is large (>5s),
+            // GPS may report stale/cell-tower positions. Cap distance to prevent
+            // straight-line jumps across the map.
+            if timeDelta > 5.0 && rawDist > 30.0 {
                 return
             }
         }
@@ -407,7 +415,10 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         // Stationary detection
         let previousState = stationaryDetector.state
         stationaryDetector.updateWithSpeed(filtered.speed)
-        stationaryDetector.updateWithAcceleration(sensorFusion.getAccelerationMagnitude())
+        stationaryDetector.updateWithAcceleration(
+            sensorFusion.getAccelerationMagnitude(),
+            isLowAccuracyMode: batteryOptimizer?.isLowAccuracy ?? false
+        )
 
         if stationaryDetector.state != previousState {
             let event: [String: Any] = [
@@ -488,7 +499,11 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         let currentKm = Int(cumulativeDistance / 1000)
         if currentKm > prevKm && currentKm > 0 {
             let elapsedSeconds = Int(session.getCurrentElapsedTime())
-            let splitPace = cumulativeDistance > 0 ? Int((Double(elapsedSeconds) / (cumulativeDistance / 1000.0))) : 0
+            // Split pace = time for THIS km only, not cumulative average.
+            // previousMilestoneTime tracks elapsed time at km (N-1).
+            let splitSeconds = elapsedSeconds - previousMilestoneTime
+            let splitPace = splitSeconds > 0 ? splitSeconds : 0
+            previousMilestoneTime = elapsedSeconds
             onMilestoneReached?(currentKm, splitPace, elapsedSeconds)
         }
         previousCumulativeDistance = cumulativeDistance
@@ -556,40 +571,39 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    /// Cached silent WAV to avoid regenerating on every background transition
+    private static let silentWavData: Data = {
+        let sampleRate = 8000  // minimum viable for keeping process alive
+        let numSamples = sampleRate  // 1 second
+        let bytesPerSample = 2
+        let dataSize = numSamples * bytesPerSample
+
+        var wav = Data(capacity: 44 + dataSize)
+        wav.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
+        wav.append(contentsOf: withUnsafeBytes(of: UInt32(36 + dataSize).littleEndian) { Array($0) })
+        wav.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
+        wav.append(contentsOf: [0x66, 0x6D, 0x74, 0x20]) // "fmt "
+        wav.append(contentsOf: withUnsafeBytes(of: UInt32(16).littleEndian) { Array($0) })
+        wav.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) }) // PCM
+        wav.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) }) // mono
+        wav.append(contentsOf: withUnsafeBytes(of: UInt32(8000).littleEndian) { Array($0) }) // sample rate
+        wav.append(contentsOf: withUnsafeBytes(of: UInt32(16000).littleEndian) { Array($0) }) // byte rate
+        wav.append(contentsOf: withUnsafeBytes(of: UInt16(2).littleEndian) { Array($0) }) // block align
+        wav.append(contentsOf: withUnsafeBytes(of: UInt16(16).littleEndian) { Array($0) }) // bits/sample
+        wav.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
+        wav.append(contentsOf: withUnsafeBytes(of: UInt32(dataSize).littleEndian) { Array($0) })
+        wav.append(Data(count: dataSize)) // silence
+        return wav
+    }()
+
     private func startSilentAudioSession() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try audioSession.setActive(true)
 
-            // Play a silent audio file in a loop to keep the app alive
-            // Generate 1 second of silence programmatically
-            let sampleRate: Double = 44100
-            let duration: Double = 1.0
-            let numSamples = Int(sampleRate * duration)
-            let bytesPerSample = 2
-            let dataSize = numSamples * bytesPerSample
-
-            var wavData = Data()
-            // WAV header
-            wavData.append(contentsOf: [0x52, 0x49, 0x46, 0x46]) // "RIFF"
-            let fileSize = UInt32(36 + dataSize)
-            wavData.append(contentsOf: withUnsafeBytes(of: fileSize.littleEndian) { Array($0) })
-            wavData.append(contentsOf: [0x57, 0x41, 0x56, 0x45]) // "WAVE"
-            wavData.append(contentsOf: [0x66, 0x6D, 0x74, 0x20]) // "fmt "
-            wavData.append(contentsOf: withUnsafeBytes(of: UInt32(16).littleEndian) { Array($0) }) // chunk size
-            wavData.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) }) // PCM
-            wavData.append(contentsOf: withUnsafeBytes(of: UInt16(1).littleEndian) { Array($0) }) // mono
-            wavData.append(contentsOf: withUnsafeBytes(of: UInt32(44100).littleEndian) { Array($0) }) // sample rate
-            wavData.append(contentsOf: withUnsafeBytes(of: UInt32(88200).littleEndian) { Array($0) }) // byte rate
-            wavData.append(contentsOf: withUnsafeBytes(of: UInt16(2).littleEndian) { Array($0) }) // block align
-            wavData.append(contentsOf: withUnsafeBytes(of: UInt16(16).littleEndian) { Array($0) }) // bits per sample
-            wavData.append(contentsOf: [0x64, 0x61, 0x74, 0x61]) // "data"
-            wavData.append(contentsOf: withUnsafeBytes(of: UInt32(dataSize).littleEndian) { Array($0) })
-            wavData.append(Data(count: dataSize)) // silence
-
-            silentAudioPlayer = try AVAudioPlayer(data: wavData)
-            silentAudioPlayer?.numberOfLoops = -1 // infinite loop
+            silentAudioPlayer = try AVAudioPlayer(data: Self.silentWavData)
+            silentAudioPlayer?.numberOfLoops = -1
             silentAudioPlayer?.volume = 0.0
             silentAudioPlayer?.play()
             NSLog("[LocationEngine] Silent audio session started for background GPS")

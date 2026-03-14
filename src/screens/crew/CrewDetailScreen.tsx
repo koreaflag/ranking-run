@@ -13,25 +13,35 @@ import {
   RefreshControl,
   Image,
   Dimensions,
+  LayoutAnimation,
+  UIManager,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { Ionicons } from '../../lib/icons';
 import { useNavigation, useRoute, useFocusEffect, type RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import type { HomeStackParamList } from '../../types/navigation';
-import type { CrewItem, CrewMemberItem, CrewJoinRequestItem, CommunityPostItem, CrewChallengeItem } from '../../types/api';
+import type { CrewItem, CrewMemberItem, CrewJoinRequestItem, CommunityPostItem, CrewChallengeItem, CrewWeeklyRankingItem } from '../../types/api';
 import { crewService } from '../../services/crewService';
 import { communityService } from '../../services/communityService';
 import { crewChallengeService } from '../../services/crewChallengeService';
-import { useCourseStore } from '../../stores/courseStore';
+import { useCourseListStore } from '../../stores/courseListStore';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
 import { getGradeName, getGradeColor } from '../../utils/crewGrade';
 import { formatRelativeTime } from '../../utils/format';
+import CrewLevelBadge, { getTier } from '../../components/crew/CrewLevelBadge';
+import CrewLevelGuideSheet from '../../components/crew/CrewLevelGuideSheet';
+import { getXpProgress, formatXpDistance } from '../../utils/crewLevelConfig';
+import { useToastStore } from '../../stores/toastStore';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'CrewDetail'>;
 type Route = RouteProp<HomeStackParamList, 'CrewDetail'>;
@@ -47,6 +57,7 @@ export default function CrewDetailScreen() {
   const { crewId } = route.params;
   const colors = useTheme();
   const { t } = useTranslation();
+  const showToast = useToastStore((s) => s.showToast);
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [crew, setCrew] = useState<CrewItem | null>(null);
@@ -61,9 +72,12 @@ export default function CrewDetailScreen() {
   const [recentPosts, setRecentPosts] = useState<CommunityPostItem[]>([]);
   const [activeRaid, setActiveRaid] = useState<CrewChallengeItem | null>(null);
   const [isEndingRaid, setIsEndingRaid] = useState(false);
+  const [weeklyRanking, setWeeklyRanking] = useState<CrewWeeklyRankingItem[]>([]);
   const [postsPage, setPostsPage] = useState(0);
   const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
   const [hasMorePosts, setHasMorePosts] = useState(false);
+  const [raidExpanded, setRaidExpanded] = useState(false);
+  const [showLevelGuide, setShowLevelGuide] = useState(false);
 
   const canEdit = crew?.my_role === 'owner' || crew?.my_role === 'admin';
 
@@ -128,6 +142,13 @@ export default function CrewDetailScreen() {
     }, [loadData, isLoading]),
   );
 
+  useEffect(() => {
+    if (!crewId) return;
+    crewService.getWeeklyRanking(crewId).then(res => setWeeklyRanking(res.data)).catch((err) => {
+      console.warn('[CrewDetail] 주간 랭킹 조회 실패:', err);
+    });
+  }, [crewId]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadData();
@@ -150,13 +171,14 @@ export default function CrewDetailScreen() {
         const membersData = await crewService.getMembers(crewId, { per_page: MEMBER_PREVIEW_LIMIT });
         setMembers(membersData.data);
         setMembersTotal(membersData.total_count);
+        showToast('success', t('crew.joinedSuccess'));
       }
     } catch {
       Alert.alert(t('common.errorTitle'), t('crew.joinFailed'));
     } finally {
       setIsJoining(false);
     }
-  }, [crewId, isJoining, t, crew?.requires_approval]);
+  }, [crewId, isJoining, t, crew?.requires_approval, showToast]);
 
   const handleCancelRequest = useCallback(async () => {
     if (!crew?.join_request_status) return;
@@ -198,7 +220,7 @@ export default function CrewDetailScreen() {
   }, [crewId, loadData, t]);
 
   const handleSelectRaidCourse = useCallback(() => {
-    useCourseStore.getState().setPendingSelectForRaid(crewId);
+    useCourseListStore.getState().setPendingSelectForRaid(crewId);
     (navigation as any).navigate('CourseTab', { screen: 'CourseList' });
   }, [navigation, crewId]);
 
@@ -230,7 +252,7 @@ export default function CrewDetailScreen() {
 
   const handleRunRaidCourse = useCallback(() => {
     if (!activeRaid?.course_id) return;
-    useCourseStore.getState().setPendingStartCourseId(activeRaid.course_id);
+    useCourseListStore.getState().setPendingStartCourseId(activeRaid.course_id);
     (navigation as any).navigate('WorldTab', { screen: 'World' });
   }, [navigation, activeRaid]);
 
@@ -366,9 +388,7 @@ export default function CrewDetailScreen() {
           >
             <Ionicons name="chevron-back" size={24} color={colors.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {crew.name}
-          </Text>
+          <View style={{ flex: 1 }} />
           <View style={styles.headerRight}>
             {crew?.is_member && (
               <TouchableOpacity
@@ -439,48 +459,81 @@ export default function CrewDetailScreen() {
 
           {/* Logo/Badge overlapping cover */}
           <View style={styles.logoSection}>
-            {hasLogo ? (
-              <Image source={{ uri: crew.logo_url! }} style={styles.logoImage} />
-            ) : (
-              <View style={[styles.logoBadge, { backgroundColor: crew.badge_color || colors.primary }]}>
-                <Ionicons
-                  name={(crew.badge_icon as keyof typeof Ionicons.glyphMap) || 'people'}
-                  size={32}
-                  color="#FFFFFF"
-                />
+            <View style={styles.logoWrapper}>
+              {hasLogo ? (
+                <Image source={{ uri: crew.logo_url! }} style={styles.logoImage} />
+              ) : (
+                <View style={[styles.logoBadge, { backgroundColor: crew.badge_color || colors.primary }]}>
+                  <Ionicons
+                    name={(crew.badge_icon as keyof typeof Ionicons.glyphMap) || 'people'}
+                    size={32}
+                    color="#FFFFFF"
+                  />
+                </View>
+              )}
+              <View style={styles.logoLevelBadge}>
+                <CrewLevelBadge level={crew.level} size="sm" />
               </View>
-            )}
+            </View>
           </View>
 
           <View style={styles.contentContainer}>
             {/* Crew Name & Description */}
             <View style={styles.profileSection}>
               <Text style={styles.crewName}>{crew.name}</Text>
+
+              {/* Info — directly under name */}
+              <View style={styles.infoRow}>
+                <Ionicons name="people" size={14} color={colors.primary} />
+                <Text style={styles.infoText}>
+                  {crew.member_count}{crew.max_members ? `/${crew.max_members}` : ''} {t('crew.members')}
+                </Text>
+                {crew.recurring_schedule ? (
+                  <>
+                    <View style={styles.infoDot} />
+                    <Ionicons name="time-outline" size={13} color={colors.textSecondary} />
+                    <Text style={styles.infoText}>{crew.recurring_schedule}</Text>
+                  </>
+                ) : null}
+                {crew.meeting_point ? (
+                  <>
+                    <View style={styles.infoDot} />
+                    <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
+                    <Text style={styles.infoText} numberOfLines={1}>{crew.meeting_point}</Text>
+                  </>
+                ) : null}
+              </View>
+
               {crew.description ? (
                 <Text style={styles.crewDescription}>{crew.description}</Text>
               ) : null}
-            </View>
 
-            {/* Info Pills */}
-            <View style={styles.pillsRow}>
-              <View style={styles.pill}>
-                <Ionicons name="people" size={14} color={colors.primary} />
-                <Text style={styles.pillText}>
-                  {crew.member_count}{crew.max_members ? `/${crew.max_members}` : ''} {t('crew.members')}
-                </Text>
-              </View>
-              {crew.recurring_schedule ? (
-                <View style={styles.pill}>
-                  <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
-                  <Text style={styles.pillText}>{crew.recurring_schedule}</Text>
-                </View>
-              ) : null}
-              {crew.meeting_point ? (
-                <View style={styles.pill}>
-                  <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-                  <Text style={styles.pillText}>{crew.meeting_point}</Text>
-                </View>
-              ) : null}
+              {(() => {
+                const xp = getXpProgress(crew.level, crew.total_xp);
+                const tier = getTier(crew.level ?? 1);
+                const pct = Math.round(xp.ratio * 100);
+                return (
+                  <TouchableOpacity
+                    style={[styles.xpContainer, { backgroundColor: tier.bg, borderColor: tier.border }]}
+                    activeOpacity={0.85}
+                    onPress={() => setShowLevelGuide(true)}
+                  >
+                    <View style={styles.xpTopRow}>
+                      <Ionicons name="trending-up" size={14} color={tier.border} />
+                      <Text style={[styles.xpTitle, { color: tier.text }]}>
+                        {xp.isMax ? 'MAX LEVEL' : `Lv.${crew.level ?? 1} → Lv.${(crew.level ?? 1) + 1}`}
+                      </Text>
+                      <Text style={[styles.xpPct, { color: tier.border }]}>
+                        {xp.isMax ? '100%' : `${pct}%`}
+                      </Text>
+                      <Ionicons name="information-circle-outline" size={14} color={tier.border} style={{ marginLeft: 4 }} />
+                    </View>
+                    <View style={[styles.xpBarTrack, { backgroundColor: tier.border + '20' }]}>
+                      <View style={[styles.xpBarFill, { width: `${pct}%`, backgroundColor: tier.border }]} />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })()}
             </View>
 
             {/* Action Buttons (join / pending — leave moved to bottom) */}
@@ -521,52 +574,50 @@ export default function CrewDetailScreen() {
             {/* Current Raid Section */}
             {crew.is_member && (
               <View style={styles.raidSection}>
-                <View style={styles.raidSectionTitleRow}>
+                <View style={styles.sectionHeader}>
                   <Ionicons name="flash" size={18} color={colors.primary} />
-                  <Text style={styles.raidSectionTitle}>{t('raid.currentRaid')}</Text>
+                  <Text style={styles.sectionHeaderTitle}>{t('raid.currentRaid')}</Text>
                 </View>
                 {activeRaid ? (
-                  <View style={styles.raidCard}>
-                    {/* Raid header */}
-                    <View style={styles.raidHeader}>
+                  <TouchableOpacity
+                    style={styles.raidCard}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setRaidExpanded(prev => !prev);
+                    }}
+                  >
+                    {/* Slim header — always visible */}
+                    <View style={styles.raidSlimRow}>
                       <View style={styles.raidLabelRow}>
                         <Ionicons name="flash" size={12} color="#FF7A33" />
                         <Text style={styles.raidLabel}>RAID</Text>
                       </View>
-                    </View>
-
-                    {/* Course info */}
-                    <View style={styles.raidCourseRow}>
-                      <View style={styles.raidCourseInfo}>
-                        <Text style={styles.raidCourseName} numberOfLines={1}>
+                      <View style={styles.raidSlimInfo}>
+                        <Text style={styles.raidSlimCourseName} numberOfLines={1}>
                           {activeRaid.course_name || t('raid.unknownCourse')}
                         </Text>
+                        {activeRaid.course_distance_meters != null && (
+                          <View style={styles.raidDistanceBadge}>
+                            <Text style={styles.raidDistanceBadgeText}>
+                              {(activeRaid.course_distance_meters / 1000).toFixed(1)}km
+                            </Text>
+                          </View>
+                        )}
                       </View>
-                      {activeRaid.course_distance_meters != null && (
-                        <View style={styles.raidDistanceBadge}>
-                          <Text style={styles.raidDistanceBadgeText}>
-                            {(activeRaid.course_distance_meters / 1000).toFixed(1)}km
-                          </Text>
-                        </View>
-                      )}
+                      <Ionicons
+                        name={raidExpanded ? 'chevron-up' : 'chevron-down'}
+                        size={18}
+                        color={colors.textTertiary}
+                      />
                     </View>
 
-                    {/* Progress bar */}
+                    {/* Slim progress — always visible */}
                     <View style={styles.raidProgressContainer}>
                       <View style={styles.raidProgressBarBg}>
                         <View
                           style={[
                             styles.raidProgressBarFill,
-                            {
-                              width: `${activeRaid.total_participants > 0
-                                ? Math.min(100, (activeRaid.completed_count / activeRaid.total_participants) * 100)
-                                : 0}%`,
-                            },
-                          ]}
-                        />
-                        <View
-                          style={[
-                            styles.raidProgressBarGlow,
                             {
                               width: `${activeRaid.total_participants > 0
                                 ? Math.min(100, (activeRaid.completed_count / activeRaid.total_participants) * 100)
@@ -583,62 +634,67 @@ export default function CrewDetailScreen() {
                       </Text>
                     </View>
 
-                    {/* Top 3 records with rank numbers */}
-                    {activeRaid.records.filter(r => r.best_duration_seconds != null).length > 0 && (
-                      <View style={styles.raidRecordsList}>
-                        {activeRaid.records
-                          .filter(r => r.best_duration_seconds != null)
-                          .slice(0, 3)
-                          .map((record, idx) => {
-                            const rankColors = ['#FFD700', '#C0C0C0', '#CD7F32'];
-                            const rankLabels = ['1st', '2nd', '3rd'];
-                            const mins = Math.floor((record.best_duration_seconds || 0) / 60);
-                            const secs = (record.best_duration_seconds || 0) % 60;
-                            return (
-                              <View key={record.user_id} style={styles.raidRecordRow}>
-                                <View style={[styles.raidRankBadge, { backgroundColor: rankColors[idx] + '25' }]}>
-                                  <Text style={[styles.raidRankText, { color: rankColors[idx] }]}>
-                                    {rankLabels[idx]}
-                                  </Text>
-                                </View>
-                                <Text style={styles.raidRecordName} numberOfLines={1}>
-                                  {record.nickname || '?'}
-                                </Text>
-                                <Text style={styles.raidRecordTime}>
-                                  {mins}:{secs.toString().padStart(2, '0')}
-                                </Text>
-                              </View>
-                            );
-                          })}
+                    {/* Expanded details */}
+                    {raidExpanded && (
+                      <View style={styles.raidExpandedContent}>
+                        {/* Top 3 records */}
+                        {activeRaid.records.filter(r => r.best_duration_seconds != null).length > 0 && (
+                          <View style={styles.raidRecordsList}>
+                            {activeRaid.records
+                              .filter(r => r.best_duration_seconds != null)
+                              .slice(0, 3)
+                              .map((record, idx) => {
+                                const rankColors = ['#FFD700', '#C0C0C0', '#CD7F32'];
+                                const rankLabels = ['1st', '2nd', '3rd'];
+                                const mins = Math.floor((record.best_duration_seconds || 0) / 60);
+                                const secs = (record.best_duration_seconds || 0) % 60;
+                                return (
+                                  <View key={record.user_id} style={styles.raidRecordRow}>
+                                    <View style={[styles.raidRankBadge, { backgroundColor: rankColors[idx] + '25' }]}>
+                                      <Text style={[styles.raidRankText, { color: rankColors[idx] }]}>
+                                        {rankLabels[idx]}
+                                      </Text>
+                                    </View>
+                                    <Text style={styles.raidRecordName} numberOfLines={1}>
+                                      {record.nickname || '?'}
+                                    </Text>
+                                    <Text style={styles.raidRecordTime}>
+                                      {mins}:{secs.toString().padStart(2, '0')}
+                                    </Text>
+                                  </View>
+                                );
+                              })}
+                          </View>
+                        )}
+
+                        {/* Run button */}
+                        <TouchableOpacity
+                          style={styles.raidRunButton}
+                          onPress={handleRunRaidCourse}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="play" size={22} color="#FFFFFF" />
+                          <Text style={styles.raidRunButtonText}>{t('raid.run')}</Text>
+                        </TouchableOpacity>
+
+                        {/* End raid button */}
+                        {canEdit && (
+                          <TouchableOpacity
+                            style={styles.raidEndButton}
+                            onPress={handleEndRaid}
+                            disabled={isEndingRaid}
+                            activeOpacity={0.7}
+                          >
+                            {isEndingRaid ? (
+                              <ActivityIndicator size="small" color={colors.textTertiary} />
+                            ) : (
+                              <Text style={styles.raidEndButtonText}>{t('raid.endRaid')}</Text>
+                            )}
+                          </TouchableOpacity>
+                        )}
                       </View>
                     )}
-
-                    {/* Run button - full width, prominent */}
-                    <TouchableOpacity
-                      style={styles.raidRunButton}
-                      onPress={handleRunRaidCourse}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons name="play" size={22} color="#FFFFFF" />
-                      <Text style={styles.raidRunButtonText}>{t('raid.run')}</Text>
-                    </TouchableOpacity>
-
-                    {/* End raid button - subtle text only */}
-                    {canEdit && (
-                      <TouchableOpacity
-                        style={styles.raidEndButton}
-                        onPress={handleEndRaid}
-                        disabled={isEndingRaid}
-                        activeOpacity={0.7}
-                      >
-                        {isEndingRaid ? (
-                          <ActivityIndicator size="small" color={colors.textTertiary} />
-                        ) : (
-                          <Text style={styles.raidEndButtonText}>{t('raid.endRaid')}</Text>
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                  </TouchableOpacity>
                 ) : canEdit ? (
                   <TouchableOpacity
                     style={styles.raidSelectCourseBtn}
@@ -663,8 +719,10 @@ export default function CrewDetailScreen() {
             {/* Recent Posts (members only) */}
             {crew.is_member && (
               <View style={styles.postsSection}>
-                <View style={styles.postsSectionHeader}>
-                  <Text style={styles.postsSectionTitle}>{t('social.crewBoard')}</Text>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="chatbubbles-outline" size={18} color={colors.primary} />
+                  <Text style={styles.sectionHeaderTitle}>{t('social.crewBoard')}</Text>
+                  <View style={{ flex: 1 }} />
                   <TouchableOpacity
                     style={styles.writePostBtn}
                     onPress={() => navigation.navigate('CommunityPostCreate', { crewId })}
@@ -675,13 +733,13 @@ export default function CrewDetailScreen() {
                   </TouchableOpacity>
                 </View>
                 {recentPosts.length > 0 ? (
-                  <View style={styles.postsList}>
-                    {recentPosts.map((post) => {
+                  <View style={styles.postsCard}>
+                    {recentPosts.map((post, postIdx) => {
                       const initial = (post.author.nickname ?? '?').charAt(0).toUpperCase();
                       return (
                         <TouchableOpacity
                           key={post.id}
-                          style={styles.postCard}
+                          style={[styles.postItem, postIdx > 0 && styles.postItemBorder]}
                           onPress={() => navigation.navigate('CommunityPostDetail', { postId: post.id })}
                           activeOpacity={0.6}
                         >
@@ -744,9 +802,44 @@ export default function CrewDetailScreen() {
               </View>
             )}
 
+            {/* Weekly Ranking */}
+            {weeklyRanking.length > 0 && (
+              <View style={styles.weeklySection}>
+                <View style={styles.sectionHeader}>
+                  <Ionicons name="trophy-outline" size={18} color={colors.primary} />
+                  <Text style={styles.sectionHeaderTitle}>{t('crew.weeklyRanking')}</Text>
+                </View>
+                <View style={styles.weeklyCard}>
+                  {weeklyRanking.slice(0, 5).map((item, idx) => {
+                    const total = Math.min(weeklyRanking.length, 5);
+                    return (
+                      <View key={item.user_id} style={[styles.weeklyRow, idx < total - 1 && styles.weeklyRowBorder]}>
+                        <Text style={[styles.weeklyRank, idx === 0 && styles.weeklyRankGold]}>
+                          #{item.rank}
+                        </Text>
+                        <Text style={styles.weeklyName} numberOfLines={1}>
+                          {item.nickname ?? '-'}
+                        </Text>
+                        <Text style={styles.weeklyDistance}>
+                          {(item.weekly_distance / 1000).toFixed(1)}km
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      <CrewLevelGuideSheet
+        visible={showLevelGuide}
+        onClose={() => setShowLevelGuide(false)}
+        currentLevel={crew?.level ?? 1}
+        totalXp={crew?.total_xp ?? 0}
+      />
     </BlurredBackground>
   );
 }
@@ -808,7 +901,7 @@ const createStyles = (c: ThemeColors) =>
     contentContainer: {
       paddingHorizontal: SPACING.xxl,
       paddingBottom: 120,
-      gap: SPACING.xl,
+      gap: SPACING.xxl,
     },
 
     loadingContainer: {
@@ -871,7 +964,7 @@ const createStyles = (c: ThemeColors) =>
     },
     coverPlaceholder: {
       width: SCREEN_WIDTH,
-      height: COVER_HEIGHT,
+      height: COVER_HEIGHT * 0.7,
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -899,6 +992,14 @@ const createStyles = (c: ThemeColors) =>
       borderWidth: 3,
       borderColor: c.background,
     },
+    logoWrapper: {
+      position: 'relative',
+    },
+    logoLevelBadge: {
+      position: 'absolute',
+      bottom: -2,
+      right: -6,
+    },
 
     // Profile section
     profileSection: {
@@ -921,28 +1022,24 @@ const createStyles = (c: ThemeColors) =>
       paddingHorizontal: SPACING.lg,
     },
 
-    // Info pills
-    pillsRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      justifyContent: 'center',
-      gap: SPACING.sm,
-    },
-    pill: {
+    // Info row
+    infoRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 5,
-      backgroundColor: c.card,
-      borderRadius: BORDER_RADIUS.full,
-      paddingHorizontal: SPACING.lg,
-      paddingVertical: SPACING.sm,
-      borderWidth: 1,
-      borderColor: c.border,
+      justifyContent: 'center',
+      flexWrap: 'wrap',
+      gap: 6,
     },
-    pillText: {
+    infoText: {
       fontSize: FONT_SIZES.sm,
       fontWeight: '600',
       color: c.textSecondary,
+    },
+    infoDot: {
+      width: 3,
+      height: 3,
+      borderRadius: 1.5,
+      backgroundColor: c.textTertiary,
     },
 
     // Action Buttons
@@ -983,32 +1080,35 @@ const createStyles = (c: ThemeColors) =>
       color: '#F59E0B' + '80',
     },
 
-    // Raid Section - Event Banner Style
-    raidSection: {
-      gap: SPACING.md,
-    },
-    raidSectionTitleRow: {
+    // Section header (shared)
+    sectionHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
     },
-    raidSectionTitle: {
+    sectionHeaderTitle: {
       fontSize: FONT_SIZES.lg,
       fontWeight: '800',
       color: c.text,
       letterSpacing: -0.3,
+    },
+
+    // Raid Section
+    raidSection: {
+      gap: SPACING.md,
     },
     raidCard: {
       backgroundColor: c.primary + '10',
       borderRadius: BORDER_RADIUS.lg,
       borderWidth: 1.5,
       borderColor: c.primary + '30',
-      padding: SPACING.xl,
-      gap: SPACING.lg,
+      padding: SPACING.md,
+      gap: SPACING.sm,
     },
-    raidHeader: {
+    raidSlimRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      gap: SPACING.sm,
     },
     raidLabelRow: {
       flexDirection: 'row',
@@ -1022,19 +1122,21 @@ const createStyles = (c: ThemeColors) =>
       letterSpacing: 2,
       textTransform: 'uppercase' as const,
     },
-    raidCourseRow: {
+    raidSlimInfo: {
+      flex: 1,
       flexDirection: 'row',
       alignItems: 'center',
-      gap: SPACING.md,
+      gap: SPACING.sm,
     },
-    raidCourseInfo: {
+    raidSlimCourseName: {
       flex: 1,
-    },
-    raidCourseName: {
-      fontSize: FONT_SIZES.xl,
-      fontWeight: '900',
+      fontSize: FONT_SIZES.md,
+      fontWeight: '800',
       color: c.text,
-      letterSpacing: -0.5,
+    },
+    raidExpandedContent: {
+      gap: SPACING.lg,
+      paddingTop: SPACING.sm,
     },
     raidDistanceBadge: {
       backgroundColor: c.primary,
@@ -1060,14 +1162,6 @@ const createStyles = (c: ThemeColors) =>
     raidProgressBarFill: {
       height: '100%',
       backgroundColor: c.primary,
-      borderRadius: 6,
-      position: 'absolute' as const,
-      top: 0,
-      left: 0,
-    },
-    raidProgressBarGlow: {
-      height: '100%',
-      backgroundColor: c.primary + '40',
       borderRadius: 6,
       position: 'absolute' as const,
       top: 0,
@@ -1223,20 +1317,9 @@ const createStyles = (c: ThemeColors) =>
       color: '#FFF',
     },
 
-    // Recent Posts Section (Threads style)
+    // Posts Section
     postsSection: {
       gap: SPACING.md,
-    },
-    postsSectionHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    },
-    postsSectionTitle: {
-      fontSize: FONT_SIZES.lg,
-      fontWeight: '800',
-      color: c.text,
-      letterSpacing: -0.3,
     },
     writePostBtn: {
       flexDirection: 'row',
@@ -1248,16 +1331,20 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '700',
       color: c.primary,
     },
-    postsList: {
-      gap: SPACING.sm,
-    },
-    postCard: {
+    postsCard: {
       backgroundColor: c.card,
-      borderRadius: 12,
+      borderRadius: BORDER_RADIUS.lg,
       borderWidth: 1,
       borderColor: c.border,
+      overflow: 'hidden',
+    },
+    postItem: {
       padding: SPACING.md,
       gap: SPACING.xs,
+    },
+    postItemBorder: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.border,
     },
     postAuthorRow: {
       flexDirection: 'row',
@@ -1330,10 +1417,9 @@ const createStyles = (c: ThemeColors) =>
     },
     seeAllBtn: {
       alignItems: 'center',
-      paddingVertical: SPACING.md,
+      paddingVertical: SPACING.lg,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: c.border,
-      marginTop: SPACING.xs,
     },
     seeAllText: {
       fontSize: FONT_SIZES.sm,
@@ -1343,6 +1429,10 @@ const createStyles = (c: ThemeColors) =>
     emptyPosts: {
       paddingVertical: SPACING.xxl,
       alignItems: 'center',
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: c.border,
     },
     emptyPostsText: {
       fontSize: FONT_SIZES.sm,
@@ -1429,5 +1519,83 @@ const createStyles = (c: ThemeColors) =>
     loadingMorePosts: {
       paddingVertical: SPACING.lg,
       alignItems: 'center',
+    },
+
+    // XP bar
+    xpContainer: {
+      width: '100%',
+      marginTop: 10,
+      paddingHorizontal: SPACING.lg,
+      paddingVertical: SPACING.md,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      gap: SPACING.sm,
+    },
+    xpTopRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    xpTitle: {
+      flex: 1,
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+    },
+    xpPct: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '900',
+    },
+    xpBarTrack: {
+      height: 14,
+      borderRadius: 7,
+      overflow: 'hidden' as const,
+    },
+    xpBarFill: {
+      height: '100%',
+      borderRadius: 7,
+      minWidth: 4,
+    },
+
+    // Weekly ranking
+    weeklySection: {
+      gap: SPACING.md,
+    },
+    weeklyCard: {
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      overflow: 'hidden',
+    },
+    weeklyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: SPACING.md,
+      paddingHorizontal: SPACING.lg,
+    },
+    weeklyRowBorder: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border,
+    },
+    weeklyRank: {
+      width: 32,
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.textSecondary,
+    },
+    weeklyRankGold: {
+      color: '#FFD700',
+    },
+    weeklyName: {
+      flex: 1,
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '500',
+      color: c.text,
+    },
+    weeklyDistance: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.primary,
     },
   });

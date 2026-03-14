@@ -38,8 +38,8 @@ def _build_geojson_overlay(coords: list[tuple[float, float]]) -> str:
 
     return (
         f"geojson({{\"type\":\"Feature\",\"geometry\":{{\"type\":\"LineString\","
-        f"\"coordinates\":[{coord_str}]}},\"properties\":{{\"stroke\":\"#FF7A33\","
-        f"\"stroke-width\":4,\"stroke-opacity\":0.9}}}})"
+        f"\"coordinates\":[{coord_str}]}},\"properties\":{{\"stroke\":\"#FFC800\","
+        f"\"stroke-width\":5,\"stroke-opacity\":0.9}}}})"
     )
 
 

@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import { useRunningStore } from '../stores/runningStore';
 import { runService } from '../services/runService';
 import { savePendingChunk } from '../services/pendingSyncService';
+import { performTokenRefresh } from '../services/api';
 import type { RawGPSPointAPI, UploadChunkRequest } from '../types/api';
 
 const CHUNK_DISTANCE_THRESHOLD_M = 1000; // Upload every 1 km
@@ -144,7 +146,9 @@ export function useRunningChunkUpload() {
         sessionId: s.sessionId,
         request: chunkRequest,
         createdAt: new Date().toISOString(),
-      }).catch(() => {});
+      }).catch((err) => {
+        console.warn('[ChunkUpload] 청크 로컬 저장 실패:', err);
+      });
       // Still mark the point index/distance so we don't re-collect the same points
       markChunkUploaded(seq, pointIndex, s.distanceMeters);
     } finally {
@@ -185,4 +189,91 @@ export function useRunningChunkUpload() {
       }
     };
   }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Proactive token refresh during long runs — every 15 minutes
+  // Ensures the token never expires even if chunk uploads are sparse
+  useEffect(() => {
+    if (phase !== 'running') return;
+
+    const tokenRefreshInterval = setInterval(() => {
+      performTokenRefresh().catch(() => {
+        // Refresh failed — the 401 interceptor in api.ts will handle it
+        // on the next actual API call
+      });
+    }, 15 * 60 * 1000); // Every 15 minutes
+
+    return () => clearInterval(tokenRefreshInterval);
+  }, [phase]);
+
+  // Emergency chunk save when app is about to go to background
+  // Ensures unsent GPS data is preserved even if iOS kills the app
+  useEffect(() => {
+    const handleAppState = (nextState: AppStateStatus) => {
+      if (nextState === 'background' || nextState === 'inactive') {
+        const s = useRunningStore.getState();
+        if (s.phase !== 'running' || !s.sessionId || s.sessionId.startsWith('local_')) return;
+
+        const newPoints = s.filteredLocations.slice(s.lastChunkPointIndex);
+        if (newPoints.length === 0) return;
+
+        const rawGPSPoints: RawGPSPointAPI[] = newPoints.map((p) => ({
+          lat: p.latitude,
+          lng: p.longitude,
+          alt: p.altitude,
+          speed: p.speed,
+          bearing: p.bearing,
+          accuracy: 10,
+          timestamp: Math.round(p.timestamp),
+        }));
+
+        const startTs = newPoints[0].timestamp;
+        const endTs = newPoints[newPoints.length - 1].timestamp;
+
+        // Use a unique emergency sequence to avoid collisions with normal chunks.
+        // Prefix emergency sequences at 900000+ to keep them out of the normal range.
+        const emergencySeq = 900000 + s.chunkSequence;
+
+        const emergencyChunk: UploadChunkRequest = {
+          session_id: s.sessionId,
+          sequence: emergencySeq,
+          chunk_type: 'emergency',
+          raw_gps_points: rawGPSPoints,
+          chunk_summary: {
+            distance_meters: Math.round(s.distanceMeters - s.lastChunkDistance),
+            duration_seconds: Math.round((endTs - startTs) / 1000),
+            avg_pace_seconds_per_km: Math.round(s.avgPaceSecondsPerKm),
+            elevation_change_meters: Math.round(s.elevationGainMeters - s.elevationLossMeters),
+            point_count: rawGPSPoints.length,
+            start_timestamp: Math.round(startTs),
+            end_timestamp: Math.round(endTs),
+          },
+          cumulative: {
+            total_distance_meters: Math.round(s.distanceMeters),
+            total_duration_seconds: Math.round(s.durationSeconds),
+            avg_pace_seconds_per_km: Math.round(s.avgPaceSecondsPerKm),
+          },
+          completed_splits: s.splits,
+          pause_intervals: s.pauseIntervals.map((pi) => ({
+            paused_at: pi.paused_at,
+            resumed_at: pi.resumed_at,
+          })),
+        };
+
+        // Save to AsyncStorage synchronously-ish (fire-and-forget)
+        savePendingChunk({
+          id: `chunk-emergency-${s.sessionId}-${emergencySeq}`,
+          sessionId: s.sessionId,
+          request: emergencyChunk,
+          createdAt: new Date().toISOString(),
+        }).catch((err) => {
+          console.warn('[ChunkUpload] 긴급 청크 로컬 저장 실패:', err);
+        });
+
+        console.log(`[ChunkUpload] Emergency save on background (${rawGPSPoints.length} pts)`);
+      }
+    };
+
+    const sub = AppState.addEventListener('change', handleAppState);
+    return () => sub.remove();
+  }, []);
 }

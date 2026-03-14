@@ -19,6 +19,7 @@ class WatchLocationManager: NSObject, CLLocationManagerDelegate {
     // Callbacks
     var onLocationUpdate: ((_ distance: Double, _ speed: Double, _ pace: Int) -> Void)?
     var onGPSStatusChange: ((_ status: String) -> Void)?
+    var onRawLocation: ((_ location: CLLocation) -> Void)?
 
     private override init() {
         super.init()
@@ -54,6 +55,9 @@ class WatchLocationManager: NSObject, CLLocationManagerDelegate {
 
         isTracking = false
         locationManager.stopUpdatingLocation()
+        onLocationUpdate = nil  // Remove callback reference to prevent retain cycles
+        onGPSStatusChange = nil
+        onRawLocation = nil
     }
 
     func pauseTracking() {
@@ -83,14 +87,23 @@ class WatchLocationManager: NSObject, CLLocationManagerDelegate {
             // Distance accumulation
             if let last = lastLocation {
                 let delta = location.distance(from: last)
-                // Filter: skip if speed > 15 m/s (impossible on foot)
-                let speed = delta / location.timestamp.timeIntervalSince(last.timestamp)
-                if speed <= 15.0 && delta > 1.0 {
-                    totalDistance += delta
+                let timeDiff = location.timestamp.timeIntervalSince(last.timestamp)
+                // Guard against division by zero (duplicate timestamps)
+                if timeDiff > 0 {
+                    let speed = delta / timeDiff
+                    // Filter: skip if speed > 15 m/s (impossible on foot)
+                    if speed <= 15.0 && delta > 1.0 {
+                        totalDistance += delta
+                        lastLocation = location
+                    }
+                    // If filtered out (teleport/noise), do NOT update lastLocation
+                    // so the next delta is measured from the last valid position.
+                } else {
+                    lastLocation = location
                 }
+            } else {
+                lastLocation = location
             }
-
-            lastLocation = location
             locations.append(location)
 
             // Store route point for sync
@@ -111,6 +124,7 @@ class WatchLocationManager: NSObject, CLLocationManagerDelegate {
             }
 
             onLocationUpdate?(totalDistance, speed, pace)
+            onRawLocation?(location)
             onGPSStatusChange?(location.horizontalAccuracy <= 10 ? "locked" : "searching")
         }
     }
@@ -134,11 +148,21 @@ class WatchLocationManager: NSObject, CLLocationManagerDelegate {
     }
 
     /// Build a run summary dict for syncing to phone.
-    func buildRunSummary() -> [String: Any] {
+    /// - Parameter activeDuration: The paused-adjusted duration in seconds.
+    ///   If provided, avgPace is calculated from this instead of wall-clock time.
+    func buildRunSummary(activeDuration: Int? = nil) -> [String: Any] {
+        let effectiveDuration: Double
+        if let active = activeDuration {
+            effectiveDuration = Double(active)
+        } else if let start = startTime {
+            effectiveDuration = Date().timeIntervalSince(start)
+        } else {
+            effectiveDuration = 0
+        }
+
         let avgPace: Int
-        if totalDistance > 0, let start = startTime {
-            let elapsed = Date().timeIntervalSince(start)
-            avgPace = Int(elapsed / (totalDistance / 1000.0))
+        if totalDistance > 0 && effectiveDuration > 0 {
+            avgPace = Int(effectiveDuration / (totalDistance / 1000.0))
         } else {
             avgPace = 0
         }
@@ -146,7 +170,7 @@ class WatchLocationManager: NSObject, CLLocationManagerDelegate {
         return [
             "type": "standaloneRunComplete",
             "distanceMeters": totalDistance,
-            "durationSeconds": elapsedSeconds,
+            "durationSeconds": activeDuration ?? elapsedSeconds,
             "avgPace": avgPace,
             "routePoints": routePoints,
             "startedAt": (startTime ?? Date()).timeIntervalSince1970,

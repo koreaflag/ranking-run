@@ -70,6 +70,8 @@ export interface UserProfile {
   crew_name?: string | null;
   total_distance_meters: number;
   total_runs: number;
+  total_points: number;
+  runner_level?: number;
   created_at: string;
 }
 
@@ -97,6 +99,7 @@ export interface ProfileSetupResponse {
   avatar_url: string | null;
   total_distance_meters: number;
   total_runs: number;
+  total_points?: number;
   created_at: string;
 }
 
@@ -344,6 +347,7 @@ export interface RankingUser {
   nickname: string;
   avatar_url: string | null;
   crew_name?: string | null;
+  runner_level?: number;
 }
 
 export interface RankingEntry {
@@ -377,6 +381,39 @@ export interface MyBestRecord {
   duration_seconds: number;
   avg_pace_seconds_per_km: number;
   finished_at: string;
+}
+
+// ---- Weekly Leaderboard ----
+
+export interface WeeklyRunnerEntry {
+  rank: number;
+  user: RankingUser;
+  total_distance_meters: number;
+  run_count: number;
+  total_duration_seconds: number;
+}
+
+export interface WeeklyLeaderboardResponse {
+  data: WeeklyRunnerEntry[];
+  my_ranking: WeeklyRunnerEntry | null;
+  period_start: string;
+  period_end: string;
+}
+
+// ---- User Search ----
+
+export interface UserSearchItem {
+  id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  crew_name: string | null;
+  activity_region: string | null;
+}
+
+export interface UserSearchResponse {
+  data: UserSearchItem[];
+  total_count: number;
+  has_next: boolean;
 }
 
 // ---- Group Runs ----
@@ -543,7 +580,7 @@ export interface RawGPSPointAPI {
 export interface UploadChunkRequest {
   session_id: string;
   sequence: number;
-  chunk_type: 'intermediate' | 'final';
+  chunk_type: 'intermediate' | 'final' | 'emergency';
   raw_gps_points: RawGPSPointAPI[];
   chunk_summary: ChunkSummary;
   cumulative: CumulativeSummary;
@@ -616,8 +653,12 @@ export interface RunCompleteResponse {
     total_distance_meters: number;
     total_runs: number;
     streak_days: number;
+    runner_level: number;
   };
   missing_chunk_sequences: number[];
+  points_earned: number;
+  course_streak?: number;
+  map_matching_confidence?: number;
 }
 
 // ---- Run Records ----
@@ -633,6 +674,7 @@ export interface RecentRun {
     id: string;
     title: string;
   } | null;
+  route_preview?: number[][] | null;
 }
 
 export interface RunHistoryItem {
@@ -730,6 +772,7 @@ export interface FavoriteCourseItem {
   id: string;
   title: string;
   thumbnail_url: string | null;
+  route_preview?: number[][] | null;
   distance_meters: number;
   estimated_duration_seconds: number;
   creator_nickname: string;
@@ -755,6 +798,7 @@ export interface PublicProfileCourse {
   title: string;
   distance_meters: number;
   thumbnail_url: string | null;
+  route_preview: number[][] | null;
   total_runs: number;
   like_count: number;
 }
@@ -768,14 +812,18 @@ export interface PublicProfileRanking {
 
 export interface PublicProfile {
   id: string;
+  user_code?: string;
   nickname: string | null;
   avatar_url: string | null;
   bio: string | null;
   instagram_username: string | null;
   activity_region?: string;
   crew_name?: string | null;
+  runner_level?: number;
   total_distance_meters: number;
   total_runs: number;
+  total_points?: number;
+  total_likes_received?: number;
   created_at: string;
   followers_count: number;
   following_count: number;
@@ -942,6 +990,8 @@ export interface CrewItem {
   recurring_schedule: string | null;
   meeting_point: string | null;
   requires_approval: boolean;
+  level: number;
+  total_xp: number;
   grade_config: { levels: Record<string, { name: string }> } | null;
   is_member: boolean;
   my_role: string | null;
@@ -1020,6 +1070,38 @@ export interface MyJoinRequestStatus {
   request_id: string | null;
 }
 
+// ---- Crew Weekly Ranking ----
+
+export interface CrewWeeklyRankingItem {
+  user_id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  weekly_distance: number;
+  weekly_runs: number;
+  rank: number;
+}
+
+export interface CrewWeeklyRankingResponse {
+  data: CrewWeeklyRankingItem[];
+}
+
+// ---- Point Transactions ----
+
+export interface PointTransactionItem {
+  id: string;
+  amount: number;
+  balance_after: number;
+  tx_type: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface PointHistoryResponse {
+  data: PointTransactionItem[];
+  total_count: number;
+  has_next: boolean;
+}
+
 // ---- Announcements ----
 
 export interface AnnouncementItem {
@@ -1037,6 +1119,31 @@ export interface AnnouncementItem {
 
 export interface AnnouncementListResponse {
   data: AnnouncementItem[];
+}
+
+// ---- Notifications ----
+
+export interface NotificationActor {
+  id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+}
+
+export interface NotificationItem {
+  id: string;
+  type: string;
+  actor: NotificationActor;
+  target_id: string | null;
+  target_type: string | null;
+  data: Record<string, any> | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  data: NotificationItem[];
+  total_count: number;
+  unread_count: number;
 }
 
 // ---- Community Board ----

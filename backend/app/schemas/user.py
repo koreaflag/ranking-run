@@ -22,6 +22,8 @@ class UserResponse(BaseModel):
     crew_name: str | None = None
     total_distance_meters: int
     total_runs: int
+    total_points: int = 0
+    runner_level: int = 1
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -70,6 +72,7 @@ class PublicProfileCourse(BaseModel):
     title: str
     distance_meters: int
     thumbnail_url: str | None
+    route_preview: list[list[float]] | None = None
     total_runs: int = 0
     like_count: int = 0
 
@@ -95,6 +98,7 @@ class PublicProfileGear(BaseModel):
 class PublicProfileResponse(BaseModel):
     """Public profile visible to other users."""
     id: str
+    user_code: str = ""
     nickname: str | None
     avatar_url: str | None
     bio: str | None = None
@@ -103,6 +107,9 @@ class PublicProfileResponse(BaseModel):
     crew_name: str | None = None
     total_distance_meters: int
     total_runs: int
+    total_points: int = 0
+    runner_level: int = 1
+    total_likes_received: int = 0
     created_at: datetime
     # Follow info (set by the endpoint)
     followers_count: int = 0
@@ -174,6 +181,22 @@ class ConsentRequest(BaseModel):
     location: bool
     contacts: bool = False
     marketing: bool = False
+
+
+class UserSearchItem(BaseModel):
+    """Simplified user for search results."""
+    id: str
+    nickname: str | None
+    avatar_url: str | None
+    crew_name: str | None = None
+    activity_region: str | None = None
+
+
+class UserSearchResponse(BaseModel):
+    """Paginated user search response."""
+    data: list[UserSearchItem]
+    total_count: int
+    has_next: bool
 
 
 class ConsentResponse(BaseModel):

@@ -1,486 +1,57 @@
-import { create } from 'zustand';
-import type {
-  CourseListItem,
-  CourseDetail,
-  CourseDetailStats,
-  CourseListParams,
-  NearbyCourse,
-  CourseMarker,
-  RankingEntry,
-  MyBestRecord,
-  CourseReview,
-  MyCourse,
-  FavoriteCourseItem,
-  CrewCourseRankingEntry,
-} from '../types/api';
-import { courseService } from '../services/courseService';
-import { crewChallengeService } from '../services/crewChallengeService';
-import { rankingService } from '../services/rankingService';
-import { reviewService } from '../services/reviewService';
-import i18n from '../i18n';
+/**
+ * Backward-compatible barrel export.
+ *
+ * The monolithic courseStore has been split into two focused stores:
+ *   - useCourseListStore  (list, filters, map, favorites, my courses)
+ *   - useCourseDetailStore (detail, rankings, reviews, likes)
+ *
+ * This file provides a `useCourseStore` hook that merges both stores so that
+ * existing consumer code continues to work without changes.
+ *
+ * NEW code should import directly from the split stores:
+ *   import { useCourseListStore } from './courseListStore';
+ *   import { useCourseDetailStore } from './courseDetailStore';
+ */
 
-type ViewMode = 'list' | 'map';
+import { useCourseListStore } from './courseListStore';
+import { useCourseDetailStore } from './courseDetailStore';
 
-interface CourseState {
-  // List
-  courses: CourseListItem[];
-  nearbyCourses: NearbyCourse[];
-  popularCourses: CourseListItem[];
-  newCourses: CourseListItem[];
-  isLoading: boolean;
-  isLoadingMore: boolean;
-  hasNext: boolean;
-  totalCount: number;
-  currentPage: number;
-  error: string | null;
+// Re-export split stores for direct usage
+export { useCourseListStore } from './courseListStore';
+export { useCourseDetailStore } from './courseDetailStore';
 
-  // Filters
-  filters: CourseListParams;
-  viewMode: ViewMode;
+/**
+ * Unified selector hook for backward compatibility.
+ *
+ * Usage (same as before):
+ *   const { courses, selectedCourse, fetchCourses } = useCourseStore();
+ *   const courses = useCourseStore((s) => s.courses);
+ *
+ * Both hook-style and selector-style usage are supported. When called with a
+ * selector, the selector receives the merged state from both stores.
+ */
+type MergedState = ReturnType<typeof useCourseListStore.getState> &
+  ReturnType<typeof useCourseDetailStore.getState>;
 
-  // Map markers
-  mapMarkers: CourseMarker[];
+export function useCourseStore(): MergedState;
+export function useCourseStore<T>(selector: (state: MergedState) => T): T;
+export function useCourseStore<T>(selector?: (state: MergedState) => T): T | MergedState {
+  const listState = useCourseListStore();
+  const detailState = useCourseDetailStore();
 
-  // My Courses
-  myCourses: MyCourse[];
-  isLoadingMyCourses: boolean;
+  const merged: MergedState = { ...listState, ...detailState };
 
-  // Favorites
-  favoriteCourses: FavoriteCourseItem[];
-  favoriteIds: string[];
-  isLoadingFavorites: boolean;
-
-  // Detail
-  selectedCourse: CourseDetail | null;
-  selectedCourseStats: CourseDetailStats | null;
-  selectedCourseRankings: RankingEntry[];
-  selectedCourseCrewRankings: CrewCourseRankingEntry[];
-  selectedCourseMyCrewRankings: CrewCourseRankingEntry[];
-  selectedCourseMyBest: MyBestRecord | null;
-  isLoadingDetail: boolean;
-
-  // Reviews
-  selectedCourseReviews: CourseReview[];
-  selectedCourseAvgRating: number | null;
-  selectedCourseReviewCount: number;
-  selectedCourseMyReview: CourseReview | null;
-
-  // Likes
-  selectedCourseLikeCount: number;
-  selectedCourseIsLiked: boolean;
-
-  // World focus
-  pendingFocusCourseId: string | null;
-
-  // Raid course selection
-  pendingSelectForRaid: string | null;
-
-  // Auto-start course run from outside WorldScreen (e.g. crew raid)
-  pendingStartCourseId: string | null;
-
-  // Actions
-  setPendingFocusCourseId: (id: string | null) => void;
-  setPendingSelectForRaid: (crewId: string | null) => void;
-  setPendingStartCourseId: (id: string | null) => void;
-  fetchCourses: (params?: CourseListParams) => Promise<void>;
-  fetchMoreCourses: () => Promise<void>;
-  fetchNearbyCourses: (lat: number, lng: number) => Promise<void>;
-  fetchPopularCourses: () => Promise<void>;
-  fetchNewCourses: () => Promise<void>;
-  fetchCourseDetail: (courseId: string) => Promise<void>;
-  fetchMapMarkers: (
-    swLat: number,
-    swLng: number,
-    neLat: number,
-    neLng: number,
-  ) => Promise<void>;
-  setFilters: (filters: Partial<CourseListParams>) => void;
-  setViewMode: (mode: ViewMode) => void;
-  toggleLike: (courseId: string) => Promise<void>;
-  submitReview: (courseId: string, content?: string) => Promise<void>;
-  deleteReview: (reviewId: string, courseId: string) => Promise<void>;
-  replyToReview: (courseId: string, reviewId: string, content: string) => Promise<void>;
-  fetchFavoriteCourses: () => Promise<void>;
-  toggleFavorite: (courseId: string) => Promise<void>;
-  fetchMyCourses: () => Promise<void>;
-  updateMyCourse: (courseId: string, data: { title?: string; description?: string; is_public?: boolean; course_type?: 'normal' | 'loop'; lap_count?: number }) => Promise<void>;
-  deleteMyCourse: (courseId: string) => Promise<void>;
-  clearDetail: () => void;
-  clearError: () => void;
+  if (selector) {
+    return selector(merged);
+  }
+  return merged;
 }
 
-export const useCourseStore = create<CourseState>((set, get) => ({
-  courses: [],
-  nearbyCourses: [],
-  popularCourses: [],
-  newCourses: [],
-  isLoading: false,
-  isLoadingMore: false,
-  hasNext: false,
-  totalCount: 0,
-  currentPage: 0,
-  error: null,
-
-  filters: {
-    order_by: 'total_runs',
-    order: 'desc',
-    page: 0,
-    per_page: 20,
-  },
-  viewMode: 'list',
-
-  mapMarkers: [],
-
-  pendingFocusCourseId: null,
-  pendingSelectForRaid: null,
-  pendingStartCourseId: null,
-
-  setPendingFocusCourseId: (id) => {
-    set({ pendingFocusCourseId: id });
-  },
-
-  setPendingSelectForRaid: (crewId) => {
-    set({ pendingSelectForRaid: crewId });
-  },
-
-  setPendingStartCourseId: (id) => {
-    set({ pendingStartCourseId: id });
-  },
-
-  myCourses: [],
-  isLoadingMyCourses: false,
-
-  favoriteCourses: [],
-  favoriteIds: [] as string[],
-  isLoadingFavorites: false,
-
-  selectedCourse: null,
-  selectedCourseStats: null,
-  selectedCourseRankings: [],
-  selectedCourseCrewRankings: [],
-  selectedCourseMyCrewRankings: [],
-  selectedCourseMyBest: null,
-  isLoadingDetail: false,
-
-  selectedCourseReviews: [],
-  selectedCourseAvgRating: null,
-  selectedCourseReviewCount: 0,
-  selectedCourseMyReview: null,
-
-  selectedCourseLikeCount: 0,
-  selectedCourseIsLiked: false,
-
-  fetchCourses: async (params) => {
-    const filters = params ?? get().filters;
-    set({ isLoading: true, error: null, filters: { ...filters, page: 0 } });
-
-    try {
-      const response = await courseService.getCourses({ ...filters, page: 0 });
-      set({
-        courses: response.data,
-        totalCount: response.total_count,
-        hasNext: response.has_next,
-        currentPage: 0,
-        isLoading: false,
-      });
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : i18n.t('courses.loadError');
-      set({ isLoading: false, error: message });
-    }
-  },
-
-  fetchMoreCourses: async () => {
-    const { hasNext, isLoadingMore, currentPage, filters } = get();
-    if (!hasNext || isLoadingMore) return;
-
-    set({ isLoadingMore: true });
-    const nextPage = currentPage + 1;
-
-    try {
-      const response = await courseService.getCourses({
-        ...filters,
-        page: nextPage,
-      });
-      set((state) => ({
-        courses: [...state.courses, ...response.data],
-        hasNext: response.has_next,
-        currentPage: nextPage,
-        isLoadingMore: false,
-      }));
-    } catch {
-      set({ isLoadingMore: false });
-    }
-  },
-
-  fetchNearbyCourses: async (lat, lng) => {
-    try {
-      const courses = await courseService.getNearbyCourses(lat, lng);
-      set({ nearbyCourses: courses });
-    } catch {
-      // silently fail — empty list stays
-    }
-  },
-
-  fetchPopularCourses: async () => {
-    try {
-      const response = await courseService.getCourses({
-        order_by: 'total_runs',
-        order: 'desc',
-        page: 0,
-        per_page: 5,
-      });
-      set({ popularCourses: response.data });
-    } catch {
-      // silently fail
-    }
-  },
-
-  fetchNewCourses: async () => {
-    try {
-      const response = await courseService.getCourses({
-        order_by: 'created_at',
-        order: 'desc',
-        page: 0,
-        per_page: 5,
-      });
-      set({ newCourses: response.data });
-    } catch {
-      // silently fail
-    }
-  },
-
-  fetchCourseDetail: async (courseId) => {
-    set({ isLoadingDetail: true });
-    try {
-      const [detail, stats, rankings, crewRankingsRes, myBest, reviewsResponse, myReview, likeStatus] = await Promise.all([
-        courseService.getCourseDetail(courseId),
-        courseService.getCourseStats(courseId).catch(() => null),
-        rankingService.getCourseRankings(courseId, 10).catch(() => []),
-        crewChallengeService.getCourseCrewRankings(courseId, 0, 10).catch(() => ({ data: [], my_crews: [], total_crews: 0 })),
-        courseService.getMyBest(courseId).catch(() => null),
-        reviewService.getCourseReviews(courseId).catch(() => ({ data: [], total_count: 0, avg_rating: null })),
-        reviewService.getMyReview(courseId).catch(() => null),
-        courseService.getLikeStatus(courseId).catch(() => ({ is_liked: false, like_count: 0 })),
-      ]);
-      set({
-        selectedCourse: detail,
-        selectedCourseStats: stats,
-        selectedCourseRankings: rankings,
-        selectedCourseCrewRankings: crewRankingsRes.data,
-        selectedCourseMyCrewRankings: crewRankingsRes.my_crews,
-        selectedCourseMyBest: myBest,
-        selectedCourseReviews: reviewsResponse.data,
-        selectedCourseAvgRating: reviewsResponse.avg_rating,
-        selectedCourseReviewCount: reviewsResponse.total_count,
-        selectedCourseMyReview: myReview,
-        selectedCourseLikeCount: likeStatus.like_count,
-        selectedCourseIsLiked: likeStatus.is_liked,
-        isLoadingDetail: false,
-      });
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : i18n.t('courses.detailError');
-      set({ isLoadingDetail: false, error: message });
-    }
-  },
-
-  fetchMapMarkers: async (swLat, swLng, neLat, neLng) => {
-    try {
-      const markers = await courseService.getCourseBounds(
-        swLat,
-        swLng,
-        neLat,
-        neLng,
-      );
-      set({ mapMarkers: markers });
-    } catch {
-      // silently fail — empty list stays
-    }
-  },
-
-  setFilters: (newFilters) => {
-    set((state) => ({
-      filters: { ...state.filters, ...newFilters },
-    }));
-  },
-
-  setViewMode: (mode) => {
-    set({ viewMode: mode });
-  },
-
-  toggleLike: async (courseId: string) => {
-    // Optimistic update
-    const wasLiked = get().selectedCourseIsLiked;
-    const prevCount = get().selectedCourseLikeCount;
-    set({
-      selectedCourseIsLiked: !wasLiked,
-      selectedCourseLikeCount: wasLiked ? Math.max(0, prevCount - 1) : prevCount + 1,
-    });
-    try {
-      const result = await courseService.toggleLike(courseId);
-      set((state) => ({
-        selectedCourseIsLiked: result.is_liked,
-        selectedCourseLikeCount: result.like_count,
-        // Sync like_count into list arrays so CourseListScreen reflects changes
-        courses: state.courses.map((c) =>
-          c.id === courseId ? { ...c, like_count: result.like_count } : c,
-        ),
-        nearbyCourses: state.nearbyCourses.map((c) =>
-          c.id === courseId ? { ...c, like_count: result.like_count } : c,
-        ),
-      }));
-    } catch {
-      // Keep optimistic state — server will sync later
-    }
-  },
-
-  submitReview: async (courseId, content) => {
-    const myReview = get().selectedCourseMyReview;
-    if (myReview) {
-      await reviewService.updateReview(myReview.id, { content });
-    } else {
-      await reviewService.createReview(courseId, { content });
-    }
-    // Re-fetch from server to ensure state consistency (non-blocking)
-    try {
-      const [updatedMyReview, reviewsResponse] = await Promise.all([
-        reviewService.getMyReview(courseId),
-        reviewService.getCourseReviews(courseId),
-      ]);
-      set({
-        selectedCourseMyReview: updatedMyReview,
-        selectedCourseReviews: reviewsResponse.data,
-        selectedCourseAvgRating: reviewsResponse.avg_rating,
-        selectedCourseReviewCount: reviewsResponse.total_count,
-      });
-    } catch {
-      // Re-fetch failed but the mutation itself succeeded
-    }
-  },
-
-  replyToReview: async (courseId, reviewId, content) => {
-    try {
-      const updatedReview = await courseService.replyToReview(courseId, reviewId, content);
-      set((state) => ({
-        selectedCourseReviews: state.selectedCourseReviews.map((r) =>
-          r.id === reviewId ? updatedReview : r,
-        ),
-        selectedCourseMyReview:
-          state.selectedCourseMyReview?.id === reviewId
-            ? updatedReview
-            : state.selectedCourseMyReview,
-      }));
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : i18n.t('courses.replyError');
-      set({ error: message });
-      throw error;
-    }
-  },
-
-  deleteReview: async (reviewId, courseId) => {
-    try {
-      await reviewService.deleteReview(reviewId);
-      set({ selectedCourseMyReview: null });
-      // Refresh the reviews list
-      const reviewsResponse = await reviewService.getCourseReviews(courseId);
-      set({
-        selectedCourseReviews: reviewsResponse.data,
-        selectedCourseAvgRating: reviewsResponse.avg_rating,
-        selectedCourseReviewCount: reviewsResponse.total_count,
-      });
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : i18n.t('courses.deleteReviewError');
-      set({ error: message });
-    }
-  },
-
-  fetchFavoriteCourses: async () => {
-    set({ isLoadingFavorites: true });
-    try {
-      const favorites = await courseService.getFavoriteCourses();
-      set({
-        favoriteCourses: favorites,
-        favoriteIds: favorites.map((f) => f.id),
-      });
-    } catch {
-      // silently fail
-    } finally {
-      set({ isLoadingFavorites: false });
-    }
-  },
-
-  toggleFavorite: async (courseId: string) => {
-    const prev = get().favoriteIds;
-    // Optimistic update
-    const optimistic = prev.includes(courseId)
-      ? prev.filter((id) => id !== courseId)
-      : [...prev, courseId];
-    set({ favoriteIds: optimistic });
-
-    try {
-      const result = await courseService.toggleFavorite(courseId);
-      // Sync with server response
-      const current = get().favoriteIds;
-      if (result.is_favorited && !current.includes(courseId)) {
-        set({ favoriteIds: [...current, courseId] });
-      } else if (!result.is_favorited && current.includes(courseId)) {
-        set({ favoriteIds: current.filter((id) => id !== courseId) });
-      }
-      // Refresh full list
-      get().fetchFavoriteCourses();
-    } catch {
-      // Keep optimistic state — server will sync later
-    }
-  },
-
-  fetchMyCourses: async () => {
-    set({ isLoadingMyCourses: true });
-    try {
-      const courses = await courseService.getMyCourses();
-      set({ myCourses: courses, isLoadingMyCourses: false });
-    } catch {
-      set({ isLoadingMyCourses: false });
-    }
-  },
-
-  updateMyCourse: async (courseId, data) => {
-    await courseService.updateCourse(courseId, data);
-    set((state) => ({
-      myCourses: state.myCourses.map((c) =>
-        c.id === courseId ? { ...c, ...data } : c,
-      ),
-    }));
-  },
-
-  deleteMyCourse: async (courseId: string) => {
-    await courseService.deleteCourse(courseId);
-    set((state) => ({
-      myCourses: state.myCourses.filter((c) => c.id !== courseId),
-      courses: state.courses.filter((c) => c.id !== courseId),
-    }));
-  },
-
-  clearDetail: () => {
-    set({
-      selectedCourse: null,
-      selectedCourseStats: null,
-      selectedCourseRankings: [],
-      selectedCourseCrewRankings: [],
-      selectedCourseMyCrewRankings: [],
-      selectedCourseMyBest: null,
-      selectedCourseReviews: [],
-      selectedCourseAvgRating: null,
-      selectedCourseReviewCount: 0,
-      selectedCourseMyReview: null,
-      selectedCourseLikeCount: 0,
-      selectedCourseIsLiked: false,
-    });
-  },
-
-  clearError: () => {
-    set({ error: null });
-  },
-}));
+/**
+ * Static getState() / setState() for imperative access outside React components.
+ * e.g. useCourseStore.getState().setPendingFocusCourseId(null)
+ */
+useCourseStore.getState = (): MergedState => ({
+  ...useCourseListStore.getState(),
+  ...useCourseDetailStore.getState(),
+});

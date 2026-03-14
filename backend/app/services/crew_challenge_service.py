@@ -4,11 +4,12 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.core.exceptions import NotFoundError, PermissionDeniedError
+from app.core.crew_level_config import get_max_active_challenges
+from app.core.exceptions import BadRequestError, NotFoundError, PermissionDeniedError
 from app.models.course import Course
 from app.models.crew import Crew, CrewMember
 from app.models.crew_challenge import CrewChallenge, CrewChallengeRecord
@@ -28,8 +29,8 @@ class CrewChallengeService:
     ) -> dict:
         """Create a new crew challenge (raid run) for the given crew and course.
 
-        Only crew owners and admins may create challenges. Any existing active
-        challenge for the crew is automatically ended before the new one starts.
+        Only crew owners and admins may create challenges. The number of
+        concurrent active challenges is limited by the crew's level.
         """
         # Verify crew exists
         crew = await db.get(Crew, crew_id)
@@ -44,16 +45,20 @@ class CrewChallengeService:
         if course is None:
             raise NotFoundError(code="COURSE_NOT_FOUND", message="코스를 찾을 수 없습니다")
 
-        # End any existing active challenge for this crew
-        now = datetime.now(timezone.utc)
-        await db.execute(
-            update(CrewChallenge)
-            .where(
+        # Check active challenge limit based on crew level
+        max_challenges = get_max_active_challenges(crew.level)
+        active_count_result = await db.execute(
+            select(func.count()).select_from(CrewChallenge).where(
                 CrewChallenge.crew_id == crew_id,
                 CrewChallenge.status == "active",
             )
-            .values(status="ended", ended_at=now)
         )
+        active_count = active_count_result.scalar() or 0
+        if active_count >= max_challenges:
+            raise BadRequestError(
+                code="CHALLENGE_LIMIT",
+                message=f"동시 챌린지는 최대 {max_challenges}개입니다",
+            )
 
         # Create new challenge
         challenge = CrewChallenge(

@@ -24,7 +24,8 @@
     "permissionTitle": "権限が必要です",
     "permissionPhoto": "写真へのアクセスを許可してください。",
     "social": "ソーシャル",
-    "preparing": "準備中です"
+    "preparing": "準備中です",
+    "endOfList": "すべて確認しました"
   },
   "tabs": {
     "home": "ホーム",
@@ -97,6 +98,7 @@
       "currentPace": "現在のペース"
     },
     "controls": {
+      "start": "スタート",
       "pause": "一時停止",
       "resume": "再開",
       "stop": "終了",
@@ -129,6 +131,9 @@
       "switchToFreeMsg": "コースランをキャンセルしてフリーランに切り替えますか？",
       "switchBtn": "切替"
     },
+    "exitTitle": "ランニング画面を離れますか？",
+    "exitMessage": "ランニング中です。本当に離れますか？",
+    "exitConfirm": "離れる",
     "nav": {
       "straightAhead": "直進"
     },
@@ -156,6 +161,7 @@
       "registerCourseDisabled": "コース登録（{{min}}m以上必要）",
       "registerWaiting": "アップロード後に登録可能",
       "goHome": "ホームへ",
+      "locateMe": "現在地へ移動",
       "minDistance": "コース登録には500m以上走る必要があります。",
       "localSavedNoUpload": "アップロードが完了していません。しばらくしてからお試しください。",
       "uploadNotDone": "アップロード中です。お待ちください。",
@@ -174,7 +180,9 @@
       "courseAdherence": "コース遵守",
       "routeMatch": "経路一致率",
       "maxDeviation": "最大逸脱",
-      "offCourseSegments": "コース逸脱区間"
+      "offCourseSegments": "コース逸脱区間",
+      "pointsEarned": "獲得ポイント",
+      "signalGap": "信号途切れ区間"
     }
   },
   "world": {
@@ -202,11 +210,13 @@
     "cancelNavigate": "キャンセル",
     "startCompetition": "競争スタート",
     "arrivedAtStart": "スタート地点に到着！",
-    "goToStart": "スタートへ移動"
+    "goToStart": "スタートへ移動",
+    "distanceToStart": "スタートまで{{distance}}km（5km以内でチャレンジ可能）"
   },
   "course": {
     "title": "コース",
     "discover": "コース探索",
+    "favorites": "お気に入り",
     "nearbySection": "近くのコース",
     "popularSection": "人気コース",
     "newSection": "新しいコース",
@@ -270,6 +280,9 @@
       "gap": "差 {{gap}}",
       "challenge": "チャレンジ",
       "viewInWorld": "ワールドで見る",
+      "tooFarFromStart": "出発地から{{distance}}km（5km以内で可能）",
+      "distanceFromStart": "出発地から{{distance}}km",
+      "details": "詳細",
       "editTitle": "コース編集",
       "fieldTitle": "タイトル",
       "fieldTitlePlaceholder": "コース名",
@@ -306,7 +319,8 @@
       "minDistanceError": "500m以上の記録のみコースとして登録できます。",
       "courseSaved": "コース保存完了",
       "courseSavedMsg": "「{{title}}」コースが保存されました。"
-    }
+    },
+    "streak": "{{count}}回連続完走"
   },
   "home": {
     "weeklyChallenge": "ウィークリーチャレンジ",
@@ -405,7 +419,15 @@
       "morning": "午前",
       "afternoon": "午後",
       "evening": "夜"
-    }
+    },
+    "emptyStateTitle": "最初のランを始めましょう！",
+    "emptyStateDesc": "ランニングデータが蓄積されると\n統計と記録を確認できます",
+    "startRunning": "ランニング開始",
+    "showMoreCharts": "もっと見る",
+    "showLessCharts": "閉じる",
+    "dailyCheckin": "今日の出席チェック",
+    "checkinSuccess": "出席完了！",
+    "checkinPoints": "+{{points}}P 獲得しました"
   },
   "profileEdit": {
     "title": "プロフィール編集",
@@ -484,7 +506,8 @@
     "primaryGear": "メイン",
     "loadError": "プロフィールを読み込めません。",
     "loadDetailError": "プロフィール情報を読み込めません。",
-    "defaultNickname": "ランナー"
+    "defaultNickname": "ランナー",
+    "likes": "いいね"
   },
   "community": {
     "title": "ソーシャル",
@@ -545,6 +568,7 @@
     "crewNotFound": "クルーが見つかりません。",
     "loadError": "クルー情報を読み込めません。",
     "joinFailed": "参加に失敗しました。",
+    "joinedSuccess": "クルーに参加しました！",
     "leaveTitle": "クルー脱退",
     "leaveMsg": "本当にこのクルーから脱退しますか？",
     "leaveFailed": "脱退に失敗しました。",
@@ -564,7 +588,15 @@
     "maxParticipants": "最大人数",
     "noLimit": "制限なし",
     "badgeColor": "バッジカラー",
+    "region": "活動地域",
+    "regionPlaceholder": "例）東京 渋谷",
+    "selectRegion": "地域選択",
+    "resetRegion": "リセット",
+    "allRegion": "全体",
     "createFailed": "クルーの作成に失敗しました。もう一度お試しください。",
+    "crewLimitReached": "クルーは最大5つまで作成できます。",
+    "insufficientPoints": "クルー作成に{{cost}}P必要です（現在{{current}}P）",
+    "pointsCost": "作成コスト: {{cost}}P",
     "messagePlaceholder": "メッセージを入力してください",
     "connectionLost": "接続が切れました",
     "searchCrews": "クルーを探す",
@@ -654,7 +686,10 @@
     "noNotifications": "新しいお知らせはありません",
     "noNotificationsDesc": "参加申請が届くとここに表示されます",
     "approveFailed": "承認に失敗しました。",
-    "rejectFailed": "拒否に失敗しました。"
+    "rejectFailed": "拒否に失敗しました。",
+    "weeklyRanking": "今週のランキング",
+    "level": "Lv.{{level}}",
+    "xpProgress": "{{current}} / {{next}} XP"
   },
   "format": {
     "justNow": "たった今",
@@ -963,7 +998,37 @@
   "ranking": {
     "individual": "個人",
     "crew": "クルー",
-    "noCrewRankings": "クルーランキングはまだありません"
+    "noCrewRankings": "クルーランキングはまだありません",
+    "weeklyTopRunners": "今週のトップランナー",
+    "runs": "{{count}}回",
+    "tabLabel": "ランキング",
+    "myRanking": "マイランキング"
+  },
+  "points": {
+    "history": "ポイント履歴",
+    "earned": "+{{points}}P 獲得",
+    "runEarn": "ランニング報酬",
+    "courseBonus": "コースボーナス",
+    "crewCreate": "クルー作成",
+    "dailyCheckin": "出席チェック",
+    "courseCreate": "コース登録"
+  },
+  "explore": {
+    "searchPlaceholder": "クルーまたはランナーを検索",
+    "crewSection": "クルー",
+    "runnerSection": "ランナー",
+    "noResults": "検索結果がありません",
+    "searchHint": "クルー名やランナーのニックネームで検索"
+  },
+  "notification": {
+    "title": "お知らせ",
+    "noNotifications": "お知らせはありません",
+    "markAllRead": "すべて既読",
+    "postComment": "がコメントしました",
+    "postLike": "があなたの投稿にいいねしました",
+    "crewJoinRequest": "が{{crew}}への参加を申請しました",
+    "followed": "がフォローしました",
+    "friendRequest": "が友達リクエストを送りました"
   },
   "guide": {
     "step1Title": "走ってコースを作ろう",
@@ -975,5 +1040,55 @@
     "skip": "スキップ",
     "next": "次へ",
     "start": "始める"
+  },
+  "runnerLevel": {
+    "tier1": { "name": "赤ちゃんカメ", "desc": "ゆっくりでもOK、まず出発！" },
+    "tier2": { "name": "働き者リス", "desc": "少しずつ速くなってる..." },
+    "tier3": { "name": "草原のウサギ", "desc": "なかなかやるね？" },
+    "tier4": { "name": "野生馬", "desc": "もう誰にも捕まらない" },
+    "tier5": { "name": "狩りのオオカミ", "desc": "群れを率いるリーダー" },
+    "tier6": { "name": "草原のチーター", "desc": "地上最速" },
+    "tier7": { "name": "空のタカ", "desc": "地上を超越する" },
+    "tier8": { "name": "稲妻ヒョウ", "desc": "稲妻より速く" },
+    "tier9": { "name": "嵐のドラゴン", "desc": "伝説が始まる" },
+    "tier10": { "name": "フェニックス", "desc": "尽きることのない永遠の炎" },
+    "tier11": { "name": "ユニコーン", "desc": "存在そのものが伝説" },
+    "tier12": { "name": "神獣キリン", "desc": "神話の領域に到達" }
+  },
+  "crewLevel": {
+    "guideTitle": "クルーレベルガイド",
+    "current": "現在",
+    "maxMembers": "最大{{count}}人",
+    "unlimited": "メンバー無制限",
+    "lockedAt": "Lv.{{level}}で解放",
+    "unlockHint": "クルーのレベルを上げて解放しよう",
+    "unlock": {
+      "challenge1": "チャレンジ1個",
+      "weeklyRanking": "週間ランキング",
+      "maxMembers20": "最大メンバー20人",
+      "announcements": "お知らせ",
+      "maxMembers30": "最大メンバー30人",
+      "badgeColor": "バッジカラーカスタム",
+      "coverImage": "カバー画像",
+      "maxMembers50": "最大メンバー50人",
+      "gradeNameCustom": "等級名カスタム",
+      "challenge2": "同時チャレンジ2個",
+      "maxMembers80": "最大メンバー80人",
+      "crewBattle": "クルー対決",
+      "inviteLink": "招待リンク",
+      "maxMembers120": "最大メンバー120人",
+      "crewStats": "クルー統計",
+      "challenge3": "同時チャレンジ3個",
+      "maxMembers200": "最大メンバー200人",
+      "searchPriority": "検索優先表示",
+      "challenge5": "同時チャレンジ5個",
+      "maxMembers300": "最大メンバー300人",
+      "crewCourse": "クルー専用コース",
+      "unlimitedMembers": "メンバー無制限",
+      "featured": "おすすめ掲載",
+      "challengeUnlimited": "チャレンジ無制限",
+      "legendBadge": "レジェンドバッジアニメーション",
+      "officialCert": "公式認証マーク"
+    }
   }
 }

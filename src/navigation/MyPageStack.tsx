@@ -17,6 +17,7 @@ import RunDetailScreen from '../screens/mypage/RunDetailScreen';
 import SettingsScreen from '../screens/mypage/SettingsScreen';
 import PrivacyPolicyScreen from '../screens/mypage/PrivacyPolicyScreen';
 import TermsOfServiceScreen from '../screens/mypage/TermsOfServiceScreen';
+import PointHistoryScreen from '../screens/mypage/PointHistoryScreen';
 import { useTheme } from '../hooks/useTheme';
 
 const Stack = createNativeStackNavigator<MyPageStackParamList>();
@@ -47,6 +48,7 @@ export default function MyPageStack() {
       <Stack.Screen name="TermsOfService" component={TermsOfServiceScreen} />
       <Stack.Screen name="FollowList" component={FollowListScreen} />
       <Stack.Screen name="Friends" component={FriendsScreen} />
+      <Stack.Screen name="PointHistory" component={PointHistoryScreen} />
     </Stack.Navigator>
   );
 }

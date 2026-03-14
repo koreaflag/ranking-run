@@ -9,6 +9,7 @@ import type {
   CrewJoinRequestListResponse,
   MyJoinRequestStatus,
   CrewManagementStats,
+  CrewWeeklyRankingResponse,
 } from '../types/api';
 
 class CrewService {
@@ -128,6 +129,10 @@ class CrewService {
 
   async getManagementStats(crewId: string): Promise<CrewManagementStats> {
     return api.get<CrewManagementStats>(`/crews/${crewId}/management/stats`);
+  }
+
+  async getWeeklyRanking(crewId: string): Promise<CrewWeeklyRankingResponse> {
+    return api.get<CrewWeeklyRankingResponse>(`/crews/${crewId}/weekly-ranking`);
   }
 
   async uploadImage(fileUri: string): Promise<string> {

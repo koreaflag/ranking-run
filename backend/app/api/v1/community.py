@@ -189,12 +189,15 @@ async def create_comment(
     post_author_id = comment.get("post_author_id")
     if post_author_id and str(post_author_id) != str(current_user.id):
         try:
-            await notification_service.send_to_user(
-                db,
-                UUID(str(post_author_id)),
+            await notification_service.create_and_send(
+                db=db,
+                user_id=UUID(str(post_author_id)),
+                notification_type="post_comment",
+                actor_id=current_user.id,
                 title=current_user.nickname or "누군가",
                 body="님이 댓글을 남겼습니다",
-                data={"type": "post_comment", "post_id": str(post_id)},
+                target_id=str(post_id),
+                target_type="post",
             )
         except Exception:
             logger.warning("Failed to send comment notification for post %s", post_id)
@@ -244,12 +247,15 @@ async def toggle_like(
     # Notify post author on like (not unlike, not self)
     if is_liked and post_author_id and str(post_author_id) != str(current_user.id):
         try:
-            await notification_service.send_to_user(
-                db,
-                post_author_id,
+            await notification_service.create_and_send(
+                db=db,
+                user_id=post_author_id,
+                notification_type="post_like",
+                actor_id=current_user.id,
                 title=current_user.nickname or "누군가",
                 body="님이 회원님의 게시글을 좋아합니다",
-                data={"type": "post_like", "post_id": str(post_id)},
+                target_id=str(post_id),
+                target_type="post",
             )
         except Exception:
             logger.warning("Failed to send like notification for post %s", post_id)

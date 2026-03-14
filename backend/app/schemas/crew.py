@@ -58,6 +58,8 @@ class CrewResponse(BaseModel):
     recurring_schedule: str | None = None
     meeting_point: str | None = None
     requires_approval: bool = False
+    level: int = 1
+    total_xp: int = 0
     grade_config: dict | None = None
     is_member: bool = False
     my_role: str | None = None
@@ -136,3 +138,16 @@ class CrewManagementStats(BaseModel):
     pending_requests: int
     recent_joins_7d: int
     recent_leaves_7d: int
+
+
+class CrewWeeklyRankingItem(BaseModel):
+    user_id: str
+    nickname: str | None = None
+    avatar_url: str | None = None
+    weekly_distance: int
+    weekly_runs: int
+    rank: int
+
+
+class CrewWeeklyRankingResponse(BaseModel):
+    data: list[CrewWeeklyRankingItem]

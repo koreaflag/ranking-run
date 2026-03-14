@@ -40,6 +40,9 @@ RCT_EXTERN_METHOD(notifyCountdownStart:(int)countdownSeconds
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(notifyRunningPhase:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(requestLocationPermission)
 
 RCT_EXTERN_METHOD(startHeadingUpdates:(RCTPromiseResolveBlock)resolve

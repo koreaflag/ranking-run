@@ -8,6 +8,7 @@ import CrewCreateScreen from '../screens/crew/CrewCreateScreen';
 import CrewDetailScreen from '../screens/crew/CrewDetailScreen';
 import CrewMembersScreen from '../screens/crew/CrewMembersScreen';
 import CrewSearchScreen from '../screens/crew/CrewSearchScreen';
+import CourseDetailScreen from '../screens/course/CourseDetailScreen';
 import UserProfileScreen from '../screens/profile/UserProfileScreen';
 import FindFriendsScreen from '../screens/mypage/FindFriendsScreen';
 import CrewBoardScreen from '../screens/community/CrewBoardScreen';
@@ -17,6 +18,7 @@ import CrewNotificationsScreen from '../screens/crew/CrewNotificationsScreen';
 import CommunityPostEditScreen from '../screens/community/CommunityPostEditScreen';
 import FollowListScreen from '../screens/profile/FollowListScreen';
 import FriendsScreen from '../screens/profile/FriendsScreen';
+import UnifiedSearchScreen from '../screens/community/UnifiedSearchScreen';
 import { useTheme } from '../hooks/useTheme';
 
 const Stack = createNativeStackNavigator<CommunityStackParamList>();
@@ -38,6 +40,7 @@ export default function CommunityStack() {
       <Stack.Screen name="CrewDetail" component={CrewDetailScreen} />
       <Stack.Screen name="CrewMembers" component={CrewMembersScreen} />
       <Stack.Screen name="CrewSearch" component={CrewSearchScreen} />
+      <Stack.Screen name="CourseDetail" component={CourseDetailScreen} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
       <Stack.Screen name="FindFriends" component={FindFriendsScreen} />
       <Stack.Screen name="CrewBoard" component={CrewBoardScreen} />
@@ -47,6 +50,7 @@ export default function CommunityStack() {
       <Stack.Screen name="CommunityPostEdit" component={CommunityPostEditScreen} />
       <Stack.Screen name="FollowList" component={FollowListScreen} />
       <Stack.Screen name="Friends" component={FriendsScreen} />
+      <Stack.Screen name="UnifiedSearch" component={UnifiedSearchScreen} />
     </Stack.Navigator>
   );
 }

@@ -13,6 +13,7 @@ import type {
   FriendRunning,
   AnalyticsData,
   UserSearchByCodeResult,
+  UserSearchResponse,
   FollowListResponse,
 } from '../types/api';
 
@@ -149,5 +150,24 @@ export const userService = {
     return api.get<FollowListResponse>(
       `/users/${userId}/following?page=${page}&per_page=${perPage}`,
     );
+  },
+
+  /**
+   * Search users by nickname.
+   */
+  async searchUsers(params: {
+    q: string;
+    page?: number;
+    per_page?: number;
+  }): Promise<UserSearchResponse> {
+    const sp = new URLSearchParams();
+    sp.set('q', params.q);
+    if (params.page !== undefined) sp.set('page', String(params.page));
+    if (params.per_page !== undefined) sp.set('per_page', String(params.per_page));
+    return api.get<UserSearchResponse>(`/users/search?${sp.toString()}`);
+  },
+
+  async dailyCheckin(): Promise<{ checked_in: boolean; points_earned: number; total_points: number; already: boolean }> {
+    return api.post('/users/me/daily-checkin');
   },
 };

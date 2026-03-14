@@ -131,8 +131,8 @@ def generate_thumbnail_url(route_geometry: dict, access_token: str) -> str | Non
     # Build polyline string: lng,lat;lng,lat;...
     polyline_str = ";".join(f"{c[0]:.6f},{c[1]:.6f}" for c in simplified_coords)
 
-    # URL-encode the path — thin line for clean rendering
-    path = f"path-2+FF6B35-0.9({quote(polyline_str)})"
+    # URL-encode the path — match world map route color (#FFC800)
+    path = f"path-4+FFC800-0.9({quote(polyline_str)})"
 
     return (
         f"https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/static/"
@@ -279,8 +279,9 @@ class CourseService:
             matched_coordinates = coordinates
             try:
                 matcher = MapMatchingService()
-                matched_coordinates = await matcher.match_route(coordinates)
+                match_result = await matcher.match_route(coordinates)
                 await matcher.close()
+                matched_coordinates = match_result.coordinates
                 logger.info(
                     f"[CourseService] Map matching: {len(coordinates)} pts → {len(matched_coordinates)} pts"
                 )

@@ -34,6 +34,7 @@ export type WorldStackParamList = {
 
 export type HomeStackParamList = {
   Home: undefined;
+  NotificationInbox: undefined;
   CourseDetail: { courseId: string; selectForRaid?: string };
   RunHistory: undefined;
   RunDetail: { runId: string };
@@ -71,8 +72,6 @@ export type CourseStackParamList = {
     isLoop?: boolean;
   };
   UserProfile: { userId: string };
-  RunningMain: { courseId?: string } | undefined;
-  RunResult: { sessionId: string; alreadyCompleted?: boolean };
 };
 
 export type RunningStackParamList = {
@@ -84,6 +83,7 @@ export type CommunityStackParamList = {
   CommunityFeed: undefined;
   CommunityPostDetail: { postId: string };
   CommunityPostCreate: { crewId?: string } | undefined;
+  CourseDetail: { courseId: string; openReview?: boolean; selectForRaid?: string };
   CrewCreate: undefined;
   CrewDetail: { crewId: string };
   CrewMembers: { crewId: string };
@@ -97,6 +97,7 @@ export type CommunityStackParamList = {
   CommunityPostEdit: { postId: string; title?: string; content: string; imageUrl?: string; postType: string };
   FollowList: { userId: string; type: 'followers' | 'following' };
   Friends: undefined;
+  UnifiedSearch: undefined;
 };
 
 export type MyPageStackParamList = {
@@ -116,4 +117,5 @@ export type MyPageStackParamList = {
   FindFriends: undefined;
   FollowList: { userId: string; type: 'followers' | 'following' };
   Friends: undefined;
+  PointHistory: undefined;
 };

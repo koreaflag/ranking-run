@@ -10,8 +10,10 @@ from sqlalchemy import select
 
 from app.core.container import Container
 from app.core.deps import CurrentUser, DbSession
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError
+from app.core.runner_level_config import calc_runner_level
 from app.models.run_record import RunRecord
+from app.models.run_session import RunSession
 from app.schemas.run import (
     BatchChunkUploadRequest,
     BatchChunkUploadResponse,
@@ -74,6 +76,20 @@ async def upload_run_chunk(
     run_service: RunService = Depends(Provide[Container.run_service]),
 ) -> ChunkUploadResponse:
     """Upload a GPS data chunk during a run."""
+    # Reject uploads to already-completed sessions
+    session_result = await db.execute(
+        select(RunSession).where(
+            RunSession.id == session_id,
+            RunSession.user_id == current_user.id,
+        )
+    )
+    session = session_result.scalar_one_or_none()
+    if session is not None and session.status == "completed":
+        raise ConflictError(
+            code="SESSION_COMPLETED",
+            message="Cannot upload chunks to a completed session",
+        )
+
     chunk = await run_service.upload_chunk(
         db=db,
         user_id=current_user.id,
@@ -189,10 +205,31 @@ async def complete_run_session(
             run_record_id=run_record.id,
         )
 
+    new_total_distance = current_user.total_distance_meters + run_record.distance_meters
     user_stats_update = UserStatsUpdate(
-        total_distance_meters=current_user.total_distance_meters + run_record.distance_meters,
+        total_distance_meters=new_total_distance,
         total_runs=current_user.total_runs + 1,
+        runner_level=calc_runner_level(new_total_distance),
     )
+
+    # Inline points calculation (pure arithmetic, no DB read)
+    points_earned = run_record.distance_meters // 100
+    if run_record.course_id is not None:
+        points_earned += 30
+
+    # Fetch course streak if this is a course run
+    course_streak_value = None
+    if run_record.course_id and run_record.course_completed:
+        from app.models.course_streak import CourseStreak
+        streak_result = await db.execute(
+            select(CourseStreak).where(
+                CourseStreak.user_id == current_user.id,
+                CourseStreak.course_id == run_record.course_id,
+            )
+        )
+        streak_row = streak_result.scalar_one_or_none()
+        if streak_row:
+            course_streak_value = streak_row.current_streak
 
     return RunCompleteResponse(
         run_record_id=str(run_record.id),
@@ -202,6 +239,9 @@ async def complete_run_session(
         max_deviation_meters=run_record.max_deviation_meters,
         user_stats_update=user_stats_update,
         missing_chunk_sequences=missing_chunks,
+        points_earned=points_earned,
+        course_streak=course_streak_value,
+        map_matching_confidence=run_record.map_matching_confidence,
     )
 
 
@@ -254,8 +294,6 @@ async def delete_run_record(
 ) -> None:
     """Delete a run record and its associated data."""
     await run_service.delete_run_record(db=db, run_id=run_id, user_id=current_user.id)
-    # Decrement user stats
-    current_user.total_runs = max(0, current_user.total_runs - 1)
     await db.commit()
 
 

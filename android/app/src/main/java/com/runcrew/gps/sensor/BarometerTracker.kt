@@ -47,6 +47,15 @@ class BarometerTracker(
     var currentAbsoluteAltitude: Double = 0.0
         private set
 
+    @Volatile
+    var totalElevationGain: Double = 0.0
+        private set
+
+    @Volatile
+    var totalElevationLoss: Double = 0.0
+        private set
+
+    private var previousAltitude: Double = Double.NaN
     private var referencePressure: Float = 0f
     private var smoothedPressure: Float = 0f
     private var gpsBaseAltitude: Double = 0.0
@@ -109,6 +118,20 @@ class BarometerTracker(
         currentRelativeAltitude = relativeAlt
         currentAbsoluteAltitude = gpsBaseAltitude + relativeAlt
 
+        // Accumulate elevation gain/loss (use 1m threshold to filter noise)
+        if (!previousAltitude.isNaN()) {
+            val delta = currentAbsoluteAltitude - previousAltitude
+            if (delta > 1.0) {
+                totalElevationGain += delta
+                previousAltitude = currentAbsoluteAltitude
+            } else if (delta < -1.0) {
+                totalElevationLoss += -delta
+                previousAltitude = currentAbsoluteAltitude
+            }
+        } else {
+            previousAltitude = currentAbsoluteAltitude
+        }
+
         for (listener in listeners) {
             listener.onAltitudeChanged(relativeAlt, currentAbsoluteAltitude)
         }
@@ -124,6 +147,9 @@ class BarometerTracker(
         gpsBaseAltitude = 0.0
         currentRelativeAltitude = 0.0
         currentAbsoluteAltitude = 0.0
+        totalElevationGain = 0.0
+        totalElevationLoss = 0.0
+        previousAltitude = Double.NaN
         initialized = false
     }
 }

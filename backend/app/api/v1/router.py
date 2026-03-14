@@ -16,6 +16,7 @@ from app.api.v1.gear import router as gear_router
 from app.api.v1.gear import public_router as gear_public_router
 from app.api.v1.heatmap import router as heatmap_router
 from app.api.v1.imports import router as imports_router
+from app.api.v1.leaderboard import router as leaderboard_router
 from app.api.v1.likes import router as likes_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.rankings import router as rankings_router
@@ -59,3 +60,4 @@ api_router.include_router(crew_join_requests_router)
 api_router.include_router(group_runs_router)
 api_router.include_router(crew_challenges_router)
 api_router.include_router(strava_router)
+api_router.include_router(leaderboard_router)

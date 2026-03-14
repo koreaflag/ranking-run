@@ -7,8 +7,6 @@ import CourseDetailScreen from '../screens/course/CourseDetailScreen';
 import CourseCreateScreen from '../screens/course/CourseCreateScreen';
 import CrewDetailScreen from '../screens/crew/CrewDetailScreen';
 import UserProfileScreen from '../screens/profile/UserProfileScreen';
-import RunningScreen from '../screens/running/RunningScreen';
-import RunResultScreen from '../screens/running/RunResultScreen';
 import { useTheme } from '../hooks/useTheme';
 
 const Stack = createNativeStackNavigator<CourseStackParamList>();
@@ -29,8 +27,6 @@ export default function CourseStack() {
       <Stack.Screen name="CourseCreate" component={CourseCreateScreen} />
       <Stack.Screen name="CrewDetail" component={CrewDetailScreen} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
-      <Stack.Screen name="RunningMain" component={RunningScreen} options={{ gestureEnabled: false }} />
-      <Stack.Screen name="RunResult" component={RunResultScreen} />
     </Stack.Navigator>
   );
 }

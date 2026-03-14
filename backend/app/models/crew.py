@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -59,6 +60,12 @@ class Crew(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     cover_image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     requires_approval: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
+    )
+    level: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1"
+    )
+    total_xp: Mapped[int] = mapped_column(
+        BigInteger, default=0, server_default="0"
     )
     grade_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     last_activity_at: Mapped[datetime | None] = mapped_column(

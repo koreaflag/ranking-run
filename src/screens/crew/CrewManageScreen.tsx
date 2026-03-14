@@ -24,6 +24,7 @@ import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constan
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
 import { getGradeName, getGradeColor } from '../../utils/crewGrade';
+import FeatureLockedOverlay from '../../components/crew/FeatureLockedOverlay';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'CrewManage'>;
 type Route = RouteProp<HomeStackParamList, 'CrewManage'>;
@@ -269,15 +270,17 @@ export default function CrewManageScreen() {
             {isOwner && (
               <>
                 <View style={styles.menuDivider} />
-                <TouchableOpacity
-                  style={styles.menuRow}
-                  onPress={() => setShowGradeModal(true)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="ribbon-outline" size={20} color={colors.text} />
-                  <Text style={styles.menuText}>{t('crew.gradeNameConfig')}</Text>
-                  <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-                </TouchableOpacity>
+                <FeatureLockedOverlay requiredLevel={4} crewLevel={crew?.level ?? 1}>
+                  <TouchableOpacity
+                    style={styles.menuRow}
+                    onPress={() => setShowGradeModal(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="ribbon-outline" size={20} color={colors.text} />
+                    <Text style={styles.menuText}>{t('crew.gradeNameConfig')}</Text>
+                    <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </FeatureLockedOverlay>
               </>
             )}
           </View>
@@ -303,7 +306,7 @@ export default function CrewManageScreen() {
             <TouchableOpacity
               style={styles.menuRow}
               activeOpacity={0.7}
-              onPress={() => {/* Toggle inline pending requests */}}
+              onPress={() => navigation.navigate('CrewNotifications', { crewId })}
             >
               <Ionicons name="person-add-outline" size={20} color={colors.text} />
               <Text style={styles.menuText}>{t('crew.pendingRequests')}</Text>

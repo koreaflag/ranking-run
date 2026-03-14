@@ -25,6 +25,7 @@ import {
 } from '../../utils/format';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
+import { ListEndIndicator } from '../../components/common/Skeleton';
 
 type Nav = NativeStackNavigationProp<MyPageStackParamList, 'RunHistory'>;
 
@@ -227,6 +228,8 @@ export default function RunHistoryScreen() {
                   size="small"
                   color={colors.primary}
                 />
+              ) : !hasNext && runs.length > 0 ? (
+                <ListEndIndicator text={t('common.endOfList')} />
               ) : null
             }
           />

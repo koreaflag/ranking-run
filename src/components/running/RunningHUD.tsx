@@ -119,12 +119,14 @@ export default function RunningHUD({
       ? colors.success
       : gpsAccuracy != null && gpsAccuracy < 25
         ? colors.warning
-        : colors.error;
+        : gpsAccuracy != null
+          ? colors.error
+          : colors.warning;
   const gpsLabel = gpsDisabled
     ? '위치 권한 필요'
     : gpsAccuracy != null
       ? `±${Math.round(gpsAccuracy)}m`
-      : 'GPS';
+      : 'GPS 초기화 중...';
 
   return (
     <View style={styles.hudContainer}>

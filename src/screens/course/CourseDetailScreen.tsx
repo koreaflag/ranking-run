@@ -18,16 +18,19 @@ import {
   Dimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import * as Location from 'expo-location';
 import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useCourseStore } from '../../stores/courseStore';
+import { useCourseListStore } from '../../stores/courseListStore';
+import { useCourseDetailStore } from '../../stores/courseDetailStore';
 import StatItem from '../../components/common/StatItem';
 import ScreenHeader from '../../components/common/ScreenHeader';
 import RouteMapView from '../../components/map/RouteMapView';
 import ReviewSection from '../../components/course/ReviewSection';
 import DifficultyBadge from '../../components/course/DifficultyBadge';
+import RunnerLevelBadge from '../../components/runner/RunnerLevelBadge';
 import ElevationProfileChart from '../../components/charts/ElevationProfileChart';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
@@ -42,19 +45,26 @@ import {
   formatNumber,
   formatDate,
 } from '../../utils/format';
-import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS, type DifficultyLevel } from '../../utils/constants';
+import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS, inferDifficulty, type DifficultyLevel } from '../../utils/constants';
 import { courseService } from '../../services/courseService';
 import { useAuthStore } from '../../stores/authStore';
+import CourseDetailSkeleton from '../../components/skeleton/CourseDetailSkeleton';
 
 type DetailRoute = RouteProp<CourseStackParamList, 'CourseDetail'>;
 
-function inferDifficulty(distanceMeters: number, elevationGain: number): DifficultyLevel {
-  const km = distanceMeters / 1000;
-  if (km >= 15 || elevationGain >= 300) return 'expert';
-  if (km >= 7 || elevationGain >= 150) return 'hard';
-  if (km >= 3) return 'normal';
-  return 'easy';
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371; // km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+const COURSE_START_MAX_DISTANCE_KM = 5;
 
 export default function CourseDetailScreen() {
   const { t } = useTranslation();
@@ -67,31 +77,34 @@ export default function CourseDetailScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const currentUser = useAuthStore((s) => s.user);
 
-  const selectedCourse = useCourseStore(s => s.selectedCourse);
-  const selectedCourseStats = useCourseStore(s => s.selectedCourseStats);
-  const selectedCourseRankings = useCourseStore(s => s.selectedCourseRankings);
-  const selectedCourseCrewRankings = useCourseStore(s => s.selectedCourseCrewRankings);
-  const selectedCourseMyCrewRankings = useCourseStore(s => s.selectedCourseMyCrewRankings);
-  const selectedCourseMyBest = useCourseStore(s => s.selectedCourseMyBest);
-  const isLoadingDetail = useCourseStore(s => s.isLoadingDetail);
-  const error = useCourseStore(s => s.error);
-  const fetchCourseDetail = useCourseStore(s => s.fetchCourseDetail);
-  const clearDetail = useCourseStore(s => s.clearDetail);
-  const favoriteIds = useCourseStore(s => s.favoriteIds);
-  const toggleFavorite = useCourseStore(s => s.toggleFavorite);
-  const fetchFavoriteCourses = useCourseStore(s => s.fetchFavoriteCourses);
-  const selectedCourseLikeCount = useCourseStore(s => s.selectedCourseLikeCount);
-  const selectedCourseIsLiked = useCourseStore(s => s.selectedCourseIsLiked);
-  const toggleLike = useCourseStore(s => s.toggleLike);
-  const deleteMyCourse = useCourseStore(s => s.deleteMyCourse);
+  const selectedCourse = useCourseDetailStore(s => s.selectedCourse);
+  const selectedCourseStats = useCourseDetailStore(s => s.selectedCourseStats);
+  const selectedCourseRankings = useCourseDetailStore(s => s.selectedCourseRankings);
+  const selectedCourseCrewRankings = useCourseDetailStore(s => s.selectedCourseCrewRankings);
+  const selectedCourseMyCrewRankings = useCourseDetailStore(s => s.selectedCourseMyCrewRankings);
+  const selectedCourseMyBest = useCourseDetailStore(s => s.selectedCourseMyBest);
+  const isLoadingDetail = useCourseDetailStore(s => s.isLoadingDetail);
+  const error = useCourseDetailStore(s => s.error);
+  const fetchCourseDetail = useCourseDetailStore(s => s.fetchCourseDetail);
+  const clearDetail = useCourseDetailStore(s => s.clearDetail);
+  const favoriteIds = useCourseListStore(s => s.favoriteIds);
+  const toggleFavorite = useCourseListStore(s => s.toggleFavorite);
+  const fetchFavoriteCourses = useCourseListStore(s => s.fetchFavoriteCourses);
+  const selectedCourseLikeCount = useCourseDetailStore(s => s.selectedCourseLikeCount);
+  const selectedCourseIsLiked = useCourseDetailStore(s => s.selectedCourseIsLiked);
+  const toggleLike = useCourseDetailStore(s => s.toggleLike);
+  const deleteMyCourse = useCourseListStore(s => s.deleteMyCourse);
 
   // Ranking tab state: 'individual' or 'crew'
   const [rankingTab, setRankingTab] = useState<'individual' | 'crew'>('individual');
 
-  const pendingSelectForRaid = useCourseStore((s) => s.pendingSelectForRaid);
+  const pendingSelectForRaid = useCourseListStore((s) => s.pendingSelectForRaid);
   const [isStartingRaid, setIsStartingRaid] = useState(false);
 
   const isFavorited = useMemo(() => favoriteIds.includes(courseId), [favoriteIds, courseId]);
+
+  // Distance to course start point (km). null = still loading.
+  const [distanceToStart, setDistanceToStart] = useState<number | null>(null);
 
   // Edit modal state
   const [showEditModal, setShowEditModal] = useState(false);
@@ -166,6 +179,32 @@ export default function CourseDetailScreen() {
     }
   }, [openReview, selectedCourse, isLoadingDetail]);
 
+  // Measure distance from user to course start point
+  useEffect(() => {
+    if (!selectedCourse?.route_geometry?.coordinates?.length) return;
+    const [startLng, startLat] = selectedCourse.route_geometry.coordinates[0];
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted' || cancelled) return;
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+        const dist = haversineKm(loc.coords.latitude, loc.coords.longitude, startLat, startLng);
+        setDistanceToStart(dist);
+      } catch {
+        // Location unavailable — leave as null (button stays enabled)
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [selectedCourse?.route_geometry]);
+
+  const isWithinRange = distanceToStart === null || distanceToStart <= COURSE_START_MAX_DISTANCE_KM;
+
   // Convert course checkpoints to map marker data (must be before early returns)
   const checkpointMarkers: CheckpointMarkerData[] = useMemo(() => {
     if (!selectedCourse) return [];
@@ -192,7 +231,7 @@ export default function CourseDetailScreen() {
 
   const handleRunThisCourse = useCallback(() => {
     // Set pending course so WorldScreen focuses on it with 3D preview
-    useCourseStore.getState().setPendingFocusCourseId(courseId);
+    useCourseListStore.getState().setPendingFocusCourseId(courseId);
     // navigate() automatically traverses up the hierarchy:
     // CourseStack (no 'WorldTab') → Tab navigator (has 'WorldTab') → switches tab
     (navigation as any).navigate('WorldTab', { screen: 'World' });
@@ -237,7 +276,7 @@ export default function CourseDetailScreen() {
     try {
       const crewId = pendingSelectForRaid;
       await crewChallengeService.createChallenge(crewId, courseId);
-      useCourseStore.getState().setPendingSelectForRaid(null);
+      useCourseListStore.getState().setPendingSelectForRaid(null);
       Alert.alert(t('raid.raidStarted'), t('raid.raidStartedDesc'));
       // Navigate back to CrewDetail in HomeTab
       (navigation as any).navigate('HomeTab', { screen: 'CrewDetail', params: { crewId } });
@@ -252,9 +291,9 @@ export default function CourseDetailScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <ScreenHeader title="" onBack={() => navigation.goBack()} />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.text} />
-        </View>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <CourseDetailSkeleton />
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -754,6 +793,14 @@ export default function CourseDetailScreen() {
                 {t('course.detail.viewInWorld')}
               </Text>
             </TouchableOpacity>
+            {distanceToStart !== null && distanceToStart > 0 && (
+              <View style={styles.tooFarBanner}>
+                <Ionicons name="location-outline" size={16} color={isWithinRange ? colors.primary : '#FF9500'} />
+                <Text style={[styles.tooFarText, isWithinRange && { color: colors.primary }]}>
+                  {t('course.detail.distanceFromStart', { distance: distanceToStart.toFixed(1) })}
+                </Text>
+              </View>
+            )}
           </>
         )}
       </View>
@@ -831,49 +878,72 @@ const RankingRow = React.memo(function RankingRow({ entry, isMe = false }: { ent
   const RANK_COLORS = [colors.gold, colors.silver, colors.bronze];
   const isTop3 = entry.rank <= 3;
   const rankColor = isTop3 ? RANK_COLORS[entry.rank - 1] : colors.surfaceLight;
+  const avatarSize = isTop3 ? 40 : 34;
+  const avatarRadius = avatarSize / 2;
 
   return (
-    <View style={[styles.rankingRow, isMe && styles.rankingRowMe]}>
-      {/* Rank number */}
-      <Text style={[styles.rankNum, { color: isTop3 ? rankColor : colors.textSecondary }]}>
-        {entry.rank}
-      </Text>
-
-      {/* Avatar */}
-      {entry.user.avatar_url ? (
-        <Image source={{ uri: entry.user.avatar_url }} style={styles.rankAvatar} />
+    <TouchableOpacity
+      style={[
+        styles.rankingRow,
+        isTop3 && { backgroundColor: rankColor + '0C', borderRadius: BORDER_RADIUS.md, paddingHorizontal: SPACING.sm, marginHorizontal: -SPACING.sm },
+        isMe && styles.rankingRowMe,
+      ]}
+      onPress={() => navigation.navigate('UserProfile', { userId: entry.user.id })}
+      activeOpacity={0.7}
+    >
+      {/* Rank badge */}
+      {isTop3 ? (
+        <View style={[styles.rankBadge, { backgroundColor: rankColor }]}>
+          <Text style={styles.rankBadgeText}>{entry.rank}</Text>
+        </View>
       ) : (
-        <View style={[styles.rankAvatar, styles.rankAvatarPlaceholder]}>
-          <Ionicons name="person" size={14} color={colors.textTertiary} />
+        <Text style={[styles.rankNum, { color: colors.textSecondary }]}>
+          {entry.rank}
+        </Text>
+      )}
+
+      {/* Avatar with rank ring */}
+      {entry.user.avatar_url ? (
+        <Image
+          source={{ uri: entry.user.avatar_url }}
+          style={[styles.rankAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarRadius }, isTop3 && { borderWidth: 2, borderColor: rankColor }]}
+        />
+      ) : (
+        <View style={[styles.rankAvatar, styles.rankAvatarPlaceholder, { width: avatarSize, height: avatarSize, borderRadius: avatarRadius }, isTop3 && { borderWidth: 2, borderColor: rankColor }]}>
+          <Ionicons name="person" size={isTop3 ? 18 : 14} color={colors.textTertiary} />
         </View>
       )}
 
       {/* Runner info */}
       <View style={styles.rankInfo}>
-        <TouchableOpacity
-          onPress={() => navigation.navigate('UserProfile', { userId: entry.user.id })}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.rankNickname, isMe && styles.rankNicknameMe]}>
+        <View style={styles.rankNameRow}>
+          <Text style={[styles.rankNickname, isMe && styles.rankNicknameMe, isTop3 && { fontWeight: '800' }]} numberOfLines={1}>
             {entry.user.nickname}
-            {isMe ? '  (ME)' : ''}
           </Text>
-        </TouchableOpacity>
+          {(entry.user.runner_level ?? 0) > 1 && (
+            <RunnerLevelBadge level={entry.user.runner_level} size="sm" />
+          )}
+          {isMe && (
+            <View style={styles.rankMeBadge}>
+              <Text style={styles.rankMeBadgeText}>ME</Text>
+            </View>
+          )}
+        </View>
         {entry.user.crew_name ? (
           <Text style={styles.rankCrewName}>{entry.user.crew_name}</Text>
         ) : null}
       </View>
 
-      {/* Pace + Duration */}
+      {/* Time (primary) + Pace (secondary) */}
       <View style={styles.rankStats}>
-        <Text style={styles.rankPace}>
-          {formatPace(entry.best_pace_seconds_per_km)}
-        </Text>
-        <Text style={styles.rankDuration}>
+        <Text style={[styles.rankPace, isTop3 && { fontWeight: '800' }]}>
           {formatDuration(entry.best_duration_seconds)}
         </Text>
+        <Text style={styles.rankDuration}>
+          {formatPace(entry.best_pace_seconds_per_km)}/km
+        </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 });
 
@@ -1124,28 +1194,42 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: SPACING.md,
-    borderBottomWidth: 1,
+    gap: SPACING.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: c.divider,
-    gap: SPACING.md,
   },
   rankingRowMe: {
-    backgroundColor: c.primary + '0D',
-    borderRadius: BORDER_RADIUS.sm,
+    backgroundColor: c.primary + '12',
+    borderRadius: BORDER_RADIUS.md,
     paddingHorizontal: SPACING.sm,
     marginHorizontal: -SPACING.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: c.primary,
+    borderBottomWidth: 0,
+  },
+  rankBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rankBadgeText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '900',
+    color: c.white,
   },
   rankNum: {
-    width: 24,
-    fontSize: FONT_SIZES.lg,
-    fontWeight: '800',
+    width: 26,
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
     textAlign: 'center' as const,
     fontVariant: ['tabular-nums' as const],
   },
   rankAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    marginRight: SPACING.sm,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
   },
   rankAvatarPlaceholder: {
     backgroundColor: c.surfaceLight,
@@ -1154,25 +1238,43 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   rankInfo: {
     flex: 1,
+    gap: 1,
+  },
+  rankNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
   },
   rankNickname: {
     fontSize: FONT_SIZES.md,
     fontWeight: '600',
     color: c.text,
+    flexShrink: 1,
   },
   rankNicknameMe: {
     fontWeight: '800',
     color: c.primary,
   },
+  rankMeBadge: {
+    backgroundColor: c.primary,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: BORDER_RADIUS.xs,
+  },
+  rankMeBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: c.white,
+    letterSpacing: 0.5,
+  },
   rankCrewName: {
     fontSize: FONT_SIZES.xs,
     fontWeight: '500',
     color: c.textSecondary,
-    marginTop: 1,
   },
   rankStats: {
     alignItems: 'flex-end',
-    gap: 2,
+    gap: 1,
   },
   rankPace: {
     fontSize: FONT_SIZES.md,
@@ -1181,7 +1283,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   rankDuration: {
-    fontSize: FONT_SIZES.sm,
+    fontSize: FONT_SIZES.xs,
     color: c.textTertiary,
     fontVariant: ['tabular-nums'],
   },
@@ -1268,6 +1370,10 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
 
   // -- Bottom CTA: Competition challenge --
   bottomCta: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     paddingHorizontal: SPACING.xxl,
     paddingVertical: SPACING.lg,
     paddingBottom: SPACING.xxxl,
@@ -1275,6 +1381,12 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: c.divider,
     gap: SPACING.sm,
+  },
+  ctaButtonDisabled: {
+    backgroundColor: c.surfaceLight,
+  },
+  ctaButtonTextDisabled: {
+    color: c.textTertiary,
   },
   challengeInfo: {
     flexDirection: 'row',
@@ -1312,6 +1424,23 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '800',
     color: c.white,
     letterSpacing: 0.5,
+  },
+  tooFarBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF9500' + '12',
+    borderWidth: 1,
+    borderColor: '#FF9500' + '30',
+    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+  },
+  tooFarText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    color: '#FF9500',
+    marginLeft: SPACING.sm,
   },
 
   // -- Owner actions --

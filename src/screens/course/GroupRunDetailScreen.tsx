@@ -141,7 +141,7 @@ export default function GroupRunDetailScreen() {
 
   const handleRunCourse = useCallback(() => {
     if (groupRun?.course_id) {
-      (navigation as any).navigate('RunningMain', { courseId: groupRun.course_id });
+      navigation.getParent()?.navigate('WorldTab', { screen: 'RunningMain', params: { courseId: groupRun.course_id } });
     }
   }, [groupRun, navigation]);
 

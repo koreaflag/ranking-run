@@ -61,6 +61,7 @@ class Container(containers.DeclarativeContainer):
             "app.api.v1.group_runs",
             "app.api.v1.crew_challenges",
             "app.api.v1.strava",
+            "app.api.v1.leaderboard",
             "app.api.v1.users",
         ],
     )

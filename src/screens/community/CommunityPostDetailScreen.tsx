@@ -32,6 +32,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { FONT_SIZES, SPACING } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
+import { useToastStore } from '../../stores/toastStore';
 import { formatRelativeTime } from '../../utils/format';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'CommunityPostDetail'>;
@@ -113,7 +114,9 @@ export default function CommunityPostDetailScreen() {
     crewService
       .getCrew(post.crew_id)
       .then((crew) => setCrewRole(crew.my_role))
-      .catch(() => {});
+      .catch((err) => {
+        console.warn('[CommunityPostDetail] 크루 정보 조회 실패:', err);
+      });
   }, [post?.crew_id, currentUser]);
 
   const handleToggleLike = useCallback(async () => {
@@ -126,7 +129,7 @@ export default function CommunityPostDetailScreen() {
           : prev,
       );
     } catch {
-      // silent
+      useToastStore.getState().showToast('error', '좋아요 처리에 실패했습니다');
     }
   }, [post, postId]);
 
@@ -144,7 +147,7 @@ export default function CommunityPostDetailScreen() {
       setCommentText('');
       Keyboard.dismiss();
     } catch {
-      // silent
+      useToastStore.getState().showToast('error', '댓글 작성에 실패했습니다');
     } finally {
       setSubmitting(false);
     }

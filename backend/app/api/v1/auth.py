@@ -10,7 +10,7 @@ from app.core.rate_limit import limiter
 
 from app.core.config import get_settings
 from app.core.container import Container
-from app.core.deps import DbSession
+from app.core.deps import CurrentUser, DbSession
 from app.core.exceptions import AppError
 from app.core.security import create_access_token, create_refresh_token, hash_token
 from app.models.user import RefreshToken, User
@@ -19,6 +19,7 @@ from app.schemas.auth import (
     DevLoginRequest,
     LoginRequest,
     LoginUserInfo,
+    LogoutRequest,
     RefreshRequest,
     RefreshResponse,
 )
@@ -120,3 +121,20 @@ async def refresh_token(
         refresh_token=new_refresh_token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
+
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+@inject
+async def logout(
+    body: LogoutRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+    auth_service: AuthService = Depends(Provide[Container.auth_service]),
+) -> dict:
+    """Logout: revoke refresh token(s) for the current user."""
+    await auth_service.logout(
+        db=db,
+        user_id=current_user.id,
+        raw_token=body.refresh_token,
+    )
+    return {"status": "ok"}

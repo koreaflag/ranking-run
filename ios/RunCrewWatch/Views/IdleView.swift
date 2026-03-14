@@ -131,9 +131,10 @@ private struct StartPage: View {
             }
             .buttonStyle(.plain)
             .frame(width: 110, height: 110)
-            .background(appOrange)
+            .background(viewModel.state.phase == "idle" ? appOrange : appOrange.opacity(0.4))
             .clipShape(Circle())
             .shadow(color: appOrange.opacity(0.5), radius: 16, x: 0, y: 0)
+            .disabled(viewModel.state.phase != "idle")
             .accessibilityLabel("러닝 시작")
 
             Spacer()
@@ -270,9 +271,9 @@ private struct SettingsPage: View {
                                 viewModel.setGoalTargetTime(min(300, viewModel.standaloneGoalTargetTime + 1))
                             }
                         )
-                        // Computed required pace
+                        // Computed required pace (seconds per km)
                         if viewModel.standaloneGoalDistance > 0 && viewModel.standaloneGoalTargetTime > 0 {
-                            let paceSeconds = Int(Double(viewModel.standaloneGoalTargetTime * 60) / viewModel.standaloneGoalDistance * 1000)
+                            let paceSeconds = Int(Double(viewModel.standaloneGoalTargetTime * 60) / viewModel.standaloneGoalDistance)
                             let paceMin = paceSeconds / 60
                             let paceSec = paceSeconds % 60
                             Text("필요 페이스: \(paceMin)'\(String(format: "%02d", paceSec))\" /km")

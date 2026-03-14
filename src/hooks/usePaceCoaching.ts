@@ -100,13 +100,17 @@ async function fireHaptic(status: PaceStatus) {
 function speak(message: string) {
   Speech.stop();
   const gps = Platform.OS === 'ios' ? NativeModules.GPSTrackerModule : null;
-  gps?.configureAudioForSpeech?.().catch(() => {});
+  gps?.configureAudioForSpeech?.().catch((err: any) => {
+    console.warn('[usePaceCoaching] 오디오 세션 설정 실패:', err);
+  });
   Speech.speak(message, {
     language: getTTSLocale(),
     rate: 1.0,
     pitch: 1.0,
     onDone: () => {
-      gps?.restoreAudioAfterSpeech?.().catch(() => {});
+      gps?.restoreAudioAfterSpeech?.().catch((err: any) => {
+        console.warn('[usePaceCoaching] 오디오 세션 복원 실패:', err);
+      });
     },
   });
 }
@@ -172,7 +176,9 @@ export function usePaceCoaching({
 
     const msg = getCoachingMessage(status, timeDelta);
     if (voiceGuidance) speak(msg);
-    if (hapticFeedback) fireHaptic(status).catch(() => {});
+    if (hapticFeedback) fireHaptic(status).catch((err: any) => {
+      console.warn('[usePaceCoaching] 햅틱 피드백 실패:', err);
+    });
 
     prevStatusRef.current = status;
     lastStatusAlertTimeRef.current = Date.now();
@@ -197,7 +203,9 @@ export function usePaceCoaching({
     if (severity[status] > severity[prevStatusRef.current]) {
       const msg = getCoachingMessage(status, timeDelta);
       if (voiceGuidance) speak(msg);
-      if (hapticFeedback) fireHaptic(status).catch(() => {});
+      if (hapticFeedback) fireHaptic(status).catch((err: any) => {
+      console.warn('[usePaceCoaching] 햅틱 피드백 실패:', err);
+    });
       lastStatusAlertTimeRef.current = now;
     }
 

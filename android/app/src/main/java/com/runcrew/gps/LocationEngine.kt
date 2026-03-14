@@ -35,8 +35,8 @@ class LocationEngine(
     companion object {
         private const val TAG = "LocationEngine"
 
-        // Cold start: GPS accuracy must be below this before data is used
-        private const val COLD_START_ACCURACY_THRESHOLD = 15f
+        // Cold start: GPS accuracy must be below this before data is used (unified with iOS)
+        private const val COLD_START_ACCURACY_THRESHOLD = 20f
 
         // Cold start timeout (ms): if accuracy never drops below threshold
         private const val COLD_START_TIMEOUT_MS = 30_000L
@@ -51,6 +51,7 @@ class LocationEngine(
         fun onFilteredLocationUpdate(location: FilteredLocation, session: RunSession)
         fun onGPSStatusChange(status: String, accuracy: Float?, satelliteCount: Int)
         fun onRunningStateChange(state: String, durationMs: Long)
+        fun onMilestoneReached(km: Int, splitPaceSecondsPerKm: Int, totalTimeSeconds: Int)
         fun onError(code: String, message: String)
     }
 
@@ -64,7 +65,7 @@ class LocationEngine(
     private val batteryOptimizer = BatteryOptimizer()
 
     // Sensor components are initialized lazily (need SensorManager from context)
-    private var sensorFusionManager: SensorFusionManager? = null
+    internal var sensorFusionManager: SensorFusionManager? = null
     private var stationaryDetector: StationaryDetector? = null
 
     val session = RunSession()
@@ -94,6 +95,13 @@ class LocationEngine(
     private var previousFilteredLat = 0.0
     @Volatile
     private var previousFilteredLng = 0.0
+
+    // --- Milestone (split) tracking ---
+
+    @Volatile
+    private var previousMilestoneDistance = 0.0
+    @Volatile
+    private var previousMilestoneTime = 0L  // elapsed ms at last km milestone
 
     /**
      * Initialize the engine. Must be called before start().
@@ -147,6 +155,8 @@ class LocationEngine(
         sensorFusionManager?.reset()
         previousFilteredLat = 0.0
         previousFilteredLng = 0.0
+        previousMilestoneDistance = 0.0
+        previousMilestoneTime = 0L
 
         // Start sensors
         sensorFusionManager?.start()
@@ -325,13 +335,21 @@ class LocationEngine(
 
         // --- Stationary suppression: don't accumulate distance while stationary ---
         val isStationary = fusion?.isStationary() ?: false
-        val distFromPrev = if (isStationary || previousFilteredLat == 0.0) {
+        val rawDist = if (previousFilteredLat == 0.0) {
             0.0
         } else {
             GeoMath.haversineDistance(
                 previousFilteredLat, previousFilteredLng,
                 filterResult.latitude, filterResult.longitude
             )
+        }
+        val distFromPrev = if (isStationary) {
+            // Safety net: if detector says stationary but movement is clearly
+            // significant (> 2m), the detector is wrong — still count distance
+            if (rawDist > 2.0) rawDist else 0.0
+        } else {
+            // Normal case: ignore tiny movements (< 0.3m) as noise
+            if (rawDist >= 0.3) rawDist else 0.0
         }
 
         val cumulativeDistance = session.totalDistance + distFromPrev
@@ -360,6 +378,19 @@ class LocationEngine(
 
         // Emit to listener
         listener?.onFilteredLocationUpdate(filteredLocation, session)
+
+        // Milestone detection: emit split event at every km boundary
+        val prevKm = (previousMilestoneDistance / 1000).toInt()
+        val currentKm = (cumulativeDistance / 1000).toInt()
+        if (currentKm > prevKm && currentKm > 0) {
+            val elapsedMs = session.getElapsedTime()
+            val elapsedSec = (elapsedMs / 1000).toInt()
+            val splitSeconds = elapsedSec - (previousMilestoneTime / 1000).toInt()
+            val splitPace = if (splitSeconds > 0) splitSeconds else 0
+            previousMilestoneTime = elapsedMs
+            listener?.onMilestoneReached(currentKm, splitPace, elapsedSec)
+        }
+        previousMilestoneDistance = cumulativeDistance
     }
 
     // --- Permission & GPS availability checks ---

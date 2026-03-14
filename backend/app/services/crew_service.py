@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.crew_level_config import get_max_members, is_feature_unlocked
 from app.core.exceptions import (
     BadRequestError,
     NotFoundError,
@@ -22,6 +23,7 @@ class CrewService:
     # ------------------------------------------------------------------
 
     MAX_CREWS_PER_USER = 5
+    CREW_CREATION_COST = 500
 
     async def create_crew(
         self,
@@ -38,6 +40,17 @@ class CrewService:
             raise BadRequestError(
                 code="CREW_LIMIT_REACHED",
                 message=f"크루는 최대 {self.MAX_CREWS_PER_USER}개까지 만들 수 있습니다",
+            )
+
+        # Check points requirement
+        from app.models.user import User
+
+        user_result = await db.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one()
+        if user.total_points < self.CREW_CREATION_COST:
+            raise BadRequestError(
+                code="INSUFFICIENT_POINTS",
+                message=f"크루 생성에 {self.CREW_CREATION_COST} 포인트가 필요합니다 (현재: {user.total_points}P)",
             )
 
         crew = Crew(
@@ -69,14 +82,21 @@ class CrewService:
         db.add(member)
         await db.flush()
 
-        # Set crew_name on owner
-        from app.models.user import User
+        # Deduct points, record transaction, and set crew_name on owner
+        from app.models.point_transaction import PointTransaction
 
-        user_result = await db.execute(select(User).where(User.id == user_id))
-        user = user_result.scalar_one_or_none()
-        if user is not None and not user.crew_name:
+        user.total_points -= self.CREW_CREATION_COST
+        tx = PointTransaction(
+            user_id=user_id,
+            amount=-self.CREW_CREATION_COST,
+            balance_after=user.total_points,
+            tx_type="crew_create",
+            reference_id=crew.id,
+        )
+        db.add(tx)
+        if not user.crew_name:
             user.crew_name = crew.name
-            await db.flush()
+        await db.flush()
 
         return self._crew_to_dict(crew, is_member=True, my_role="owner")
 
@@ -134,6 +154,26 @@ class CrewService:
                 code="PERMISSION_DENIED",
                 message="크루 관리 권한이 없습니다",
             )
+
+        # Level gating for premium features
+        if "badge_color" in data and data.get("badge_color") != crew.badge_color:
+            if not is_feature_unlocked(crew.level, "badge_color"):
+                raise PermissionDeniedError(
+                    code="LEVEL_REQUIRED",
+                    message="배지 색상 커스텀은 Lv.3 이상에서 가능합니다",
+                )
+        if "cover_image_url" in data and data.get("cover_image_url") != crew.cover_image_url:
+            if not is_feature_unlocked(crew.level, "cover_image"):
+                raise PermissionDeniedError(
+                    code="LEVEL_REQUIRED",
+                    message="커버 이미지는 Lv.3 이상에서 가능합니다",
+                )
+        if "grade_config" in data and data.get("grade_config") != crew.grade_config:
+            if not is_feature_unlocked(crew.level, "grade_name_custom"):
+                raise PermissionDeniedError(
+                    code="LEVEL_REQUIRED",
+                    message="등급 이름 커스텀은 Lv.4 이상에서 가능합니다",
+                )
 
         for field in (
             "name", "description", "logo_url", "cover_image_url",
@@ -272,9 +312,16 @@ class CrewService:
                 code="ALREADY_MEMBER", message="이미 크루 멤버입니다"
             )
 
-        if crew.max_members and crew.member_count >= crew.max_members:
+        level_max = get_max_members(crew.level)
+        effective_max = level_max
+        if crew.max_members and level_max:
+            effective_max = min(crew.max_members, level_max)
+        elif crew.max_members:
+            effective_max = crew.max_members
+        if effective_max is not None and crew.member_count >= effective_max:
             raise BadRequestError(
-                code="CREW_FULL", message="크루 정원이 가득 찼습니다"
+                code="CREW_FULL",
+                message=f"크루 정원이 가득 찼습니다 (Lv.{crew.level}: 최대 {effective_max}명)",
             )
 
         member = CrewMember(
@@ -337,9 +384,16 @@ class CrewService:
                 code="ALREADY_MEMBER", message="이미 크루 멤버입니다"
             )
 
-        if crew.max_members and crew.member_count >= crew.max_members:
+        level_max = get_max_members(crew.level)
+        effective_max = level_max
+        if crew.max_members and level_max:
+            effective_max = min(crew.max_members, level_max)
+        elif crew.max_members:
+            effective_max = crew.max_members
+        if effective_max is not None and crew.member_count >= effective_max:
             raise BadRequestError(
-                code="CREW_FULL", message="크루 정원이 가득 찼습니다"
+                code="CREW_FULL",
+                message=f"크루 정원이 가득 찼습니다 (Lv.{crew.level}: 최대 {effective_max}명)",
             )
 
         member = CrewMember(
@@ -634,6 +688,60 @@ class CrewService:
             "recent_leaves_7d": 0,  # Would need tracking table for leaves
         }
 
+    async def get_weekly_ranking(
+        self,
+        db: AsyncSession,
+        crew_id: UUID,
+    ) -> list[dict]:
+        """Get this week's distance ranking for crew members."""
+        from datetime import datetime, timedelta, timezone
+
+        from sqlalchemy import and_, desc
+
+        from app.models.run_record import RunRecord
+        from app.models.user import User
+
+        # Monday of this week (00:00 UTC)
+        now = datetime.now(timezone.utc)
+        monday = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+
+        result = await db.execute(
+            select(
+                CrewMember.user_id,
+                User.nickname,
+                User.avatar_url,
+                func.coalesce(func.sum(RunRecord.distance_meters), 0).label("weekly_distance"),
+                func.count(RunRecord.id).label("weekly_runs"),
+            )
+            .select_from(CrewMember)
+            .join(User, User.id == CrewMember.user_id)
+            .outerjoin(
+                RunRecord,
+                and_(
+                    RunRecord.user_id == CrewMember.user_id,
+                    RunRecord.finished_at >= monday,
+                ),
+            )
+            .where(CrewMember.crew_id == crew_id)
+            .group_by(CrewMember.user_id, User.nickname, User.avatar_url)
+            .order_by(desc("weekly_distance"))
+        )
+        rows = result.all()
+
+        return [
+            {
+                "user_id": str(row.user_id),
+                "nickname": row.nickname,
+                "avatar_url": row.avatar_url,
+                "weekly_distance": row.weekly_distance,
+                "weekly_runs": row.weekly_runs,
+                "rank": i + 1,
+            }
+            for i, row in enumerate(rows)
+        ]
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -701,6 +809,8 @@ class CrewService:
             "recurring_schedule": crew.recurring_schedule,
             "meeting_point": crew.meeting_point,
             "requires_approval": crew.requires_approval,
+            "level": crew.level,
+            "total_xp": crew.total_xp,
             "grade_config": crew.grade_config,
             "is_member": is_member,
             "my_role": my_role,

@@ -56,7 +56,7 @@ export const COLORS = {
   // Text (crisp blacks)
   text: '#111111',
   textSecondary: '#636363',
-  textTertiary: '#9A9A9A',
+  textTertiary: '#767676',
 
   // Status
   success: '#10B981',
@@ -129,6 +129,15 @@ export const ANIMATION = {
 /** Returns a translated difficulty label for the given level. */
 export function getDifficultyLabel(level: DifficultyLevel): string {
   return i18n.t(`difficulty.${level}`);
+}
+
+/** Infers course difficulty from distance and elevation gain. */
+export function inferDifficulty(distanceMeters: number, elevationGain: number): DifficultyLevel {
+  const km = distanceMeters / 1000;
+  if (km >= 15 || elevationGain >= 300) return 'expert';
+  if (km >= 7 || elevationGain >= 150) return 'hard';
+  if (km >= 3) return 'normal';
+  return 'easy';
 }
 
 // Shadows (warm, subtle, premium)
@@ -264,7 +273,7 @@ export const LIGHT_THEME: ThemeColors = {
 
   text: '#111111',
   textSecondary: '#636363',
-  textTertiary: '#9A9A9A',
+  textTertiary: '#767676',
 
   border: '#E5E5E5',
   divider: '#F1F1F1',
@@ -304,10 +313,10 @@ export const DARK_THEME: ThemeColors = {
 
   text: '#F5F5F5',
   textSecondary: '#8A8A8A',
-  textTertiary: '#636363',
+  textTertiary: '#808080',
 
-  border: '#1E1E1E',
-  divider: '#121212',
+  border: '#2A2A2A',
+  divider: '#1E1E1E',
 
   success: '#34D399',
   warning: '#FFB84D',

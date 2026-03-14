@@ -18,7 +18,6 @@ import { useRunningStore } from '../../stores/runningStore';
 import { runService } from '../../services/runService';
 import { savePendingRunRecord, removePendingRunRecord, clearPendingChunksForSession, syncPendingData } from '../../services/pendingSyncService';
 import { useTheme } from '../../hooks/useTheme';
-import { useCompassHeading } from '../../hooks/useCompassHeading';
 import { Ionicons } from '../../lib/icons';
 import Button from '../../components/common/Button';
 import RouteMapView from '../../components/map/RouteMapView';
@@ -27,6 +26,7 @@ import BlurredBackground from '../../components/common/BlurredBackground';
 import GlassCard from '../../components/common/GlassCard';
 import type { WorldStackParamList } from '../../types/navigation';
 import type { RunCompleteResponse, Split, RawGPSPointAPI } from '../../types/api';
+import { useAuthStore } from '../../stores/authStore';
 import type { ThemeColors } from '../../utils/constants';
 import {
   formatDistance,
@@ -90,14 +90,22 @@ export default function RunResultScreen() {
   const [result, setResult] = useState<RunCompleteResponse | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [savedLocally, setSavedLocally] = useState(false);
+  // Final distance after RTS smoothing (may differ from live distanceMeters).
+  // Display and server must use the same value for consistency.
+  const [finalDistanceMeters, setFinalDistanceMeters] = useState(distanceMeters);
 
-  // Compass heading (native CLHeading only — no GPS bearing after run ends)
-  const { heading: headingValue } = useCompassHeading();
+  // After run ends, show a static marker at the stop location — no live tracking.
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const locationCaptured = useRef(false);
 
+  // Capture the user's current location once for the "locate me" button,
+  // then stop updating.
   const handleUserLocationChange = useCallback(
     (coord: { latitude: number; longitude: number; heading?: number }) => {
-      setMyLocation({ latitude: coord.latitude, longitude: coord.longitude });
+      if (!locationCaptured.current) {
+        setMyLocation({ latitude: coord.latitude, longitude: coord.longitude });
+        locationCaptured.current = true;
+      }
     },
     [],
   );
@@ -179,7 +187,7 @@ export default function RunResultScreen() {
           });
           finalUploadedSequences.push(finalChunkSequence);
           finalChunkSequence++;
-          console.log(`[RunResult] Final chunk uploaded (${rawGPSPoints.length} pts)`);
+          if (__DEV__) console.log(`[RunResult] Final chunk uploaded (${rawGPSPoints.length} pts)`);
         } catch (e) {
           console.warn('[RunResult] Final chunk upload failed:', e);
           // Still increment — completeRun will reference total_chunks
@@ -199,7 +207,8 @@ export default function RunResultScreen() {
           if (smoothed?.route?.length >= 2) {
             finalRouteCoords = smoothed.route.map((p: any) => [p.longitude, p.latitude, p.altitude ?? 0]);
             finalDistance = smoothed.distance > 0 ? smoothed.distance : distanceMeters;
-            console.log(`[RunResult] RTS smoothed: ${smoothed.route.length} pts, ${Math.round(finalDistance)}m`);
+            setFinalDistanceMeters(finalDistance);
+            if (__DEV__) console.log(`[RunResult] RTS smoothed: ${smoothed.route.length} pts, ${Math.round(finalDistance)}m`);
           }
         } catch (e) {
           console.warn('[RunResult] RTS smoothing failed, using original route:', e);
@@ -263,15 +272,31 @@ export default function RunResultScreen() {
         const response = await runService.completeRun(sessionId, runPayload);
         setResult(response);
         setSubmitted(true);
+        // Update authStore with new stats + runner level
+        const currentUser = useAuthStore.getState().user;
+        if (currentUser && response.user_stats_update) {
+          useAuthStore.getState().setUser({
+            ...currentUser,
+            total_distance_meters: response.user_stats_update.total_distance_meters,
+            total_runs: response.user_stats_update.total_runs,
+            runner_level: response.user_stats_update.runner_level,
+          });
+        }
         // Server succeeded — remove local pending data
-        await removePendingRunRecord(pendingId).catch(() => {});
-        await clearPendingChunksForSession(sessionId).catch(() => {});
+        await removePendingRunRecord(pendingId).catch((err) => {
+          console.warn('[RunResult] 로컬 대기 기록 삭제 실패:', err);
+        });
+        await clearPendingChunksForSession(sessionId).catch((err) => {
+          console.warn('[RunResult] 청크 데이터 정리 실패:', err);
+        });
       } catch (error) {
         console.warn('[RunResult] completeRun failed:', sessionId, error);
         // Server failed — local data is safe, schedule background retry
         setSubmitted(true);
         setTimeout(() => {
-          syncPendingData().catch(() => {});
+          syncPendingData().catch((err) => {
+            console.warn('[RunResult] 백그라운드 동기화 실패:', err);
+          });
         }, 5000);
       } finally {
         setIsSubmitting(false);
@@ -307,9 +332,7 @@ export default function RunResultScreen() {
 
   const handleGoHome = () => {
     resetToWorld();
-    setTimeout(() => {
-      (navigation as any).navigate('HomeTab');
-    }, 0);
+    (navigation as any).navigate('HomeTab');
   };
 
   const handleRunAgain = () => {
@@ -325,7 +348,7 @@ export default function RunResultScreen() {
   const MIN_COURSE_DISTANCE_M = 500;
 
   const handleRegisterCourse = () => {
-    if (distanceMeters < MIN_COURSE_DISTANCE_M) {
+    if (finalDistanceMeters < MIN_COURSE_DISTANCE_M) {
       Alert.alert(t('common.notification'), t('running.result.minDistance'));
       return;
     }
@@ -342,23 +365,27 @@ export default function RunResultScreen() {
     const params = {
       runRecordId,
       routePoints,
-      distanceMeters,
+      distanceMeters: finalDistanceMeters,
       durationSeconds,
       elevationGainMeters,
       isLoop: loopDetected,
     };
-    resetToWorld();
-    setTimeout(() => {
-      (navigation as any).navigate('CourseTab', { screen: 'CourseCreate', params });
-    }, 0);
+    // Reset running store + navigate to CourseCreate.
+    // Reset WorldStack first, then switch tab — no setTimeout to avoid race.
+    reset();
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'World' }],
+      }),
+    );
+    (navigation as any).navigate('CourseTab', { screen: 'CourseCreate', params });
   };
 
   const handleWriteReview = () => {
     if (!courseId) return;
     resetToWorld();
-    setTimeout(() => {
-      (navigation as any).navigate('CourseTab', { screen: 'CourseDetail', params: { courseId, openReview: true } });
-    }, 0);
+    (navigation as any).navigate('CourseTab', { screen: 'CourseDetail', params: { courseId, openReview: true } });
   };
 
   return (
@@ -379,7 +406,7 @@ export default function RunResultScreen() {
         {/* Hero Distance */}
         <View style={styles.heroSection}>
           <View style={styles.heroDistanceRow}>
-            <Text style={styles.heroDistance}>{metersToKm(distanceMeters)}</Text>
+            <Text style={styles.heroDistance}>{metersToKm(finalDistanceMeters)}</Text>
             <Text style={styles.heroUnit}>km</Text>
           </View>
         </View>
@@ -395,12 +422,16 @@ export default function RunResultScreen() {
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statCell}>
-                  <Text style={styles.statValue}>{formatPace(avgPaceSecondsPerKm)}</Text>
+                  <Text style={styles.statValue}>{formatPace(
+                    finalDistanceMeters > 0
+                      ? Math.round(durationSeconds / (finalDistanceMeters / 1000))
+                      : avgPaceSecondsPerKm
+                  )}</Text>
                   <Text style={styles.statLabel}>{t('running.metrics.avgPace')}</Text>
                 </View>
                 <View style={styles.statDivider} />
                 <View style={styles.statCell}>
-                  <Text style={styles.statValue}>{calories}</Text>
+                  <Text style={styles.statValue}>{Math.round((finalDistanceMeters / 1000) * 60)}</Text>
                   <Text style={styles.statLabel}>{t('running.metrics.kcal')}</Text>
                 </View>
               </View>
@@ -442,7 +473,7 @@ export default function RunResultScreen() {
           </View>
         )}
 
-        {/* Route Map with custom user location + heading */}
+        {/* Route Map — static view, no live tracking after run ends */}
         <View style={styles.mapContainer}>
           <RouteMapView
             ref={mapRef}
@@ -450,8 +481,6 @@ export default function RunResultScreen() {
             showUserLocation
             interactive
             endPointOverride={stopLocation ?? undefined}
-            customUserLocation={myLocation ?? undefined}
-            customUserHeading={headingValue}
             onUserLocationChange={handleUserLocationChange}
             deviationSegments={deviationSegments.length > 0 ? deviationSegments : undefined}
             style={styles.mapPreview}
@@ -468,6 +497,8 @@ export default function RunResultScreen() {
               }
             }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('running.result.locateMe')}
           >
             <Ionicons name="locate" size={18} color={colors.text} />
           </TouchableOpacity>
@@ -518,6 +549,31 @@ export default function RunResultScreen() {
           </View>
         )}
 
+        {/* Points Earned */}
+        {result && result.points_earned > 0 && (
+          <GlassCard style={styles.pointsCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="star" size={24} color="#FFD700" style={{ marginRight: 8 }} />
+              <Text style={[styles.pointsText, { color: colors.text }]}>
+                +{result.points_earned}P
+              </Text>
+            </View>
+            <Text style={[styles.pointsLabel, { color: colors.textSecondary }]}>
+              {t('running.result.pointsEarned')}
+            </Text>
+          </GlassCard>
+        )}
+
+        {/* Course Streak Badge */}
+        {result && result.course_streak && result.course_streak > 1 && (
+          <View style={styles.streakBadge}>
+            <Ionicons name="flame" size={16} color="#FF6B35" />
+            <Text style={[styles.streakText, { color: colors.text }]}>
+              {t('course.streak', { count: result.course_streak })}
+            </Text>
+          </View>
+        )}
+
         {/* Course Adherence Card */}
         {result?.route_match_percent != null && courseId && (
           <View style={styles.adherenceCard}>
@@ -538,6 +594,12 @@ export default function RunResultScreen() {
               <View style={styles.deviationLegend}>
                 <View style={[styles.legendDot, { backgroundColor: '#FF3B30' }]} />
                 <Text style={styles.legendText}>{t('running.result.offCourseSegments')}</Text>
+              </View>
+            )}
+            {result?.map_matching_confidence !== undefined && result?.map_matching_confidence !== null && (
+              <View style={styles.deviationLegend}>
+                <View style={[styles.legendDot, { backgroundColor: '#8E8E93' }]} />
+                <Text style={styles.legendText}>{t('running.result.signalGap')}</Text>
               </View>
             )}
           </View>
@@ -653,7 +715,7 @@ export default function RunResultScreen() {
           )}
           {!courseId && (
             <Button
-              title={distanceMeters < MIN_COURSE_DISTANCE_M
+              title={finalDistanceMeters < MIN_COURSE_DISTANCE_M
                 ? t('running.result.registerCourseDisabled', { min: MIN_COURSE_DISTANCE_M })
                 : isSubmitting
                   ? t('running.result.registerWaiting')
@@ -662,7 +724,7 @@ export default function RunResultScreen() {
               onPress={handleRegisterCourse}
               fullWidth
               size="md"
-              disabled={distanceMeters < MIN_COURSE_DISTANCE_M}
+              disabled={finalDistanceMeters < MIN_COURSE_DISTANCE_M}
             />
           )}
           <Button
@@ -1057,6 +1119,40 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     fontWeight: '500',
     color: c.textTertiary,
+  },
+
+  // -- Points Earned --
+  pointsCard: {
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+    paddingVertical: SPACING.lg,
+    marginTop: SPACING.md,
+    marginHorizontal: SPACING.xxl,
+  },
+  pointsText: {
+    fontSize: 32,
+    fontWeight: '800',
+  },
+  pointsLabel: {
+    fontSize: FONT_SIZES.sm,
+    marginTop: SPACING.xs,
+  },
+
+  // -- Course Streak Badge --
+  streakBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: '#FF6B35' + '14',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: 20,
+    marginBottom: SPACING.md,
+    gap: 4,
+  },
+  streakText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
   },
 
   // -- Actions --

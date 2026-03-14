@@ -157,7 +157,9 @@ export function useWatchCompanion(
       .then((status: { isPaired: boolean; isReachable: boolean; isAppInstalled: boolean }) => {
         setWatchConnected(status.isReachable);
       })
-      .catch(() => {});
+      .catch((err: any) => {
+        console.warn('[useWatchCompanion] 워치 상태 조회 실패:', err);
+      });
 
     subscriptionsRef.current = [hrSub, cmdSub, reachabilitySub];
 

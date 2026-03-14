@@ -44,6 +44,8 @@ class GPSTrackerModule(
         private const val EVENT_GPS_STATUS_CHANGE = "GPSTracker_onGPSStatusChange"
         private const val EVENT_RUNNING_STATE_CHANGE = "GPSTracker_onRunningStateChange"
 
+        private const val EVENT_MILESTONE_REACHED = "GPSTracker_onMilestoneReached"
+
         // Error codes matching shared-interfaces.md
         private const val ERROR_PERMISSION_DENIED = "PERMISSION_DENIED"
         private const val ERROR_GPS_DISABLED = "GPS_DISABLED"
@@ -63,6 +65,15 @@ class GPSTrackerModule(
         val engine = LocationEngine(reactApplicationContext)
         engine.listener = this
         engine.initialize()
+        // Register step listener to populate rolling cadence window
+        engine.sensorFusionManager?.stepDetector?.addListener { _ ->
+            val now = System.currentTimeMillis()
+            recentStepTimestamps.addLast(now)
+            // Cap buffer to prevent unbounded growth
+            if (recentStepTimestamps.size > 300) {
+                recentStepTimestamps.removeFirst()
+            }
+        }
         locationEngine = engine
     }
 
@@ -106,6 +117,16 @@ class GPSTrackerModule(
                 }
             }
 
+            // Check POST_NOTIFICATIONS permission (Android 13+)
+            // Required for foreground service notification
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (!hasPermission(Manifest.permission.POST_NOTIFICATIONS)) {
+                    Log.w(TAG, "POST_NOTIFICATIONS permission not granted. Foreground service notification may not appear.")
+                    // Don't reject -- the service can still run, but the notification won't show
+                    // The JS layer should request this permission before calling startTracking
+                }
+            }
+
             val engine = locationEngine
             if (engine == null) {
                 promise.reject(ERROR_SERVICE_UNAVAILABLE, "LocationEngine not initialized")
@@ -114,6 +135,9 @@ class GPSTrackerModule(
 
             // Start foreground service for background tracking
             GPSForegroundService.startService(reactApplicationContext)
+
+            // Reset cadence tracking for new session
+            recentStepTimestamps.clear()
 
             // Start the engine (GPS + sensors)
             engine.start()
@@ -215,8 +239,32 @@ class GPSTrackerModule(
 
     // --- LocationEngine.Listener implementation ---
 
+    // Rolling cadence window: track recent step timestamps for real-time SPM
+    private val recentStepTimestamps = ArrayDeque<Long>(120)
+    private val CADENCE_WINDOW_MS = 15_000L  // 15-second rolling window
+
     override fun onFilteredLocationUpdate(location: FilteredLocation, session: RunSession) {
-        val eventData = location.toLocationUpdateEvent(session.isMoving)
+        val sensorFusion = locationEngine?.sensorFusionManager
+        val cadenceSPM = if (session.isMoving && sensorFusion != null) {
+            val stepDetector = sensorFusion.stepDetector
+            val now = System.currentTimeMillis()
+            // Add steps to rolling window based on total step count delta
+            val currentTotal = stepDetector.totalSteps
+            val windowCutoff = now - CADENCE_WINDOW_MS
+            // Prune old entries
+            while (recentStepTimestamps.isNotEmpty() && recentStepTimestamps.first() < windowCutoff) {
+                recentStepTimestamps.removeFirst()
+            }
+            // Calculate cadence from steps in the rolling window
+            val stepsInWindow = recentStepTimestamps.size
+            if (stepsInWindow > 0) {
+                (stepsInWindow.toDouble() / (CADENCE_WINDOW_MS / 1000.0) * 60).toInt()
+            } else 0
+        } else 0
+        val elevGain = sensorFusion?.barometerTracker?.totalElevationGain ?: 0.0
+        val elevLoss = sensorFusion?.barometerTracker?.totalElevationLoss ?: 0.0
+
+        val eventData = location.toLocationUpdateEvent(session.isMoving, cadenceSPM, elevGain, elevLoss)
         sendEvent(EVENT_LOCATION_UPDATE, eventData)
 
         // Update notification periodically (every 5th update to avoid excessive overhead)
@@ -251,6 +299,15 @@ class GPSTrackerModule(
             putDouble("duration", durationMs.toDouble())
         }
         sendEvent(EVENT_RUNNING_STATE_CHANGE, params)
+    }
+
+    override fun onMilestoneReached(km: Int, splitPaceSecondsPerKm: Int, totalTimeSeconds: Int) {
+        val params = Arguments.createMap().apply {
+            putInt("km", km)
+            putInt("splitPaceSecondsPerKm", splitPaceSecondsPerKm)
+            putInt("totalTimeSeconds", totalTimeSeconds)
+        }
+        sendEvent(EVENT_MILESTONE_REACHED, params)
     }
 
     override fun onError(code: String, message: String) {

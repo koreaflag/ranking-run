@@ -8,18 +8,19 @@ struct RunningView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Duration — top
+            // Duration — top (primary metric, large and bold)
             ZStack {
                 Text(viewModel.formattedDuration())
-                    .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                    .foregroundColor(viewModel.state.isAutoPaused ? appOrange : .gray)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundColor(viewModel.state.isAutoPaused ? appOrange : .white)
                     .accessibilityLabel("시간 \(viewModel.formattedDuration())")
 
                 if viewModel.state.isAutoPaused {
                     HStack(spacing: 2) {
                         Spacer()
                         Image(systemName: "pause.circle.fill")
-                            .font(.system(size: 10))
+                            .font(.system(size: 12))
                             .foregroundColor(appOrange.opacity(0.8))
                     }
                 }
@@ -37,8 +38,9 @@ struct RunningView: View {
                 VStack(spacing: 1) {
                     HStack(alignment: .lastTextBaseline, spacing: 2) {
                         Text(viewModel.formattedDistance())
-                            .font(.system(size: 36, weight: .heavy, design: .monospaced))
-                            .foregroundColor(appOrange)
+                            .font(.system(size: 42, weight: .heavy, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundColor(.white)
                         Text("/\(String(format: "%.1f", goalKm))km")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.gray)
@@ -65,8 +67,9 @@ struct RunningView: View {
                 VStack(spacing: 1) {
                     HStack(alignment: .lastTextBaseline, spacing: 2) {
                         Text(viewModel.formattedDistance())
-                            .font(.system(size: 36, weight: .heavy, design: .monospaced))
-                            .foregroundColor(appOrange)
+                            .font(.system(size: 42, weight: .heavy, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundColor(.white)
                         Text("km")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(.gray)
@@ -92,8 +95,9 @@ struct RunningView: View {
                 // No goal — standard display
                 HStack(alignment: .lastTextBaseline, spacing: 2) {
                     Text(viewModel.formattedDistance())
-                        .font(.system(size: 40, weight: .heavy, design: .monospaced))
-                        .foregroundColor(appOrange)
+                        .font(.system(size: 46, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(.white)
                     Text("km")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.gray)
@@ -120,7 +124,7 @@ struct RunningView: View {
                     icon: nil
                 )
             }
-            .frame(height: 36)
+            .frame(height: 38)
 
             divider
 
@@ -142,7 +146,7 @@ struct RunningView: View {
                     iconColor: .cyan
                 )
             }
-            .frame(height: 36)
+            .frame(height: 38)
         }
     }
 
@@ -175,11 +179,12 @@ private struct MetricCell: View {
             HStack(spacing: 3) {
                 if let icon = icon {
                     Image(systemName: icon)
-                        .font(.system(size: 9))
+                        .font(.system(size: 10))
                         .foregroundColor(iconColor)
                 }
                 Text(value)
-                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .monospacedDigit()
                     .foregroundColor(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)

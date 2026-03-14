@@ -116,6 +116,8 @@ interface RouteMapViewProps {
   followPitch?: number;
   /** Off-course deviation segments to render in red: [startIdx, endIdx] pairs */
   deviationSegments?: Array<[number, number]>;
+  /** Signal gap segments to render as dashed gray: [startIdx, endIdx] pairs */
+  signalGapSegments?: Array<[number, number]>;
 }
 
 export interface Camera {
@@ -210,6 +212,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   followUserMode: followUserModeProp,
   followPitch: followPitchProp,
   deviationSegments,
+  signalGapSegments,
 }, ref) {
   const cameraRef = useRef<Mapbox.Camera>(null);
   const colors = useTheme();
@@ -350,20 +353,24 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
 
   // Custom follow: center camera on customUserLocation (Kalman-filtered)
   // instead of relying on Mapbox's native follow which tracks raw GPS.
+  // Also rotates the map to face the user's heading direction.
   useEffect(() => {
     if (useCustomFollow && customUserLocation) {
       // Offset center slightly south so the user dot appears in the upper 40% of the map,
       // giving more visibility to the route ahead.
       const zoomLevel = followZoomLevel ?? 16;
       const offsetLat = 0.0004; // ~40m south offset at zoom 16
+      const headingToUse = customUserHeading ?? 0;
       cameraRef.current?.setCamera({
         centerCoordinate: [customUserLocation.longitude, customUserLocation.latitude - offsetLat],
         zoomLevel,
-        animationDuration: 300,
+        heading: headingToUse,
+        pitch: followPitchProp ?? 0,
+        animationDuration: 150,
         animationMode: 'easeTo',
       });
     }
-  }, [useCustomFollow, customUserLocation?.latitude, customUserLocation?.longitude, followZoomLevel]);
+  }, [useCustomFollow, customUserLocation?.latitude, customUserLocation?.longitude, followZoomLevel, customUserHeading, followPitchProp]);
 
   // Region change callback
   const handleRegionDidChange = useCallback(
@@ -455,6 +462,25 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     };
   }, [deviationSegments, routePoints]);
 
+  // Signal gap overlay GeoJSON (dashed gray segments where GPS signal was lost)
+  const signalGapGeoJSON = useMemo<GeoJSON.Feature<GeoJSON.MultiLineString> | null>(() => {
+    if (!signalGapSegments || signalGapSegments.length === 0 || routePoints.length < 2) return null;
+    const lines: number[][][] = [];
+    for (const [start, end] of signalGapSegments) {
+      const s = Math.max(0, start);
+      const e = Math.min(routePoints.length - 1, end);
+      if (e - s < 1) continue;
+      const segment = routePoints.slice(s, e + 1).map(p => [p.longitude, p.latitude]);
+      lines.push(segment);
+    }
+    if (lines.length === 0) return null;
+    return {
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'MultiLineString', coordinates: lines },
+    };
+  }, [signalGapSegments, routePoints]);
+
   // Preview polyline GeoJSON
   const previewGeoJSON = useMemo(() => {
     if (!previewPolyline || previewPolyline.length < 2) return null;
@@ -539,6 +565,20 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
                 lineOpacity: 0.9,
                 lineCap: 'round',
                 lineJoin: 'round',
+              }}
+            />
+          </Mapbox.ShapeSource>
+        )}
+        {signalGapGeoJSON && (
+          <Mapbox.ShapeSource id="signalGapSource" shape={signalGapGeoJSON}>
+            <Mapbox.LineLayer
+              id="signalGapLine"
+              aboveLayerID="route-line"
+              style={{
+                lineColor: '#8E8E93',
+                lineWidth: 4,
+                lineDasharray: [3, 2],
+                lineOpacity: 0.7,
               }}
             />
           </Mapbox.ShapeSource>

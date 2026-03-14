@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import ScreenHeader from '../../components/common/ScreenHeader';
+import CourseThumbnailMap from '../../components/course/CourseThumbnailMap';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuthStore } from '../../stores/authStore';
 import { userService } from '../../services/userService';
@@ -24,8 +25,10 @@ import { friendService } from '../../services/friendService';
 import type { ThemeColors } from '../../utils/constants';
 import type { CourseStackParamList } from '../../types/navigation';
 import type { PublicProfile, PublicProfileCourse, PublicProfileRanking, GearItem, FriendshipStatusResponse } from '../../types/api';
-import { formatDistance, formatDuration, formatNumber } from '../../utils/format';
+import { formatDistance, formatDuration, formatNumber, metersToKm } from '../../utils/format';
 import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
+import RunnerLevelBadge from '../../components/runner/RunnerLevelBadge';
+import { getRunnerTier, getRunnerXpProgress } from '../../utils/runnerLevelConfig';
 
 type ProfileRoute = RouteProp<CourseStackParamList, 'UserProfile'>;
 type ProfileNavigation = NativeStackNavigationProp<CourseStackParamList>;
@@ -131,7 +134,7 @@ export default function UserProfileScreen() {
   }, []);
 
   const handleNavigateToCourse = useCallback((courseId: string) => {
-    navigation.navigate('CourseDetail', { courseId });
+    navigation.push('CourseDetail', { courseId });
   }, [navigation]);
 
   const getInitials = (nickname: string | null): string => {
@@ -179,57 +182,82 @@ export default function UserProfileScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Profile Header */}
-        <View style={styles.profileHeader}>
-          {/* Avatar */}
-          {profile.avatar_url ? (
-            <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
-          ) : (
-            <View style={[styles.avatar, styles.avatarFallback]}>
-              <Text style={styles.avatarInitials}>
-                {getInitials(profile.nickname)}
-              </Text>
+        {/* Player Card — Hero Style */}
+        {(() => {
+          const lv = profile.runner_level ?? 1;
+          const tier = getRunnerTier(lv);
+          const xp = getRunnerXpProgress(lv, profile.total_distance_meters ?? 0);
+          return (
+        <>
+        <View style={[styles.playerCard, { borderColor: tier.color + '30' }]}>
+          {/* Tier accent stripe at top */}
+          <View style={[styles.tierStripe, { backgroundColor: tier.color }]} />
+
+          {/* Profile header — Instagram style */}
+          <View style={styles.playerCardTop}>
+            {/* Avatar with tier-colored ring */}
+            <View style={[styles.avatarRing, { borderColor: tier.color + '60' }]}>
+              {profile.avatar_url ? (
+                <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
+              ) : (
+                <View style={[styles.avatarCircle, { backgroundColor: tier.color + '20', borderColor: tier.color + '40' }]}>
+                  <Text style={[styles.avatarInitials, { color: tier.color }]}>
+                    {getInitials(profile.nickname)}
+                  </Text>
+                </View>
+              )}
             </View>
-          )}
 
-          {/* Nickname */}
-          <Text style={styles.nickname}>{profile.nickname ?? t('profile.defaultNickname')}</Text>
-
-          {/* Bio */}
-          {profile.bio && (
-            <Text style={styles.bio}>{profile.bio}</Text>
-          )}
-
-          {/* Activity Region */}
-          {profile.activity_region && (
-            <View style={styles.regionRow}>
-              <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-              <Text style={styles.regionText}>{profile.activity_region}</Text>
-            </View>
-          )}
-
-          {/* Follower / Following counts */}
-          <View style={styles.followStats}>
-            <View style={styles.followStatItem}>
-              <Text style={styles.followStatValue}>{formatNumber(followersCount)}</Text>
-              <Text style={styles.followStatLabel}>{t('profile.followers')}</Text>
-            </View>
-            <View style={styles.followStatDivider} />
-            <View style={styles.followStatItem}>
-              <Text style={styles.followStatValue}>{formatNumber(profile.following_count)}</Text>
-              <Text style={styles.followStatLabel}>{t('profile.following')}</Text>
+            <View style={styles.playerCardStatsRow}>
+              <View style={styles.profileStatItem}>
+                <Text style={styles.profileStatValue}>{formatNumber(followersCount)}</Text>
+                <Text style={styles.profileStatLabel}>{t('profile.followers')}</Text>
+              </View>
+              <View style={styles.profileStatItem}>
+                <Text style={styles.profileStatValue}>{formatNumber(profile.following_count)}</Text>
+                <Text style={styles.profileStatLabel}>{t('profile.following')}</Text>
+              </View>
+              <View style={styles.profileStatItem}>
+                <Text style={styles.profileStatValue}>{formatNumber(profile.total_likes_received ?? 0)}</Text>
+                <Text style={styles.profileStatLabel}>{t('profile.likes')}</Text>
+              </View>
             </View>
           </View>
+          {/* Identity + Meta */}
+          <View style={styles.playerCardMeta}>
+            <View style={styles.nameRow}>
+              <Text style={styles.playerCardName}>{profile.nickname ?? t('profile.defaultNickname')}</Text>
+              <RunnerLevelBadge level={profile.runner_level} size="sm" />
+            </View>
+            {profile.crew_name ? (
+              <View style={styles.crewTag}>
+                <Ionicons name="people" size={11} color={colors.primary} />
+                <Text style={styles.crewTagText}>{profile.crew_name}</Text>
+              </View>
+            ) : null}
+            {profile.bio ? (
+              <Text style={styles.playerCardBio} numberOfLines={2}>{profile.bio}</Text>
+            ) : null}
+            {profile.instagram_username ? (
+              <TouchableOpacity
+                style={styles.instagramRow}
+                onPress={() => handleOpenInstagram(profile.instagram_username!)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="logo-instagram" size={13} color={colors.textTertiary} />
+                <Text style={styles.instagramText}>@{profile.instagram_username}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
 
-          {/* Action buttons row */}
-          <View style={styles.actionRow}>
-            {/* Follow/Unfollow button (hidden for own profile) */}
-            {!isOwnProfile && (
-              <Animated.View style={{ transform: [{ scale: followScale }] }}>
+          {/* Action Buttons — Instagram style (inside card) */}
+          {!isOwnProfile && (
+            <View style={styles.cardActionRow}>
+              <Animated.View style={[{ flex: 1 }, { transform: [{ scale: followScale }] }]}>
                 <TouchableOpacity
                   style={[
-                    styles.followButton,
-                    isFollowing && styles.followButtonActive,
+                    styles.cardActionButton,
+                    !isFollowing && styles.cardActionButtonPrimary,
                   ]}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -241,99 +269,84 @@ export default function UserProfileScreen() {
                   }}
                   activeOpacity={0.7}
                 >
-                  <Text
-                    style={[
-                      styles.followButtonText,
-                      isFollowing && styles.followButtonTextActive,
-                    ]}
-                  >
+                  <Text style={[styles.cardActionButtonText, !isFollowing && styles.cardActionButtonTextPrimary]}>
                     {isFollowing ? t('profile.unfollow') : t('profile.follow')}
                   </Text>
                 </TouchableOpacity>
               </Animated.View>
-            )}
+              {friendshipStatus && (
+                <TouchableOpacity
+                  style={[
+                    styles.cardActionButton,
+                    friendshipStatus.is_friend && styles.cardActionButtonSuccess,
+                    (friendshipStatus.request_status === null || friendshipStatus.request_status === undefined) && styles.cardActionButtonPrimary,
+                  ]}
+                  onPress={handleFriendAction}
+                  activeOpacity={0.7}
+                  disabled={
+                    friendActionLoading ||
+                    friendshipStatus.is_friend ||
+                    friendshipStatus.request_status === 'pending_sent'
+                  }
+                >
+                  {friendActionLoading ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <Text style={[
+                      styles.cardActionButtonText,
+                      (friendshipStatus.request_status === null || friendshipStatus.request_status === undefined) && styles.cardActionButtonTextPrimary,
+                      friendshipStatus.is_friend && { color: colors.success },
+                    ]}>
+                      {friendshipStatus.is_friend
+                        ? t('friend.friends')
+                        : friendshipStatus.request_status === 'pending_sent'
+                        ? t('friend.requested')
+                        : friendshipStatus.request_status === 'pending_received'
+                        ? t('friend.acceptRequest')
+                        : t('friend.addFriend')}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
-            {/* Friend request button */}
-            {!isOwnProfile && friendshipStatus && (
-              <TouchableOpacity
-                style={[
-                  styles.friendButton,
-                  friendshipStatus.is_friend && styles.friendButtonActive,
-                  friendshipStatus.request_status === 'pending_sent' && styles.friendButtonPending,
-                ]}
-                onPress={handleFriendAction}
-                activeOpacity={0.7}
-                disabled={
-                  friendActionLoading ||
-                  friendshipStatus.is_friend ||
-                  friendshipStatus.request_status === 'pending_sent'
-                }
-              >
-                {friendActionLoading ? (
-                  <ActivityIndicator size="small" color={colors.white} />
-                ) : friendshipStatus.is_friend ? (
-                  <>
-                    <Ionicons name="people" size={16} color={colors.success} />
-                    <Text style={[styles.friendButtonText, { color: colors.success }]}>
-                      {t('friend.friends')}
-                    </Text>
-                  </>
-                ) : friendshipStatus.request_status === 'pending_sent' ? (
-                  <>
-                    <Ionicons name="time-outline" size={16} color={colors.textTertiary} />
-                    <Text style={[styles.friendButtonText, { color: colors.textTertiary }]}>
-                      {t('friend.requested')}
-                    </Text>
-                  </>
-                ) : friendshipStatus.request_status === 'pending_received' ? (
-                  <>
-                    <Ionicons name="checkmark-circle-outline" size={16} color={colors.white} />
-                    <Text style={styles.friendButtonText}>
-                      {t('friend.acceptRequest')}
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Ionicons name="person-add-outline" size={16} color={colors.white} />
-                    <Text style={styles.friendButtonText}>
-                      {t('friend.addFriend')}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-
-            {/* Instagram button */}
-            {profile.instagram_username && (
-              <TouchableOpacity
-                style={styles.instagramButton}
-                onPress={() => handleOpenInstagram(profile.instagram_username!)}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="logo-instagram" size={20} color={colors.text} />
-              </TouchableOpacity>
-            )}
-          </View>
         </View>
 
-        {/* Running Stats Card */}
-        <View style={styles.statsCard}>
-          <View style={styles.statsGrid}>
-            <View style={styles.statsCell}>
-              <Text style={styles.statsValue}>
-                {formatDistance(profile.total_distance_meters)}
-              </Text>
-              <Text style={styles.statsLabel}>{t('profile.totalDistance')}</Text>
+        {/* Runner Level Banner — matches MyPage style */}
+        <View style={[styles.runnerBanner, { backgroundColor: tier.bgColor, borderColor: tier.color + '30' }]}>
+          <View style={styles.runnerBannerText}>
+            <View style={styles.runnerBannerTitleRow}>
+              <Text style={[styles.runnerBannerTitle, { color: tier.textColor }]}>{t(tier.nameKey)}</Text>
+              <Text style={[styles.runnerBannerLv, { color: tier.color }]}>Lv.{lv}</Text>
             </View>
-            <View style={styles.statsDivider} />
-            <View style={styles.statsCell}>
-              <Text style={styles.statsValue}>
-                {formatNumber(profile.total_runs)}
+            <View style={styles.xpBarRow}>
+              <View style={[styles.xpBarTrack, { backgroundColor: tier.color + '30' }]}>
+                <View style={[styles.xpBarFill, { width: `${Math.round(xp.ratio * 100)}%`, backgroundColor: tier.color }]} />
+              </View>
+              <Text style={[styles.xpBarLabel, { color: tier.textColor }]}>
+                {xp.isMax ? 'MAX' : `${metersToKm(xp.current, 1)} / ${metersToKm(xp.next, 0)}km`}
               </Text>
-              <Text style={styles.statsLabel}>{t('profile.totalRuns')}</Text>
             </View>
           </View>
         </View>
+
+        {/* Activity stats */}
+        <View style={styles.activityRow}>
+          <View style={styles.activityItem}>
+            <Ionicons name="walk-outline" size={14} color={tier.color} />
+            <Text style={styles.activityValue}>{formatDistance(profile.total_distance_meters)}</Text>
+          </View>
+          <View style={styles.activityDot} />
+          <View style={styles.activityItem}>
+            <Ionicons name="fitness-outline" size={14} color={tier.color} />
+            <Text style={styles.activityValue}>{formatNumber(profile.total_runs)}</Text>
+            <Text style={styles.activityLabel}>{t('profile.totalRuns')}</Text>
+          </View>
+        </View>
+        </>
+          );
+        })()}
 
         {/* Gear Section */}
         {(profile.primary_gear || (profile.gear_items && profile.gear_items.length > 0)) && (
@@ -411,8 +424,8 @@ const CourseCard = React.memo(function CourseCard({
       onPress={onPress}
       activeOpacity={0.7}
     >
-      {course.thumbnail_url ? (
-        <Image source={{ uri: course.thumbnail_url }} style={styles.courseThumbnail} />
+      {course.route_preview && course.route_preview.length >= 2 ? (
+        <CourseThumbnailMap routePreview={course.route_preview} width={56} height={56} borderRadius={8} />
       ) : (
         <View style={[styles.courseThumbnail, styles.courseThumbnailFallback]}>
           <Ionicons name="map-outline" size={24} color={colors.textTertiary} />
@@ -563,68 +576,208 @@ const createStyles = (c: ThemeColors) =>
       color: c.white,
     },
 
-    // -- Profile Header --
-    profileHeader: {
-      alignItems: 'center',
-      paddingHorizontal: SPACING.xxl,
-      paddingTop: SPACING.lg,
-      gap: SPACING.md,
+    // -- Profile Section (flat — no card, Instagram style) --
+    playerCard: {
+      // Flat layout, no card container
     },
-    avatar: {
-      width: 96,
-      height: 96,
-      borderRadius: 48,
+    tierStripe: {
+      height: 3,
+      width: '100%',
+      marginBottom: 4,
     },
-    avatarFallback: {
-      backgroundColor: c.primary,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    avatarInitials: {
-      fontSize: FONT_SIZES.display,
-      fontWeight: '800',
-      color: c.white,
-    },
-    nickname: {
-      fontSize: FONT_SIZES.title,
-      fontWeight: '900',
-      color: c.text,
-      letterSpacing: -0.5,
-    },
-    bio: {
-      fontSize: FONT_SIZES.md,
-      color: c.textSecondary,
-      textAlign: 'center',
-      lineHeight: 22,
-      paddingHorizontal: SPACING.lg,
-    },
-
-    // -- Follow stats --
-    followStats: {
+    playerCardTop: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: SPACING.xl,
-      marginTop: SPACING.xs,
+      paddingHorizontal: 16,
+      paddingTop: 4,
+      paddingBottom: 12,
+      gap: 28,
     },
-    followStatItem: {
+    playerCardStatsRow: {
+      flex: 1,
+      flexDirection: 'row',
+      justifyContent: 'space-around',
       alignItems: 'center',
-      gap: 2,
     },
-    followStatValue: {
-      fontSize: FONT_SIZES.xl,
+    nameRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+    },
+    playerCardName: {
+      fontSize: 17,
+      fontWeight: '700',
+      color: c.text,
+      letterSpacing: -0.3,
+    },
+    avatarRing: {
+      width: 92,
+      height: 92,
+      borderRadius: 46,
+      borderWidth: 3,
+      padding: 3,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    avatarCircle: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      borderWidth: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    avatarImage: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+    },
+    avatarInitials: {
+      fontSize: FONT_SIZES.xxl,
+      fontWeight: '800',
+    },
+    runnerBanner: {
+      marginHorizontal: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+    },
+    runnerBannerText: {
+      flex: 1, gap: 4,
+    },
+    runnerBannerTitleRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 6,
+    },
+    runnerBannerTitle: {
+      fontSize: 14, fontWeight: '800',
+    },
+    runnerBannerLv: {
+      fontSize: 12, fontWeight: '900',
+    },
+    xpBarRow: {
+      gap: 4, marginTop: 2,
+    },
+    xpBarTrack: {
+      height: 6, borderRadius: 3, overflow: 'hidden' as const,
+    },
+    xpBarFill: {
+      height: '100%' as any, borderRadius: 3,
+    },
+    xpBarLabel: {
+      fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const,
+    },
+    activityRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: SPACING.md,
+      paddingHorizontal: 16,
+      paddingTop: SPACING.sm,
+      paddingBottom: SPACING.sm,
+    },
+    activityItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    activityValue: {
+      fontSize: FONT_SIZES.sm,
       fontWeight: '800',
       color: c.text,
-      fontVariant: ['tabular-nums'],
+      fontVariant: ['tabular-nums'] as const,
     },
-    followStatLabel: {
+    activityLabel: {
       fontSize: FONT_SIZES.xs,
       fontWeight: '500',
       color: c.textTertiary,
     },
-    followStatDivider: {
-      width: 1,
-      height: 28,
-      backgroundColor: c.divider,
+    activityDot: {
+      width: 3,
+      height: 3,
+      borderRadius: 1.5,
+      backgroundColor: c.textTertiary,
+    },
+    playerCardMeta: {
+      paddingHorizontal: 16,
+      paddingTop: 0,
+      paddingBottom: 0,
+      gap: 4,
+    },
+    cardActionRow: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 4,
+    },
+    cardActionButton: {
+      flex: 1,
+      height: 34,
+      backgroundColor: c.surfaceLight,
+      borderRadius: 8,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    cardActionButtonPrimary: {
+      backgroundColor: c.primary,
+    },
+    cardActionButtonSuccess: {
+      backgroundColor: c.surfaceLight,
+    },
+    cardActionButtonText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: c.text,
+    },
+    cardActionButtonTextPrimary: {
+      color: c.white,
+    },
+    playerCardBio: {
+      fontSize: 14,
+      color: c.text,
+      lineHeight: 20,
+    },
+    profileStatItem: {
+      alignItems: 'center',
+      gap: 2,
+      flex: 1,
+    },
+    profileStatValue: {
+      fontSize: 17,
+      fontWeight: '700',
+      color: c.text,
+      fontVariant: ['tabular-nums'],
+    },
+    profileStatLabel: {
+      fontSize: 13,
+      fontWeight: '400',
+      color: c.textSecondary,
+    },
+    instagramRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: 4,
+      marginTop: 2,
+    },
+    instagramText: {
+      fontSize: 14,
+      color: c.primary,
+      fontWeight: '600',
+    },
+    crewTag: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: 3,
+      backgroundColor: c.primary + '15',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: BORDER_RADIUS.xs,
+    },
+    crewTagText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: c.primary,
     },
 
     // -- Action row --
@@ -632,13 +785,13 @@ const createStyles = (c: ThemeColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: SPACING.md,
-      marginTop: SPACING.sm,
+      marginHorizontal: SPACING.xxl,
     },
     followButton: {
       backgroundColor: c.primary,
       paddingVertical: SPACING.sm + 2,
-      paddingHorizontal: SPACING.xxl,
       borderRadius: BORDER_RADIUS.lg,
+      alignItems: 'center',
     },
     followButtonActive: {
       backgroundColor: c.transparent,
@@ -676,48 +829,6 @@ const createStyles = (c: ThemeColors) =>
       fontSize: FONT_SIZES.sm,
       fontWeight: '700',
       color: c.white,
-    },
-    instagramButton: {
-      width: 40,
-      height: 40,
-      borderRadius: BORDER_RADIUS.sm,
-      backgroundColor: c.surface,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-
-    // -- Running Stats Card --
-    statsCard: {
-      marginHorizontal: SPACING.xxl,
-      backgroundColor: c.surface,
-      borderRadius: BORDER_RADIUS.lg,
-      paddingVertical: SPACING.xl,
-      paddingHorizontal: SPACING.md,
-    },
-    statsGrid: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    statsCell: {
-      flex: 1,
-      alignItems: 'center',
-      gap: SPACING.xs,
-    },
-    statsDivider: {
-      width: 1,
-      height: 32,
-      backgroundColor: c.divider,
-    },
-    statsValue: {
-      fontSize: FONT_SIZES.xl,
-      fontWeight: '800',
-      color: c.text,
-      fontVariant: ['tabular-nums'],
-    },
-    statsLabel: {
-      fontSize: FONT_SIZES.xs,
-      fontWeight: '500',
-      color: c.textTertiary,
     },
 
     // -- Section --
@@ -832,18 +943,6 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '600',
       color: c.primary,
       fontVariant: ['tabular-nums'],
-    },
-
-    // -- Activity Region --
-    regionRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: SPACING.xs,
-    },
-    regionText: {
-      fontSize: FONT_SIZES.sm,
-      fontWeight: '500',
-      color: c.textSecondary,
     },
 
     // -- Gear --

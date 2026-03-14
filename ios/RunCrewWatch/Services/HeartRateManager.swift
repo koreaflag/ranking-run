@@ -11,6 +11,7 @@ class HeartRateManager: NSObject, ObservableObject {
     private var ownsSession = false
 
     var onHeartRateUpdate: ((Double) -> Void)?
+    var onCaloriesUpdate: ((Int) -> Void)?
 
     @Published var currentHeartRate: Double = 0
     @Published var isActive: Bool = false
@@ -22,7 +23,13 @@ class HeartRateManager: NSObject, ObservableObject {
             return
         }
 
-        let typesToShare: Set<HKSampleType> = [HKObjectType.workoutType()]
+        var typesToShare: Set<HKSampleType> = [HKObjectType.workoutType()]
+        if let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
+            typesToShare.insert(distanceType)
+        }
+        if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+            typesToShare.insert(energyType)
+        }
         var typesToRead: Set<HKObjectType> = []
         if let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) {
             typesToRead.insert(heartRateType)
@@ -93,10 +100,21 @@ class HeartRateManager: NSObject, ObservableObject {
 
     func stopWorkoutSession() {
         if ownsSession {
-            session?.end()
-            builder?.endCollection(withEnd: Date()) { [weak self] success, error in
-                self?.builder?.finishWorkout { workout, error in
+            let endDate = Date()
+            // End collection BEFORE ending the session (Apple docs requirement).
+            // Capture references to avoid accessing self after cleanup.
+            let capturedSession = session
+            let capturedBuilder = builder
+            capturedBuilder?.endCollection(withEnd: endDate) { [weak self] success, error in
+                if let error = error {
+                    print("[HeartRateManager] endCollection error: \(error.localizedDescription)")
+                }
+                capturedBuilder?.finishWorkout { workout, error in
+                    if let error = error {
+                        print("[HeartRateManager] finishWorkout error: \(error.localizedDescription)")
+                    }
                     DispatchQueue.main.async {
+                        capturedSession?.end()
                         self?.isActive = false
                         self?.currentHeartRate = 0
                         self?.session = nil
@@ -152,20 +170,29 @@ extension HeartRateManager: HKLiveWorkoutBuilderDelegate {
         didCollectDataOf collectedTypes: Set<HKSampleType>
     ) {
         for type in collectedTypes {
-            guard let quantityType = type as? HKQuantityType,
-                  quantityType == HKQuantityType.quantityType(forIdentifier: .heartRate)
-            else { continue }
+            guard let quantityType = type as? HKQuantityType else { continue }
 
-            let statistics = workoutBuilder.statistics(for: quantityType)
-            guard let heartRateQuantity = statistics?.mostRecentQuantity() else { continue }
+            if quantityType == HKQuantityType.quantityType(forIdentifier: .heartRate) {
+                let statistics = workoutBuilder.statistics(for: quantityType)
+                guard let heartRateQuantity = statistics?.mostRecentQuantity() else { continue }
 
-            let bpm = heartRateQuantity.doubleValue(
-                for: HKUnit.count().unitDivided(by: .minute())
-            )
+                let bpm = heartRateQuantity.doubleValue(
+                    for: HKUnit.count().unitDivided(by: .minute())
+                )
 
-            DispatchQueue.main.async { [weak self] in
-                self?.currentHeartRate = bpm
-                self?.onHeartRateUpdate?(bpm)
+                DispatchQueue.main.async { [weak self] in
+                    self?.currentHeartRate = bpm
+                    self?.onHeartRateUpdate?(bpm)
+                }
+            } else if quantityType == HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+                let statistics = workoutBuilder.statistics(for: quantityType)
+                guard let energySum = statistics?.sumQuantity() else { continue }
+
+                let kcal = energySum.doubleValue(for: .kilocalorie())
+
+                DispatchQueue.main.async { [weak self] in
+                    self?.onCaloriesUpdate?(Int(kcal))
+                }
             }
         }
     }

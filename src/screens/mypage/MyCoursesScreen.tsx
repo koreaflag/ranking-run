@@ -20,7 +20,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '../../lib/icons';
-import { useCourseStore } from '../../stores/courseStore';
+import { useCourseListStore } from '../../stores/courseListStore';
 import { useAuthStore } from '../../stores/authStore';
 import EmptyState from '../../components/common/EmptyState';
 import { useTheme } from '../../hooks/useTheme';
@@ -161,7 +161,7 @@ export default function MyCoursesScreen() {
   const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { myCourses, isLoadingMyCourses, fetchMyCourses, updateMyCourse } = useCourseStore();
+  const { myCourses, isLoadingMyCourses, fetchMyCourses, updateMyCourse } = useCourseListStore();
   const nickname = useAuthStore((s) => s.user?.nickname ?? '나');
 
   // Edit modal state

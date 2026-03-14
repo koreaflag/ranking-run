@@ -1,12 +1,15 @@
 """Crew join request endpoints: apply, approve, reject, cancel."""
 
+import logging
 from uuid import UUID
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
 
 from app.core.container import Container
 from app.core.deps import CurrentUser, DbSession
+from app.models.crew import Crew, CrewMember
 from app.schemas.crew import (
     JoinRequestCreateRequest,
     JoinRequestListResponse,
@@ -14,6 +17,9 @@ from app.schemas.crew import (
     MyJoinRequestResponse,
 )
 from app.services.crew_join_request_service import CrewJoinRequestService
+from app.services.notification_service import NotificationService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/crews/{crew_id}/join-requests", tags=["crew-join-requests"])
 
@@ -28,10 +34,46 @@ async def create_join_request(
     service: CrewJoinRequestService = Depends(
         Provide[Container.crew_join_request_service]
     ),
+    notification_service: NotificationService = Depends(
+        Provide[Container.notification_service]
+    ),
 ) -> JoinRequestResponse:
     result = await service.create_request(
         db=db, crew_id=crew_id, user_id=current_user.id, message=body.message
     )
+
+    # Notify crew owner + admins about the join request
+    try:
+        crew_result = await db.execute(
+            select(Crew.name).where(Crew.id == crew_id)
+        )
+        crew_name = crew_result.scalar_one_or_none() or ""
+
+        admins_result = await db.execute(
+            select(CrewMember.user_id).where(
+                CrewMember.crew_id == crew_id,
+                CrewMember.role.in_(["owner", "admin"]),
+            )
+        )
+        admin_ids = [row[0] for row in admins_result.all()]
+
+        for admin_id in admin_ids:
+            if admin_id == current_user.id:
+                continue
+            await notification_service.create_and_send(
+                db=db,
+                user_id=admin_id,
+                notification_type="crew_join_request",
+                actor_id=current_user.id,
+                title=current_user.nickname or "누군가",
+                body=f"님이 {crew_name}에 가입을 신청했습니다",
+                target_id=str(crew_id),
+                target_type="crew",
+                data={"crew_name": crew_name, "request_id": result.get("id")},
+            )
+    except Exception:
+        logger.warning("Failed to send join request notification for crew %s", crew_id)
+
     return JoinRequestResponse(**result)
 
 

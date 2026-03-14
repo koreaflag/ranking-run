@@ -1,6 +1,6 @@
 """User endpoints: profile, stats, run history, and courses."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Literal
 from uuid import UUID
 
@@ -21,6 +21,7 @@ from app.models.run_record import RunRecord
 from app.models.run_session import RunSession
 from app.models.user import User
 from app.schemas.course import CourseStatsInfo, MyCourseItem
+from app.services.course_service import get_route_preview, get_thumbnail_url_for_course
 from app.schemas.run import (
     RunCourseInfo, RunHistoryItem, RunHistoryResponse,
     AnalyticsResponse, WeeklyStatItem, PaceTrendItem, ActivityDay, BestEffortItem,
@@ -37,9 +38,12 @@ from app.schemas.user import (
     PublicProfileResponse,
     SocialCountsResponse,
     UserResponse,
+    UserSearchItem,
+    UserSearchResponse,
     UserStats,
     WeeklyStats,
 )
+from app.schemas.point_transaction import PointHistoryResponse, PointTransactionItem
 from app.services.follow_service import FollowService
 from app.services.gear_service import GearService
 from app.services.stats_service import StatsService
@@ -65,17 +69,63 @@ async def search_by_code(
 
     return PublicProfileResponse(
         id=str(user.id),
+        user_code=user.user_code or "",
         nickname=user.nickname,
         avatar_url=user.avatar_url,
         bio=user.bio,
         instagram_username=user.instagram_username,
         activity_region=user.activity_region,
+        crew_name=user.crew_name,
+        runner_level=user.runner_level or 1,
         total_distance_meters=user.total_distance_meters,
         total_runs=user.total_runs,
+        total_points=user.total_points or 0,
         created_at=user.created_at,
         followers_count=follow_status["followers_count"],
         following_count=follow_status["following_count"],
         is_following=follow_status["is_following"],
+    )
+
+
+@router.get("/search", response_model=UserSearchResponse)
+async def search_users(
+    q: str = Query(..., min_length=1, max_length=50),
+    page: int = Query(0, ge=0),
+    per_page: int = Query(20, ge=1, le=50),
+    db: DbSession = None,
+) -> UserSearchResponse:
+    """Search users by nickname."""
+    base_filter = [User.nickname.ilike(f"%{q}%"), User.nickname.isnot(None)]
+
+    count_result = await db.execute(
+        select(func.count(User.id)).where(*base_filter)
+    )
+    total_count = count_result.scalar() or 0
+
+    result = await db.execute(
+        select(User)
+        .where(*base_filter)
+        .order_by(User.nickname)
+        .offset(page * per_page)
+        .limit(per_page)
+    )
+    users = result.scalars().all()
+
+    data = [
+        UserSearchItem(
+            id=str(u.id),
+            nickname=u.nickname,
+            avatar_url=u.avatar_url,
+            crew_name=u.crew_name,
+            activity_region=u.activity_region,
+        )
+        for u in users
+    ]
+
+    return UserSearchResponse(
+        data=data,
+        total_count=total_count,
+        has_next=(page + 1) * per_page < total_count,
     )
 
 
@@ -98,6 +148,8 @@ async def get_my_profile(current_user: CurrentUser) -> UserResponse:
         crew_name=current_user.crew_name,
         total_distance_meters=current_user.total_distance_meters,
         total_runs=current_user.total_runs,
+        total_points=current_user.total_points,
+        runner_level=current_user.runner_level,
         created_at=current_user.created_at,
     )
 
@@ -225,6 +277,90 @@ async def get_my_weekly_stats(
     """Get the current user's weekly summary for the home screen."""
     stats = await stats_service.get_weekly_stats(db, current_user.id)
     return WeeklyStats(**stats)
+
+
+@router.get("/me/points/history", response_model=PointHistoryResponse)
+async def get_point_history(
+    current_user: CurrentUser,
+    db: DbSession,
+    page: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Get the current user's point transaction history."""
+    from app.models.point_transaction import PointTransaction
+
+    offset = page * limit
+
+    count_result = await db.execute(
+        select(func.count(PointTransaction.id)).where(
+            PointTransaction.user_id == current_user.id,
+        )
+    )
+    total_count = count_result.scalar() or 0
+
+    result = await db.execute(
+        select(PointTransaction)
+        .where(PointTransaction.user_id == current_user.id)
+        .order_by(desc(PointTransaction.created_at))
+        .offset(offset)
+        .limit(limit)
+    )
+    rows = result.scalars().all()
+
+    return PointHistoryResponse(
+        data=[
+            PointTransactionItem(
+                id=str(tx.id),
+                amount=tx.amount,
+                balance_after=tx.balance_after,
+                tx_type=tx.tx_type,
+                description=tx.description,
+                created_at=tx.created_at,
+            )
+            for tx in rows
+        ],
+        total_count=total_count,
+        has_next=(offset + limit) < total_count,
+    )
+
+
+@router.post("/me/daily-checkin")
+async def daily_checkin(
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """Daily attendance check-in. Awards 5 points once per day."""
+    from app.models.point_transaction import PointTransaction
+
+    today = date.today()
+
+    # Check if already checked in today
+    existing = await db.execute(
+        select(PointTransaction.id).where(
+            PointTransaction.user_id == current_user.id,
+            PointTransaction.tx_type == "daily_checkin",
+            func.date(PointTransaction.created_at) == today,
+        )
+    )
+    if existing.scalar() is not None:
+        return {"checked_in": True, "points_earned": 0, "total_points": current_user.total_points, "already": True}
+
+    # Award 5 points
+    user_result = await db.execute(select(User).where(User.id == current_user.id))
+    user = user_result.scalar_one()
+    user.total_points += 5
+
+    tx = PointTransaction(
+        user_id=current_user.id,
+        amount=5,
+        balance_after=user.total_points,
+        tx_type="daily_checkin",
+        description=None,
+    )
+    db.add(tx)
+    await db.commit()
+
+    return {"checked_in": True, "points_earned": 5, "total_points": user.total_points, "already": False}
 
 
 @router.get("/me/runs", response_model=RunHistoryResponse)
@@ -566,7 +702,8 @@ async def get_public_profile(
             id=str(c.id),
             title=c.title,
             distance_meters=c.distance_meters,
-            thumbnail_url=c.thumbnail_url,
+            thumbnail_url=get_thumbnail_url_for_course(c),
+            route_preview=get_route_preview(c),
             total_runs=c.stats.total_runs if c.stats else 0,
             like_count=like_count,
         ))
@@ -609,15 +746,22 @@ async def get_public_profile(
     ]
     primary_gear = next((g for g in gear_items if g.is_primary), None)
 
+    total_likes = sum(c.like_count for c in course_items)
+
     return PublicProfileResponse(
         id=str(user.id),
+        user_code=user.user_code or "",
         nickname=user.nickname,
         avatar_url=user.avatar_url,
         bio=user.bio,
         instagram_username=user.instagram_username,
         activity_region=user.activity_region,
+        crew_name=user.crew_name,
+        runner_level=user.runner_level or 1,
         total_distance_meters=user.total_distance_meters,
         total_runs=user.total_runs,
+        total_points=user.total_points or 0,
+        total_likes_received=total_likes,
         created_at=user.created_at,
         followers_count=follow_status["followers_count"],
         following_count=follow_status["following_count"],

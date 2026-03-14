@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { CrewItem, CrewMemberItem } from '../types/api';
 import { crewService } from '../services/crewService';
+import { useToastStore } from './toastStore';
 
 interface CrewState {
   // Lists
@@ -11,6 +12,7 @@ interface CrewState {
   totalCount: number;
   currentPage: number;
   searchQuery: string;
+  regionFilter: string;
 
   // Detail
   currentCrew: CrewItem | null;
@@ -24,6 +26,7 @@ interface CrewState {
   fetchMoreCrews: () => Promise<void>;
   fetchMyCrews: () => Promise<void>;
   setSearchQuery: (q: string) => void;
+  setRegionFilter: (region: string) => void;
   fetchCrewDetail: (crewId: string) => Promise<void>;
   fetchMembers: (crewId: string) => Promise<void>;
   joinCrew: (crewId: string) => Promise<void>;
@@ -43,6 +46,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   totalCount: 0,
   currentPage: 0,
   searchQuery: '',
+  regionFilter: '',
 
   currentCrew: null,
   members: [],
@@ -51,13 +55,14 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   isLoadingMembers: false,
 
   fetchCrews: async (reset = true) => {
-    const { searchQuery } = get();
+    const { searchQuery, regionFilter } = get();
     if (reset) {
       set({ isLoading: true, currentPage: 0 });
     }
     try {
       const res = await crewService.listCrews({
         search: searchQuery || undefined,
+        region: regionFilter || undefined,
         page: 0,
         per_page: PER_PAGE,
       });
@@ -67,14 +72,14 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         currentPage: 0,
       });
     } catch {
-      // silent
+      useToastStore.getState().showToast('error', '크루 목록을 불러올 수 없습니다');
     } finally {
       set({ isLoading: false });
     }
   },
 
   fetchMoreCrews: async () => {
-    const { currentPage, totalCount, crews, searchQuery, isLoadingMore } = get();
+    const { currentPage, totalCount, crews, searchQuery, regionFilter, isLoadingMore } = get();
     if (isLoadingMore || crews.length >= totalCount) return;
 
     const nextPage = currentPage + 1;
@@ -82,6 +87,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
     try {
       const res = await crewService.listCrews({
         search: searchQuery || undefined,
+        region: regionFilter || undefined,
         page: nextPage,
         per_page: PER_PAGE,
       });
@@ -91,7 +97,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
         currentPage: nextPage,
       });
     } catch {
-      // silent
+      useToastStore.getState().showToast('error', '추가 데이터를 불러올 수 없습니다');
     } finally {
       set({ isLoadingMore: false });
     }
@@ -102,11 +108,12 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const data = await crewService.getMyCrews();
       set({ myCrews: data });
     } catch {
-      // silent
+      // background fetch — silent ok
     }
   },
 
   setSearchQuery: (q: string) => set({ searchQuery: q }),
+  setRegionFilter: (region: string) => set({ regionFilter: region }),
 
   fetchCrewDetail: async (crewId: string) => {
     set({ isLoadingDetail: true, currentCrew: null });
@@ -114,7 +121,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const crew = await crewService.getCrew(crewId);
       set({ currentCrew: crew });
     } catch {
-      // silent
+      useToastStore.getState().showToast('error', '크루 정보를 불러올 수 없습니다');
     } finally {
       set({ isLoadingDetail: false });
     }
@@ -126,7 +133,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       const res = await crewService.getMembers(crewId, { per_page: 100 });
       set({ members: res.data, membersTotal: res.total_count });
     } catch {
-      // silent
+      useToastStore.getState().showToast('error', '멤버 목록을 불러올 수 없습니다');
     } finally {
       set({ isLoadingMembers: false });
     }
@@ -155,23 +162,33 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   },
 
   kickMember: async (crewId: string, userId: string) => {
-    await crewService.kickMember(crewId, userId);
-    set((state) => ({
-      members: state.members.filter((m) => m.user_id !== userId),
-      membersTotal: state.membersTotal - 1,
-      currentCrew: state.currentCrew
-        ? { ...state.currentCrew, member_count: state.currentCrew.member_count - 1 }
-        : null,
-    }));
+    try {
+      await crewService.kickMember(crewId, userId);
+      set((state) => ({
+        members: state.members.filter((m) => m.user_id !== userId),
+        membersTotal: state.membersTotal - 1,
+        currentCrew: state.currentCrew
+          ? { ...state.currentCrew, member_count: state.currentCrew.member_count - 1 }
+          : null,
+      }));
+    } catch {
+      useToastStore.getState().showToast('error', '멤버 추방에 실패했습니다');
+      throw new Error('kick failed');
+    }
   },
 
   updateMemberRole: async (crewId: string, userId: string, role: 'admin' | 'member') => {
-    const updated = await crewService.updateMemberRole(crewId, userId, role);
-    set((state) => ({
-      members: state.members.map((m) =>
-        m.user_id === userId ? { ...m, role: updated.role } : m
-      ),
-    }));
+    try {
+      const updated = await crewService.updateMemberRole(crewId, userId, role);
+      set((state) => ({
+        members: state.members.map((m) =>
+          m.user_id === userId ? { ...m, role: updated.role } : m
+        ),
+      }));
+    } catch {
+      useToastStore.getState().showToast('error', '역할 변경에 실패했습니다');
+      throw new Error('role update failed');
+    }
   },
 
   reset: () =>
@@ -182,6 +199,7 @@ export const useCrewStore = create<CrewState>((set, get) => ({
       totalCount: 0,
       currentPage: 0,
       searchQuery: '',
+      regionFilter: '',
       currentCrew: null,
       members: [],
       membersTotal: 0,

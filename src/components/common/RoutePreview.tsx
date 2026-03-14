@@ -71,7 +71,7 @@ export default function RoutePreview({
   coordinates,
   width,
   height,
-  strokeColor = '#FF7A33',
+  strokeColor = '#FFC800',
   strokeWidth = 2,
   showMap = false,
 }: RoutePreviewProps) {

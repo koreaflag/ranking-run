@@ -15,6 +15,8 @@ export interface CourseNavigation {
   nearestPointIndex: number;
   deviationMeters: number;
   isOffCourse: boolean;
+  /** Snapped position on the course polyline (null when off-course) */
+  snappedPosition: Coordinate | null;
   bearingToNext: number;
   /** Bearing from current position to the nearest point on the course (for return guidance) */
   bearingToCourse: number;
@@ -144,9 +146,10 @@ export function useCourseNavigation(
       nearestDist = haversineDistance(currentLocation, courseRoute[lastIdx]);
     }
 
-    // Segment projection for precise deviation measurement
+    // Segment projection for precise deviation measurement + snapped position
     let deviationMeters = nearestDist;
     let projectedProgress = 0; // fractional extra distance past nearestIdx
+    let bestProjected: Coordinate = courseRoute[nearestIdx];
 
     if (nearestIdx < courseRoute.length - 1) {
       const a = courseRoute[nearestIdx];
@@ -156,6 +159,7 @@ export function useCourseNavigation(
       if (projDist < deviationMeters) {
         deviationMeters = projDist;
         projectedProgress = proj.t * haversineDistance(a, b);
+        bestProjected = proj.projected;
       }
     }
     if (nearestIdx > 0) {
@@ -166,6 +170,7 @@ export function useCourseNavigation(
       if (projDist < deviationMeters) {
         deviationMeters = projDist;
         projectedProgress = -(1 - proj.t) * haversineDistance(a, b);
+        bestProjected = proj.projected;
       }
     }
 
@@ -244,6 +249,7 @@ export function useCourseNavigation(
       nearestPointIndex: nearestIdx,
       deviationMeters,
       isOffCourse,
+      snappedPosition: isOffCourse ? null : bestProjected,
       bearingToNext,
       bearingToCourse: bearing(currentLocation, courseRoute[nearestIdx]),
       remainingDistanceMeters,

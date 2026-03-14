@@ -12,6 +12,7 @@ class FavoriteCourseItem(BaseModel):
     id: str
     title: str
     thumbnail_url: str | None
+    route_preview: list[list[float]] | None = None
     distance_meters: float
     estimated_duration_seconds: int
     creator_nickname: str

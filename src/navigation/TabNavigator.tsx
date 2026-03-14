@@ -99,6 +99,7 @@ export default function TabNavigator() {
           {
             backgroundColor: colors.background,
             borderTopColor: colors.divider,
+            shadowColor: colors.black,
           },
         ],
         tabBarShowLabel: false,
@@ -117,6 +118,7 @@ export default function TabNavigator() {
         name="HomeTab"
         component={HomeStack}
         options={{
+          tabBarAccessibilityLabel: t('tabs.home'),
           tabBarIcon: ({ focused }) => (
             <TabIcon
               label={t('tabs.home')}
@@ -132,6 +134,7 @@ export default function TabNavigator() {
         name="CourseTab"
         component={CourseStack}
         options={{
+          tabBarAccessibilityLabel: t('tabs.course'),
           tabBarIcon: ({ focused }) => (
             <TabIcon
               label={t('tabs.course')}
@@ -147,6 +150,7 @@ export default function TabNavigator() {
         name="WorldTab"
         component={WorldStack}
         options={{
+          tabBarAccessibilityLabel: t('tabs.world'),
           tabBarIcon: ({ focused }) => <WorldTabIcon focused={focused} colors={colors} label={t('tabs.world')} />,
         }}
       />
@@ -154,6 +158,7 @@ export default function TabNavigator() {
         name="CommunityTab"
         component={CommunityStack}
         options={{
+          tabBarAccessibilityLabel: t('tabs.social'),
           tabBarIcon: ({ focused }) => (
             <TabIcon
               label={t('tabs.social')}
@@ -169,6 +174,7 @@ export default function TabNavigator() {
         name="MyPageTab"
         component={MyPageStack}
         options={{
+          tabBarAccessibilityLabel: t('tabs.my'),
           tabBarIcon: ({ focused }) => (
             <TabIcon
               label={t('tabs.my')}
@@ -186,13 +192,10 @@ export default function TabNavigator() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: '#FFFFFF',
-    borderTopColor: '#F0F0F0',
     borderTopWidth: StyleSheet.hairlineWidth,
     height: 84,
     paddingBottom: 24,
     paddingTop: 10,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: -1 },
     shadowOpacity: 0.03,
     shadowRadius: 4,

@@ -41,11 +41,15 @@ async function setCachedCourseDetail(courseId: string, data: CourseDetail): Prom
     await AsyncStorage.setItem(`${CACHE_PREFIX}${courseId}`, JSON.stringify({
       data, timestamp: Date.now(),
     }));
-  } catch {}
+  } catch (err) {
+    console.warn('[courseService] 코스 캐시 저장 실패:', err);
+  }
 }
 
 function invalidateCourseCache(courseId: string): void {
-  AsyncStorage.removeItem(`${CACHE_PREFIX}${courseId}`).catch(() => {});
+  AsyncStorage.removeItem(`${CACHE_PREFIX}${courseId}`).catch((err) => {
+    console.warn('[courseService] 코스 캐시 삭제 실패:', err);
+  });
 }
 
 /**

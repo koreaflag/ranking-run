@@ -18,6 +18,10 @@
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
 		2402934AA406333D0313D484 /* IdleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42F6E86EC0F37719B3DCB30B /* IdleView.swift */; };
 		26E2B4BE46EE6120681F7A65 /* RunSessionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F08828EC4FA32996D10127FD /* RunSessionViewModel.swift */; };
+		FB01B2C3D4E5F60718293A01 /* WatchSettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA01B2C3D4E5F60718293A01 /* WatchSettingsManager.swift */; };
+		FB01B2C3D4E5F60718293A02 /* WatchTimerManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA01B2C3D4E5F60718293A02 /* WatchTimerManager.swift */; };
+		FB01B2C3D4E5F60718293A03 /* StandaloneRunManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA01B2C3D4E5F60718293A03 /* StandaloneRunManager.swift */; };
+		FB01B2C3D4E5F60718293A04 /* CompanionRunManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA01B2C3D4E5F60718293A04 /* CompanionRunManager.swift */; };
 		2B7B5AB016F53F703101260F /* RunSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 145AFB599CC8B1488AA8BA6E /* RunSession.swift */; };
 		2CDE6DEA2DBE0738D467F6EC /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFD75EA8A035BB4B5684611 /* ContentView.swift */; };
 		306821BFEDFF9F3E00B55AB6 /* HapticManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F563E5AB1BC162FFA0AB77E /* HapticManager.swift */; };
@@ -186,6 +190,10 @@
 		ECB3F546B1B42AB7C4640E3F /* MotionTracker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MotionTracker.swift; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F08828EC4FA32996D10127FD /* RunSessionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunSessionViewModel.swift; sourceTree = "<group>"; };
+		FA01B2C3D4E5F60718293A01 /* WatchSettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSettingsManager.swift; sourceTree = "<group>"; };
+		FA01B2C3D4E5F60718293A02 /* WatchTimerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTimerManager.swift; sourceTree = "<group>"; };
+		FA01B2C3D4E5F60718293A03 /* StandaloneRunManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandaloneRunManager.swift; sourceTree = "<group>"; };
+		FA01B2C3D4E5F60718293A04 /* CompanionRunManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionRunManager.swift; sourceTree = "<group>"; };
 		F174A75A6B91D58602D0811F /* RunningActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RunningActivityAttributes.swift; sourceTree = "<group>"; };
 		F2C54373AEC7799F16DD9F0D /* CompletedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletedView.swift; sourceTree = "<group>"; };
 		F3D24E92F8EFCDDCA87BF7F9 /* StationaryDetector.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StationaryDetector.swift; sourceTree = "<group>"; };
@@ -302,7 +310,11 @@
 		2F0D97CE4F13382B5141F8C6 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
+				FA01B2C3D4E5F60718293A04 /* CompanionRunManager.swift */,
 				F08828EC4FA32996D10127FD /* RunSessionViewModel.swift */,
+				FA01B2C3D4E5F60718293A03 /* StandaloneRunManager.swift */,
+				FA01B2C3D4E5F60718293A01 /* WatchSettingsManager.swift */,
+				FA01B2C3D4E5F60718293A02 /* WatchTimerManager.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -845,6 +857,10 @@
 				306821BFEDFF9F3E00B55AB6 /* HapticManager.swift in Sources */,
 				E2FF90CBD5E420B5A9FC9D40 /* WatchSessionService.swift in Sources */,
 				26E2B4BE46EE6120681F7A65 /* RunSessionViewModel.swift in Sources */,
+				FB01B2C3D4E5F60718293A01 /* WatchSettingsManager.swift in Sources */,
+				FB01B2C3D4E5F60718293A02 /* WatchTimerManager.swift in Sources */,
+				FB01B2C3D4E5F60718293A03 /* StandaloneRunManager.swift in Sources */,
+				FB01B2C3D4E5F60718293A04 /* CompanionRunManager.swift in Sources */,
 				C44709053764FEE1BA111497 /* CompletedView.swift in Sources */,
 				CE3CF588755FA31E4A391FD7 /* CountdownView.swift in Sources */,
 				2402934AA406333D0313D484 /* IdleView.swift in Sources */,

@@ -17,13 +17,13 @@ class StationaryDetector {
 
     // Thresholds
     private let stationarySpeedThreshold: Double = 0.3  // m/s
-    private let movingSpeedThreshold: Double = 0.8       // m/s (hysteresis)
+    private let movingSpeedThreshold: Double = 0.5       // m/s (hysteresis, lowered for faster resume)
     private let stationaryAccelThreshold: Double = 0.15  // g-force
     private let minStationaryDuration: TimeInterval = 3.0 // seconds
 
     private var consecutiveStationaryCount = 0
     private var consecutiveMovingCount = 0
-    private let requiredConsecutiveCount = 3
+    private let requiredConsecutiveCount = 2
 
     /// Grace period: don't transition to stationary until we have enough data
     private var totalUpdateCount = 0
@@ -67,11 +67,13 @@ class StationaryDetector {
     }
 
     /// Update with Core Motion acceleration magnitude (optional, improves accuracy)
-    func updateWithAcceleration(_ magnitude: Double) {
-        // Supplement GPS-based detection with motion data
+    /// When isLowAccuracyMode is true (battery optimizer downgraded GPS), accelerometer
+    /// becomes the primary resume signal — 1 reading is sufficient.
+    func updateWithAcceleration(_ magnitude: Double, isLowAccuracyMode: Bool = false) {
         if state == .stationary && magnitude > stationaryAccelThreshold {
             consecutiveMovingCount += 1
-            if consecutiveMovingCount >= requiredConsecutiveCount {
+            let needed = isLowAccuracyMode ? 1 : requiredConsecutiveCount
+            if consecutiveMovingCount >= needed {
                 transitionTo(.moving)
             }
         }

@@ -48,8 +48,14 @@ class GPSTrackerModule: RCTEventEmitter {
             WatchSessionManager.shared.sendLocationUpdate(event)
         }
 
-        engine.onMilestoneReached = { km, splitPace, totalTime in
+        engine.onMilestoneReached = { [weak self] km, splitPace, totalTime in
             WatchSessionManager.shared.sendMilestone(km: km, splitPace: splitPace, totalTime: totalTime)
+            // Emit to JS so splits are recorded in the running store
+            self?.sendEventIfListening("GPSTracker_onMilestoneReached", body: [
+                "km": km,
+                "splitPaceSecondsPerKm": splitPace,
+                "totalTimeSeconds": totalTime
+            ])
         }
 
         engine.onHeadingUpdate = { [weak self] event in
@@ -127,7 +133,8 @@ class GPSTrackerModule: RCTEventEmitter {
             "GPSTracker_onGPSStatusChange",
             "GPSTracker_onRunningStateChange",
             "GPSTracker_onHeadingUpdate",
-            "GPSTracker_onWatchStartRun"
+            "GPSTracker_onWatchStartRun",
+            "GPSTracker_onMilestoneReached"
         ]
     }
 
@@ -217,6 +224,22 @@ class GPSTrackerModule: RCTEventEmitter {
             "phase": "countdown",
             "countdownStartedAt": startedAt,
             "countdownTotal": countdownSeconds,
+            "distanceMeters": 0,
+            "durationSeconds": 0,
+            "currentPace": 0,
+            "avgPace": 0,
+            "calories": 0
+        ])
+        resolve(nil)
+    }
+
+    /// Notify Watch of "running" phase when startTracking() was already called earlier
+    /// (e.g. navigate-to-start flow where GPS is already active).
+    @objc
+    func notifyRunningPhase(_ resolve: @escaping RCTPromiseResolveBlock,
+                             rejecter reject: @escaping RCTPromiseRejectBlock) {
+        WatchSessionManager.shared.sendRunStateUpdate([
+            "phase": "running",
             "distanceMeters": 0,
             "durationSeconds": 0,
             "currentPace": 0,

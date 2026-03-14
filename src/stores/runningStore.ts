@@ -36,6 +36,9 @@ interface RunningState {
   routePoints: Array<{ latitude: number; longitude: number }>;
   filteredLocations: FilteredLocation[];
 
+  // Course route snapping (course running only)
+  snappedRoutePoints: Array<{ latitude: number; longitude: number }>;
+
   // Course deviation log (for result screen visualization)
   deviationLog: Array<{ index: number; deviation: number }>;
 
@@ -107,6 +110,36 @@ interface RunningState {
   setCheckpointPasses: (passes: CheckpointPass[]) => void;
   setAutoPaused: (paused: boolean) => void;
   setRunGoal: (goal: { type: 'distance' | 'time' | 'pace' | 'program' | null; value: number | null; targetTime?: number | null; cadenceBPM?: number | null }) => void;
+  addSnappedPoint: (coord: { latitude: number; longitude: number }) => void;
+  restoreSession: (data: {
+    sessionId: string;
+    courseId: string | null;
+    phase: RunningPhase;
+    startTime: number | null;
+    elapsedBeforePause: number;
+    durationSeconds: number;
+    isPaused: boolean;
+    isAutoPaused: boolean;
+    distanceMeters: number;
+    currentPaceSecondsPerKm: number;
+    avgPaceSecondsPerKm: number;
+    elevationGainMeters: number;
+    elevationLossMeters: number;
+    calories: number;
+    filteredLocations: import('../types/gps').FilteredLocation[];
+    routePoints: Array<{ latitude: number; longitude: number }>;
+    splits: Split[];
+    pauseIntervals: PauseInterval[];
+    chunkSequence: number;
+    lastChunkDistance: number;
+    lastChunkTimestamp: number;
+    lastChunkPointIndex: number;
+    uploadedChunkSequences: number[];
+    snappedRoutePoints: Array<{ latitude: number; longitude: number }>;
+    deviationLog: Array<{ index: number; deviation: number }>;
+    startPoint: { latitude: number; longitude: number } | null;
+    runGoal: { type: 'distance' | 'time' | 'pace' | 'program' | null; value: number | null; targetTime?: number | null; cadenceBPM?: number | null };
+  }) => void;
 }
 
 export const useRunningStore = create<RunningState>((set, get) => ({
@@ -129,6 +162,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   currentLocation: null,
   routePoints: [],
   filteredLocations: [],
+  snappedRoutePoints: [],
   deviationLog: [],
 
   splits: [],
@@ -175,9 +209,12 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       elevationLossMeters: 0,
       calories: 0,
       cadence: 0,
+      gpsStatus: 'searching',
+      gpsAccuracy: null,
       currentLocation: null,
       routePoints: [],
       filteredLocations: [],
+      snappedRoutePoints: [],
       deviationLog: [],
       splits: [],
       currentSplitDistance: 0,
@@ -214,11 +251,65 @@ export const useRunningStore = create<RunningState>((set, get) => ({
     if (state.phase !== 'running' || state.isPaused) return;
 
     const currentPos = { latitude: event.latitude, longitude: event.longitude };
-    const newRoutePoints = [...state.routePoints, currentPos];
+
+    // --- Auto-pause: freeze timer when stationary ---
+    // Must run BEFORE route accumulation so we can skip route points while paused
+    const { autoPause } = useSettingsStore.getState();
+    let { isAutoPaused } = state;
+    let startTime = state.startTime;
+    let elapsedBeforePause = state.elapsedBeforePause;
+
+    const elapsed = startTime ? (Date.now() - startTime) / 1000 + elapsedBeforePause : elapsedBeforePause;
+    const gracePeriodOver = elapsed >= 15;
+
+    if (autoPause && gracePeriodOver) {
+      if (!event.isMoving && !isAutoPaused) {
+        isAutoPaused = true;
+        elapsedBeforePause = state.durationSeconds;
+        startTime = null;
+      } else if (event.isMoving && isAutoPaused) {
+        isAutoPaused = false;
+        startTime = Date.now();
+      }
+    } else if (isAutoPaused) {
+      isAutoPaused = false;
+      startTime = Date.now();
+    }
+
+    // While auto-paused, only update timer state — skip route/distance accumulation
+    if (isAutoPaused) {
+      set({ isAutoPaused, startTime, elapsedBeforePause });
+      return;
+    }
+
+    // Interpolate intermediate points for smooth route rendering (7 points between GPS fixes)
+    const prevPos = state.routePoints.length > 0
+      ? state.routePoints[state.routePoints.length - 1]
+      : null;
+    let newRoutePoints: Array<{ latitude: number; longitude: number }>;
+    if (prevPos) {
+      const STEPS = 7;
+      const interp: Array<{ latitude: number; longitude: number }> = [];
+      for (let i = 1; i <= STEPS; i++) {
+        const f = i / (STEPS + 1);
+        interp.push({
+          latitude: prevPos.latitude + (currentPos.latitude - prevPos.latitude) * f,
+          longitude: prevPos.longitude + (currentPos.longitude - prevPos.longitude) * f,
+        });
+      }
+      const combined = [...state.routePoints, ...interp, currentPos];
+      // Cap route points to prevent unbounded memory growth during long runs.
+      // Keep last 10,000 points (~20min of data at 8pts/sec).
+      // Older points are already captured in chunk uploads.
+      const MAX_ROUTE_POINTS = 10_000;
+      newRoutePoints = combined.length > MAX_ROUTE_POINTS
+        ? combined.slice(combined.length - MAX_ROUTE_POINTS)
+        : combined;
+    } else {
+      newRoutePoints = [currentPos];
+    }
 
     // Build filtered location for chunk upload (rich GPS data for server)
-    // After chunk upload trims filteredLocations, fall back to lastChunkDistance
-    // so distanceFromPrevious stays incremental (not cumulative from 0).
     const prevDistance = state.filteredLocations.length > 0
       ? state.filteredLocations[state.filteredLocations.length - 1].cumulativeDistance
       : state.lastChunkDistance;
@@ -234,36 +325,6 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       isInterpolated: false,
     };
     const newFilteredLocations = [...state.filteredLocations, newFilteredLocation];
-
-    // --- Auto-pause: freeze timer when stationary ---
-    const { autoPause } = useSettingsStore.getState();
-    let { isAutoPaused } = state;
-    let startTime = state.startTime;
-    let elapsedBeforePause = state.elapsedBeforePause;
-
-    // Grace period: don't auto-pause within the first 15 seconds of a run.
-    // Prevents immediate pause when standing still at start (common during testing
-    // and real use — user may not be moving right after countdown ends).
-    // Use startTime-based elapsed to avoid dependency on async durationSeconds updates.
-    const elapsed = startTime ? (Date.now() - startTime) / 1000 + elapsedBeforePause : elapsedBeforePause;
-    const gracePeriodOver = elapsed >= 15;
-
-    if (autoPause && gracePeriodOver) {
-      if (!event.isMoving && !isAutoPaused) {
-        // Transition: moving → stationary — freeze timer
-        isAutoPaused = true;
-        elapsedBeforePause = state.durationSeconds;
-        startTime = null;
-      } else if (event.isMoving && isAutoPaused) {
-        // Transition: stationary → moving — unfreeze timer
-        isAutoPaused = false;
-        startTime = Date.now();
-      }
-    } else if (isAutoPaused) {
-      // Auto-pause was disabled mid-run — unfreeze
-      isAutoPaused = false;
-      startTime = Date.now();
-    }
 
     // Save start point from first GPS fix
     const startPoint = state.startPoint ?? currentPos;
@@ -469,6 +530,9 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       elapsedBeforePause: 0,
       isAutoPaused: false,
       runGoal: { type: null, value: null, targetTime: null, cadenceBPM: null },
+      gpsAccuracy: null,
+      snappedRoutePoints: [],
+      deviationLog: [],
     });
   },
 
@@ -531,4 +595,57 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   },
 
   setRunGoal: (goal) => set({ runGoal: goal }),
+
+  addSnappedPoint: (coord) => {
+    set((state) => ({
+      snappedRoutePoints: [...state.snappedRoutePoints, coord],
+    }));
+  },
+
+  restoreSession: (data) => {
+    set({
+      sessionId: data.sessionId,
+      courseId: data.courseId,
+      phase: data.phase,
+      startTime: data.startTime,
+      elapsedBeforePause: data.elapsedBeforePause,
+      durationSeconds: data.durationSeconds,
+      isPaused: data.isPaused,
+      isAutoPaused: data.isAutoPaused,
+      distanceMeters: data.distanceMeters,
+      currentPaceSecondsPerKm: data.currentPaceSecondsPerKm,
+      avgPaceSecondsPerKm: data.avgPaceSecondsPerKm,
+      elevationGainMeters: data.elevationGainMeters,
+      elevationLossMeters: data.elevationLossMeters,
+      calories: data.calories,
+      filteredLocations: data.filteredLocations,
+      routePoints: data.routePoints,
+      splits: data.splits,
+      pauseIntervals: data.pauseIntervals,
+      chunkSequence: data.chunkSequence,
+      lastChunkDistance: data.lastChunkDistance,
+      lastChunkTimestamp: data.lastChunkTimestamp,
+      lastChunkPointIndex: data.lastChunkPointIndex,
+      uploadedChunkSequences: data.uploadedChunkSequences,
+      snappedRoutePoints: data.snappedRoutePoints,
+      deviationLog: data.deviationLog,
+      startPoint: data.startPoint,
+      runGoal: data.runGoal,
+      gpsStatus: 'searching',
+      gpsAccuracy: null,
+      currentLocation: null,
+      heartRate: 0,
+      watchConnected: false,
+      currentSpeedMs: 0,
+      cadence: 0,
+      currentSplitDistance: 0,
+      stopLocation: null,
+      distanceToStart: 0,
+      isApproachingStart: false,
+      isNearStart: false,
+      loopDetected: false,
+      loopDetectedAt: null,
+      checkpointPasses: [],
+    });
+  },
 }));

@@ -4,7 +4,8 @@ import CoreLocation
 /// Adaptive GPS accuracy control for battery optimization
 class BatteryOptimizer {
     private weak var locationManager: CLLocationManager?
-    private var isHighAccuracy = true
+    private(set) var isHighAccuracy = true
+    var isLowAccuracy: Bool { !isHighAccuracy }
     private var stationaryStartTime: Date?
 
     /// Time to wait before switching to low accuracy when stationary (seconds)

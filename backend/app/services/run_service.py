@@ -13,6 +13,7 @@ from app.models.course import Course
 from app.models.run_chunk import RunChunk
 from app.models.run_record import RunRecord
 from app.models.run_session import RunSession
+from app.models.user import User
 from app.services.map_matching_service import MapMatchingService
 from app.services.speed_anomaly_service import analyze_run
 
@@ -247,18 +248,25 @@ class RunService:
         await db.flush()
 
         # Server-side map matching: snap route to road/path network
+        # Always preserve raw GPS route for future reprocessing
         if route_wkb and route_geo_data:
+            run_record.raw_route_geometry = route_wkb
             coords = route_geo_data.get("coordinates", [])
             if len(coords) >= 2:
                 try:
                     matcher = MapMatchingService()
-                    matched_coords = await matcher.match_route(coords)
+                    match_result = await matcher.match_route(coords)
                     await matcher.close()
+                    matched_coords = match_result.coordinates
                     if matched_coords and len(matched_coords) >= 2:
                         matched_line = LineString([(c[0], c[1]) for c in matched_coords])
                         run_record.route_geometry = from_shape(matched_line, srid=4326)
+                        run_record.map_matching_confidence = match_result.confidence
+                        if match_result.gap_indices:
+                            run_record.signal_gap_segments = match_result.gap_indices
                         logger.info(
                             f"[RunService] Map matched route: {len(coords)} → {len(matched_coords)} pts"
+                            f" (confidence={match_result.confidence})"
                         )
                 except Exception as e:
                     logger.warning(f"[RunService] Map matching failed, keeping original: {e}")
@@ -392,7 +400,15 @@ class RunService:
         if record is None:
             raise NotFoundError(code="NOT_FOUND", message="Run record not found")
 
+        distance = record.distance_meters or 0
         session_id = record.session_id
+
+        # Update user stats
+        user_result = await db.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if user:
+            user.total_distance_meters = max(0, (user.total_distance_meters or 0) - distance)
+            user.total_runs = max(0, (user.total_runs or 0) - 1)
 
         # Delete chunks
         if session_id:

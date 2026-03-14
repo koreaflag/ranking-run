@@ -27,6 +27,8 @@ import { crewService } from '../../services/crewService';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
+import RegionPickerModal from '../../components/crew/RegionPickerModal';
+import FeatureLockedOverlay from '../../components/crew/FeatureLockedOverlay';
 
 type Nav = NativeStackNavigationProp<CommunityStackParamList, 'CrewEdit'>;
 type Route = RouteProp<CommunityStackParamList, 'CrewEdit'>;
@@ -62,6 +64,7 @@ export default function CrewEditScreen() {
   const [meetingPoint, setMeetingPoint] = useState('');
   const [maxMembers, setMaxMembers] = useState('');
   const [requiresApproval, setRequiresApproval] = useState(false);
+  const [regionPickerVisible, setRegionPickerVisible] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -263,25 +266,27 @@ export default function CrewEditScreen() {
             keyboardShouldPersistTaps="handled"
           >
             {/* Cover Image */}
-            <TouchableOpacity
-              style={styles.coverContainer}
-              onPress={() => showImagePicker('cover')}
-              activeOpacity={0.8}
-            >
-              {coverUri ? (
-                <Image source={{ uri: coverUri }} style={styles.coverImage} />
-              ) : (
-                <View style={[styles.coverPlaceholder, { backgroundColor: badgeColor + '30' }]}>
-                  <Ionicons name="image-outline" size={32} color={badgeColor} />
-                  <Text style={[styles.coverPlaceholderText, { color: badgeColor }]}>
-                    {t('crew.addCoverImage')}
-                  </Text>
+            <FeatureLockedOverlay requiredLevel={3} crewLevel={crew?.level ?? 1}>
+              <TouchableOpacity
+                style={styles.coverContainer}
+                onPress={() => showImagePicker('cover')}
+                activeOpacity={0.8}
+              >
+                {coverUri ? (
+                  <Image source={{ uri: coverUri }} style={styles.coverImage} />
+                ) : (
+                  <View style={[styles.coverPlaceholder, { backgroundColor: badgeColor + '30' }]}>
+                    <Ionicons name="image-outline" size={32} color={badgeColor} />
+                    <Text style={[styles.coverPlaceholderText, { color: badgeColor }]}>
+                      {t('crew.addCoverImage')}
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.coverEditBadge}>
+                  <Ionicons name="camera" size={16} color="#FFFFFF" />
                 </View>
-              )}
-              <View style={styles.coverEditBadge}>
-                <Ionicons name="camera" size={16} color="#FFFFFF" />
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </FeatureLockedOverlay>
 
             {/* Logo Image - overlapping cover */}
             <View style={styles.logoSection}>
@@ -337,40 +342,50 @@ export default function CrewEditScreen() {
               </View>
 
               {/* Badge Color */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>{t('crew.badgeColor')}</Text>
-                <View style={styles.colorRow}>
-                  {BADGE_COLORS.map((color) => (
-                    <TouchableOpacity
-                      key={color}
-                      style={[
-                        styles.colorCircle,
-                        { backgroundColor: color },
-                        badgeColor === color && styles.colorCircleSelected,
-                      ]}
-                      onPress={() => setBadgeColor(color)}
-                      activeOpacity={0.7}
-                    >
-                      {badgeColor === color && (
-                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                      )}
-                    </TouchableOpacity>
-                  ))}
+              <FeatureLockedOverlay requiredLevel={3} crewLevel={crew?.level ?? 1}>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>{t('crew.badgeColor')}</Text>
+                  <View style={styles.colorRow}>
+                    {BADGE_COLORS.map((color) => (
+                      <TouchableOpacity
+                        key={color}
+                        style={[
+                          styles.colorCircle,
+                          { backgroundColor: color },
+                          badgeColor === color && styles.colorCircleSelected,
+                        ]}
+                        onPress={() => setBadgeColor(color)}
+                        activeOpacity={0.7}
+                      >
+                        {badgeColor === color && (
+                          <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 </View>
-              </View>
+              </FeatureLockedOverlay>
 
               {/* Region */}
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>{t('crew.region')}</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={region}
-                  onChangeText={setRegion}
-                  placeholder={t('crew.regionPlaceholder')}
-                  placeholderTextColor={colors.textTertiary}
-                  maxLength={50}
-                />
+                <TouchableOpacity
+                  style={styles.regionPicker}
+                  onPress={() => setRegionPickerVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={region ? styles.regionPickerText : styles.regionPickerPlaceholder}>
+                    {region || t('crew.selectRegion')}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+                </TouchableOpacity>
               </View>
+              <RegionPickerModal
+                visible={regionPickerVisible}
+                onClose={() => setRegionPickerVisible(false)}
+                onSelect={(r) => setRegion(r ?? '')}
+                selectedRegion={region || null}
+              />
 
               {/* Schedule */}
               <View style={styles.fieldGroup}>
@@ -589,6 +604,27 @@ const createStyles = (c: ThemeColors) =>
       color: c.text,
       borderWidth: 1,
       borderColor: c.border,
+    },
+    regionPicker: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.md,
+      paddingHorizontal: SPACING.lg,
+      paddingVertical: SPACING.md,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    regionPickerText: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '500',
+      color: c.text,
+    },
+    regionPickerPlaceholder: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '500',
+      color: c.textTertiary,
     },
     textArea: {
       minHeight: 100,

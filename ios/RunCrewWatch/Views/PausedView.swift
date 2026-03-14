@@ -95,6 +95,9 @@ struct LongPressStopButton: View {
                     if !didComplete { cancelLongPress() }
                 }
         )
+        .onDisappear {
+            cancelLongPress()
+        }
         .accessibilityLabel("런닝 종료")
         .accessibilityHint("3초 동안 길게 누르면 종료됩니다")
     }

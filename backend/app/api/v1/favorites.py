@@ -10,7 +10,7 @@ from app.core.deps import CurrentUser, DbSession
 from app.models.course import Course
 from app.models.favorite import CourseFavorite
 from app.schemas.favorite import FavoriteCourseItem, FavoriteToggleResponse
-from app.services.course_service import get_thumbnail_url_for_course
+from app.services.course_service import get_route_preview, get_thumbnail_url_for_course
 
 router = APIRouter(prefix="/favorites", tags=["favorites"])
 
@@ -63,6 +63,7 @@ async def get_favorite_courses(
             id=str(course.id),
             title=course.title,
             thumbnail_url=get_thumbnail_url_for_course(course),
+            route_preview=get_route_preview(course),
             distance_meters=course.distance_meters,
             estimated_duration_seconds=course.estimated_duration_seconds,
             creator_nickname=course.creator.nickname if course.creator else "Unknown",

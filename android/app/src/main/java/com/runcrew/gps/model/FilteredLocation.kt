@@ -38,8 +38,14 @@ data class FilteredLocation(
 
     /**
      * Convert to a LocationUpdateEvent WritableMap for the onLocationUpdate event.
+     * Accepts optional sensor data (cadence, elevation) to match iOS parity.
      */
-    fun toLocationUpdateEvent(isMoving: Boolean): WritableMap {
+    fun toLocationUpdateEvent(
+        isMoving: Boolean,
+        cadenceSPM: Int = 0,
+        elevationGain: Double = 0.0,
+        elevationLoss: Double = 0.0
+    ): WritableMap {
         return Arguments.createMap().apply {
             putDouble("latitude", latitude)
             putDouble("longitude", longitude)
@@ -50,6 +56,9 @@ data class FilteredLocation(
             putDouble("timestamp", timestamp.toDouble())
             putDouble("distanceFromStart", cumulativeDistance)
             putBoolean("isMoving", isMoving)
+            putInt("cadence", cadenceSPM)
+            putDouble("elevationGain", elevationGain)
+            putDouble("elevationLoss", elevationLoss)
         }
     }
 }

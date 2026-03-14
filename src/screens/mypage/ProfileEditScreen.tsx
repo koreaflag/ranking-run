@@ -24,6 +24,7 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useToastStore } from '../../stores/toastStore';
 import { authService } from '../../services/authService';
 import { crewService } from '../../services/crewService';
 import type { CrewItem } from '../../types/api';
@@ -134,7 +135,9 @@ export default function ProfileEditScreen() {
         const current = crews.find((c) => c.name === user.crew_name);
         if (current) setSelectedCrewId(current.id);
       }
-    }).catch(() => {});
+    }).catch((err) => {
+      useToastStore.getState().showToast('error', '크루 목록을 불러올 수 없습니다');
+    });
   }, [user?.crew_name]);
 
   const handleOpenDatePicker = useCallback(() => {

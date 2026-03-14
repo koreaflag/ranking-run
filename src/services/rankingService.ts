@@ -1,5 +1,5 @@
 import api from './api';
-import type { RankingEntry, RankingListResponse, MyRanking } from '../types/api';
+import type { RankingEntry, RankingListResponse, MyRanking, WeeklyLeaderboardResponse } from '../types/api';
 
 export const rankingService = {
   /**
@@ -33,5 +33,19 @@ export const rankingService = {
    */
   async getMyRanking(courseId: string): Promise<MyRanking> {
     return api.get<MyRanking>(`/courses/${courseId}/my-ranking`);
+  },
+
+  /**
+   * Fetch weekly leaderboard (top runners this week).
+   */
+  async getWeeklyLeaderboard(params?: {
+    region?: string;
+    limit?: number;
+  }): Promise<WeeklyLeaderboardResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.region) searchParams.set('region', params.region);
+    if (params?.limit) searchParams.set('per_page', String(params.limit));
+    const qs = searchParams.toString();
+    return api.get<WeeklyLeaderboardResponse>(`/leaderboard/weekly${qs ? `?${qs}` : ''}`);
   },
 };

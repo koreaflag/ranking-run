@@ -81,12 +81,17 @@ class RunSession {
         }
     }
 
+    @Volatile
+    var stopTime: Long = 0L
+        private set
+
     fun stop() {
         val previousState = _state.getAndSet(State.STOPPED)
         if (previousState == State.PAUSED && pauseTime > 0) {
             totalPauseDuration += System.currentTimeMillis() - pauseTime
             pauseTime = 0L
         }
+        stopTime = System.currentTimeMillis()
     }
 
     fun addRawPoint(point: GPSPoint) {
@@ -105,7 +110,7 @@ class RunSession {
         if (startTime == 0L) return 0L
         val now = when (state) {
             State.PAUSED -> pauseTime
-            State.STOPPED -> pauseTime.takeIf { it > 0 } ?: System.currentTimeMillis()
+            State.STOPPED -> stopTime.takeIf { it > 0 } ?: System.currentTimeMillis()
             else -> System.currentTimeMillis()
         }
         return now - startTime - totalPauseDuration

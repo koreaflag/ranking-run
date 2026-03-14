@@ -6,6 +6,7 @@ from datetime import datetime
 from geoalchemy2 import Geography
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -25,6 +27,17 @@ class RunRecord(Base, UUIDPrimaryKeyMixin):
     __table_args__ = (
         Index("idx_runs_user_finished", "user_id", "finished_at"),
         Index("idx_runs_course_duration", "course_id", "duration_seconds"),
+        Index(
+            "idx_runs_user_not_flagged",
+            "user_id",
+            postgresql_where=text("is_flagged = false"),
+        ),
+        CheckConstraint("distance_meters >= 0", name="ck_run_distance_non_negative"),
+        CheckConstraint("duration_seconds >= 0", name="ck_run_duration_non_negative"),
+        CheckConstraint(
+            "finished_at IS NULL OR finished_at > started_at",
+            name="ck_run_finished_after_started",
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -54,10 +67,15 @@ class RunRecord(Base, UUIDPrimaryKeyMixin):
     elevation_gain_meters: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     elevation_loss_meters: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
-    # PostGIS geography column
+    # PostGIS geography columns
     route_geometry = mapped_column(
         Geography(geometry_type="LINESTRING", srid=4326),
         nullable=True,
+    )
+    raw_route_geometry = mapped_column(
+        Geography(geometry_type="LINESTRING", srid=4326),
+        nullable=True,
+        comment="Original GPS route before map matching — preserved for reprocessing",
     )
 
     elevation_profile: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -72,6 +90,10 @@ class RunRecord(Base, UUIDPrimaryKeyMixin):
     course_completed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     route_match_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_deviation_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Map matching quality
+    map_matching_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    signal_gap_segments: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     # Speed anomaly detection
     is_flagged: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

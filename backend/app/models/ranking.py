@@ -24,7 +24,7 @@ class Ranking(Base, UUIDPrimaryKeyMixin):
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
     best_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)

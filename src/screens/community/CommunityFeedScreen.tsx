@@ -18,12 +18,18 @@ import { useTranslation } from 'react-i18next';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import BlurredBackground from '../../components/common/BlurredBackground';
+import RegionPickerModal from '../../components/crew/RegionPickerModal';
+import { shortProvinceName } from '../../data/koreaRegions';
 import type { CommunityStackParamList } from '../../types/navigation';
-import type { CrewItem } from '../../types/api';
+import type { CrewItem, WeeklyRunnerEntry } from '../../types/api';
 import { crewService } from '../../services/crewService';
+import { rankingService } from '../../services/rankingService';
+import { formatDistance } from '../../utils/format';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
+import CrewLevelBadge from '../../components/crew/CrewLevelBadge';
+import { ListEndIndicator } from '../../components/common/Skeleton';
 
 type Nav = NativeStackNavigationProp<CommunityStackParamList, 'CommunityFeed'>;
 
@@ -35,6 +41,8 @@ const getJoinStatus = (crew: CrewItem): 'member' | 'pending' | 'join' | 'request
   if (crew.requires_approval) return 'request';
   return 'join';
 };
+
+const MEDAL_COLORS = ['#FFD700', '#9CA3AF', '#CD7F32'] as const;
 
 // ---- Memoized Card Components ----
 
@@ -103,6 +111,7 @@ const ExploreCard = memo(function ExploreCard({ item: crew, onPress, styles, col
       {/* Info */}
       <View style={styles.exploreInfo}>
         <View style={styles.exploreNameRow}>
+          <CrewLevelBadge level={crew.level} size="sm" />
           <Text style={styles.exploreName} numberOfLines={1}>
             {crew.name}
           </Text>
@@ -206,6 +215,7 @@ const MyCrewCard = memo(function MyCrewCard({ item: crew, onPress, styles, color
       {/* Info */}
       <View style={styles.myCrewInfo}>
         <View style={styles.myCrewNameRow}>
+          <CrewLevelBadge level={crew.level} size="sm" />
           <Text style={styles.myCrewName} numberOfLines={1}>
             {crew.name}
           </Text>
@@ -229,6 +239,53 @@ const MyCrewCard = memo(function MyCrewCard({ item: crew, onPress, styles, color
   );
 });
 
+interface RunnerRowProps {
+  item: WeeklyRunnerEntry;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+  colors: ThemeColors;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}
+
+const RunnerRow = memo(function RunnerRow({ item, onPress, styles, colors, t }: RunnerRowProps) {
+  const isMedal = item.rank <= 3;
+  const medalColor = isMedal ? MEDAL_COLORS[item.rank - 1] : undefined;
+
+  return (
+    <TouchableOpacity style={styles.rrRow} onPress={onPress} activeOpacity={0.7}>
+      {/* Rank */}
+      <View style={[styles.rrRankBadge, medalColor ? { backgroundColor: medalColor } : { backgroundColor: colors.surface }]}>
+        <Text style={[styles.rrRankText, medalColor ? { color: '#FFF' } : { color: colors.textSecondary }]}>
+          {item.rank}
+        </Text>
+      </View>
+
+      {/* Avatar */}
+      {item.user.avatar_url ? (
+        <Image source={{ uri: item.user.avatar_url }} style={styles.rrAvatar} />
+      ) : (
+        <View style={[styles.rrAvatar, { backgroundColor: colors.surface }]}>
+          <Ionicons name="person" size={16} color={colors.textTertiary} />
+        </View>
+      )}
+
+      {/* Name + crew */}
+      <View style={styles.rrInfo}>
+        <Text style={styles.rrName} numberOfLines={1}>{item.user.nickname ?? '?'}</Text>
+        {item.user.crew_name ? (
+          <Text style={styles.rrCrew} numberOfLines={1}>{item.user.crew_name}</Text>
+        ) : null}
+      </View>
+
+      {/* Stats */}
+      <View style={styles.rrStats}>
+        <Text style={styles.rrDistance}>{t('ranking.runs', { count: item.run_count })}</Text>
+        <Text style={styles.rrMeta}>{formatDistance(item.total_distance_meters)}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
 // Module-level cache: survives tab switches
 let _cachedExplore: CrewItem[] = [];
 let _cachedMyCrews: CrewItem[] = [];
@@ -241,7 +298,11 @@ export default function CommunityFeedScreen() {
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [activeTab, setActiveTab] = useState<'explore' | 'myCrews'>('explore');
+  const [activeTab, setActiveTab] = useState<'explore' | 'myCrews' | 'ranking'>('ranking');
+
+  // Region filter
+  const [regionFilter, setRegionFilter] = useState<string | null>(null);
+  const [regionPickerVisible, setRegionPickerVisible] = useState(false);
 
   // Explore tab state (initialized from module cache)
   const [exploreCrews, setExploreCrews] = useState<CrewItem[]>(_cachedExplore);
@@ -251,18 +312,24 @@ export default function CommunityFeedScreen() {
   const [exploreRefreshing, setExploreRefreshing] = useState(false);
   const exploreLoadingMore = useRef(false);
 
+  // Ranking tab state
+  const [weeklyRunners, setWeeklyRunners] = useState<WeeklyRunnerEntry[]>([]);
+  const [myRanking, setMyRanking] = useState<WeeklyRunnerEntry | null>(null);
+  const [rankingLoading, setRankingLoading] = useState(false);
+  const [rankingRefreshing, setRankingRefreshing] = useState(false);
+
   // My crews tab state (initialized from module cache)
   const [myCrews, setMyCrews] = useState<CrewItem[]>(_cachedMyCrews);
   const [myCrewsLoading, setMyCrewsLoading] = useState(_cachedMyCrews.length === 0);
   const [myCrewsRefreshing, setMyCrewsRefreshing] = useState(false);
 
-  const loadExplore = useCallback(async (page: number, refresh = false) => {
+  const loadExplore = useCallback(async (page: number, refresh = false, region?: string | null) => {
     if (page === 0) {
       if (refresh) setExploreRefreshing(true);
       else setExploreLoading(true);
     }
     try {
-      const res = await crewService.listCrews({ page, per_page: 20 });
+      const res = await crewService.listCrews({ page, per_page: 20, region: region || undefined });
       if (page === 0) {
         setExploreCrews(res.data); _cachedExplore = res.data;
       } else {
@@ -293,16 +360,39 @@ export default function CommunityFeedScreen() {
     }
   }, []);
 
+  const loadWeeklyRunners = useCallback(async (region?: string | null, refresh = false) => {
+    if (refresh) setRankingRefreshing(true);
+    else setRankingLoading(true);
+    try {
+      const res = await rankingService.getWeeklyLeaderboard({
+        region: region || undefined,
+        limit: 20,
+      });
+      setWeeklyRunners(res.data);
+      setMyRanking(res.my_ranking ?? null);
+    } catch {
+      // silent
+    } finally {
+      setRankingLoading(false);
+      setRankingRefreshing(false);
+    }
+  }, []);
+
   useEffect(() => {
-    loadExplore(0);
+    loadExplore(0, false, regionFilter);
+    loadWeeklyRunners(regionFilter);
     loadMyCrews();
-  }, [loadExplore, loadMyCrews]);
+  }, [loadExplore, loadWeeklyRunners, loadMyCrews, regionFilter]);
 
   const handleExploreEndReached = useCallback(() => {
     if (!exploreHasMore || exploreLoadingMore.current) return;
     exploreLoadingMore.current = true;
-    loadExplore(explorePage + 1);
-  }, [exploreHasMore, explorePage, loadExplore]);
+    loadExplore(explorePage + 1, false, regionFilter);
+  }, [exploreHasMore, explorePage, loadExplore, regionFilter]);
+
+  const handleRegionSelect = useCallback((region: string | null) => {
+    setRegionFilter(region);
+  }, []);
 
   // ---- Renderers (delegate to memoized components) ----
 
@@ -341,8 +431,8 @@ export default function CommunityFeedScreen() {
     navigation.navigate('Friends');
   }, [navigation]);
 
-  const handleNavigateToCrewSearch = useCallback(() => {
-    navigation.navigate('CrewSearch');
+  const handleNavigateToSearch = useCallback(() => {
+    navigation.navigate('UnifiedSearch');
   }, [navigation]);
 
   const handleNavigateToCrewCreate = useCallback(() => {
@@ -350,8 +440,12 @@ export default function CommunityFeedScreen() {
   }, [navigation]);
 
   const handleExploreRefresh = useCallback(() => {
-    loadExplore(0, true);
-  }, [loadExplore]);
+    loadExplore(0, true, regionFilter);
+  }, [loadExplore, regionFilter]);
+
+  const handleRankingRefresh = useCallback(() => {
+    loadWeeklyRunners(regionFilter, true);
+  }, [loadWeeklyRunners, regionFilter]);
 
   const handleMyCrewsRefresh = useCallback(() => {
     loadMyCrews(true);
@@ -364,6 +458,68 @@ export default function CommunityFeedScreen() {
   const handleSetMyCrewsTab = useCallback(() => {
     setActiveTab('myCrews');
   }, []);
+
+  const handleSetRankingTab = useCallback(() => {
+    setActiveTab('ranking');
+  }, []);
+
+  // ---- Ranking Renderers ----
+
+  const renderRunnerRow = useCallback(
+    ({ item }: { item: WeeklyRunnerEntry }) => (
+      <RunnerRow
+        item={item}
+        onPress={() => navigation.navigate('UserProfile', { userId: item.user.id })}
+        styles={styles}
+        colors={colors}
+        t={t}
+      />
+    ),
+    [colors, navigation, styles, t],
+  );
+
+  const runnerKeyExtractor = useCallback((item: WeeklyRunnerEntry) => item.user.id, []);
+
+  // ---- My Ranking Header ----
+
+  const MyRankingHeader = useMemo(() => {
+    if (!myRanking) return null;
+    const isMedal = myRanking.rank <= 3;
+    const medalColor = isMedal ? MEDAL_COLORS[myRanking.rank - 1] : undefined;
+    return (
+      <View style={styles.myRankingCard}>
+        <Text style={styles.myRankingLabel}>{t('ranking.myRanking')}</Text>
+        <TouchableOpacity
+          style={styles.rrRow}
+          onPress={() => navigation.navigate('UserProfile', { userId: myRanking.user.id })}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.rrRankBadge, medalColor ? { backgroundColor: medalColor } : { backgroundColor: colors.surface }]}>
+            <Text style={[styles.rrRankText, medalColor ? { color: '#FFF' } : { color: colors.textSecondary }]}>
+              {myRanking.rank}
+            </Text>
+          </View>
+          {myRanking.user.avatar_url ? (
+            <Image source={{ uri: myRanking.user.avatar_url }} style={styles.rrAvatar} />
+          ) : (
+            <View style={[styles.rrAvatar, { backgroundColor: colors.surface }]}>
+              <Ionicons name="person" size={16} color={colors.textTertiary} />
+            </View>
+          )}
+          <View style={styles.rrInfo}>
+            <Text style={styles.rrName} numberOfLines={1}>{myRanking.user.nickname ?? '?'}</Text>
+            {myRanking.user.crew_name ? (
+              <Text style={styles.rrCrew} numberOfLines={1}>{myRanking.user.crew_name}</Text>
+            ) : null}
+          </View>
+          <View style={styles.rrStats}>
+            <Text style={styles.rrDistance}>{t('ranking.runs', { count: myRanking.run_count })}</Text>
+            <Text style={styles.rrMeta}>{formatDistance(myRanking.total_distance_meters)}</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  }, [myRanking, styles, colors, t, navigation]);
 
   // ---- Empty states ----
 
@@ -414,7 +570,7 @@ export default function CommunityFeedScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerBtn}
-              onPress={handleNavigateToCrewSearch}
+              onPress={handleNavigateToSearch}
               activeOpacity={0.6}
             >
               <Ionicons name="search-outline" size={20} color={colors.text} />
@@ -431,6 +587,15 @@ export default function CommunityFeedScreen() {
 
         {/* Segment Tabs */}
         <View style={styles.tabBar}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'ranking' && styles.tabActive]}
+            onPress={handleSetRankingTab}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.tabText, activeTab === 'ranking' && styles.tabTextActive]}>
+              {t('ranking.tabLabel')}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'explore' && styles.tabActive]}
             onPress={handleSetExploreTab}
@@ -451,41 +616,81 @@ export default function CommunityFeedScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Region Filter (Explore & Ranking tabs) */}
+        {(activeTab === 'explore' || activeTab === 'ranking') && (
+          <View style={styles.filterRow}>
+            <TouchableOpacity
+              style={[styles.filterChip, regionFilter ? styles.filterChipActive : null]}
+              onPress={() => setRegionPickerVisible(true)}
+              activeOpacity={0.6}
+            >
+              <Ionicons
+                name="location-outline"
+                size={14}
+                color={regionFilter ? '#FFF' : colors.textSecondary}
+              />
+              <Text style={[styles.filterChipText, regionFilter ? styles.filterChipTextActive : null]}>
+                {regionFilter ? shortProvinceName(regionFilter) : t('crew.selectRegion')}
+              </Text>
+              {regionFilter ? (
+                <TouchableOpacity
+                  onPress={() => setRegionFilter(null)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close-circle" size={15} color="rgba(255,255,255,0.8)" />
+                </TouchableOpacity>
+              ) : (
+                <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <RegionPickerModal
+          visible={regionPickerVisible}
+          onClose={() => setRegionPickerVisible(false)}
+          onSelect={handleRegionSelect}
+          selectedRegion={regionFilter}
+          provinceOnly
+        />
+
         {/* Explore Tab */}
         {activeTab === 'explore' && (
           exploreLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
-            </View>
-          ) : (
-            <FlatList
-              data={exploreCrews}
-              renderItem={renderExploreCard}
-              keyExtractor={exploreKeyExtractor}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-              onEndReached={handleExploreEndReached}
-              onEndReachedThreshold={0.3}
-              removeClippedSubviews={true}
-              maxToRenderPerBatch={10}
-              windowSize={7}
-              ListEmptyComponent={ExploreEmpty}
-              refreshControl={
-                <RefreshControl
-                  refreshing={exploreRefreshing}
-                  onRefresh={handleExploreRefresh}
-                  tintColor={colors.primary}
-                />
-              }
-              ListFooterComponent={
-                exploreLoadingMore.current ? (
-                  <View style={styles.footerLoading}>
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  </View>
-                ) : null
-              }
-            />
-          )
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : (
+              <FlatList
+                data={exploreCrews}
+                renderItem={renderExploreCard}
+                keyExtractor={exploreKeyExtractor}
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+                onEndReached={handleExploreEndReached}
+                onEndReachedThreshold={0.3}
+                removeClippedSubviews={true}
+                maxToRenderPerBatch={10}
+                windowSize={7}
+                ListEmptyComponent={ExploreEmpty}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={exploreRefreshing}
+                    onRefresh={handleExploreRefresh}
+                    tintColor={colors.primary}
+                  />
+                }
+                ListFooterComponent={
+                  exploreLoadingMore.current ? (
+                    <View style={styles.footerLoading}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    </View>
+                  ) : !exploreHasMore && exploreCrews.length > 0 ? (
+                    <ListEndIndicator text={t('common.endOfList')} />
+                  ) : null
+                }
+              />
+            )
         )}
 
         {/* My Crews Tab */}
@@ -509,6 +714,38 @@ export default function CommunityFeedScreen() {
                 <RefreshControl
                   refreshing={myCrewsRefreshing}
                   onRefresh={handleMyCrewsRefresh}
+                  tintColor={colors.primary}
+                />
+              }
+            />
+          )
+        )}
+
+        {/* Ranking Tab */}
+        {activeTab === 'ranking' && (
+          rankingLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+          ) : (
+            <FlatList
+              data={weeklyRunners}
+              renderItem={renderRunnerRow}
+              keyExtractor={runnerKeyExtractor}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              removeClippedSubviews={true}
+              ListHeaderComponent={MyRankingHeader}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <Ionicons name="trophy-outline" size={36} color={colors.textTertiary} />
+                  <Text style={styles.emptyText}>{t('ranking.noRankings')}</Text>
+                </View>
+              }
+              refreshControl={
+                <RefreshControl
+                  refreshing={rankingRefreshing}
+                  onRefresh={handleRankingRefresh}
                   tintColor={colors.primary}
                 />
               }
@@ -555,9 +792,9 @@ const createStyles = (c: ThemeColors) =>
       gap: SPACING.xs,
     },
     headerBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
       backgroundColor: c.surface,
       justifyContent: 'center',
       alignItems: 'center',
@@ -817,6 +1054,111 @@ const createStyles = (c: ThemeColors) =>
     emptyBtnText: {
       fontSize: FONT_SIZES.sm,
       fontWeight: '700',
+      color: '#FFF',
+    },
+
+    // ═══ MY RANKING ═══
+    myRankingCard: {
+      backgroundColor: c.primary + '08',
+      borderRadius: BORDER_RADIUS.lg,
+      padding: SPACING.md,
+      marginBottom: SPACING.md,
+    },
+    myRankingLabel: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '700',
+      color: c.primary,
+      marginBottom: SPACING.xs,
+      marginLeft: SPACING.xs,
+    },
+
+    // ═══ RUNNER ROW ═══
+    rrRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: SPACING.md,
+      marginBottom: SPACING.sm,
+      gap: SPACING.md,
+    },
+    rrRankBadge: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    rrRankText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '800',
+    },
+    rrAvatar: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      justifyContent: 'center',
+      alignItems: 'center',
+      overflow: 'hidden',
+    },
+    rrInfo: {
+      flex: 1,
+      gap: 1,
+    },
+    rrName: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '700',
+      color: c.text,
+    },
+    rrCrew: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '500',
+      color: c.textTertiary,
+    },
+    rrStats: {
+      alignItems: 'flex-end',
+      gap: 1,
+    },
+    rrDistance: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '800',
+      color: c.primary,
+    },
+    rrMeta: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '500',
+      color: c.textTertiary,
+    },
+
+    // Region filter
+    filterRow: {
+      flexDirection: 'row',
+      paddingHorizontal: SPACING.xl,
+      marginBottom: SPACING.sm,
+    },
+    filterChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      backgroundColor: c.surface,
+      borderRadius: BORDER_RADIUS.full,
+      paddingVertical: SPACING.xs + 2,
+      paddingHorizontal: SPACING.md,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    filterChipActive: {
+      backgroundColor: c.primary,
+      borderColor: c.primary,
+    },
+    filterChipText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '600',
+      color: c.textSecondary,
+    },
+    filterChipTextActive: {
       color: '#FFF',
     },
 

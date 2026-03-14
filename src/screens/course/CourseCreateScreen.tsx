@@ -13,7 +13,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { courseService } from '../../services/courseService';
-import { useCourseStore } from '../../stores/courseStore';
+import { useCourseListStore } from '../../stores/courseListStore';
 import { savePendingCourse, removePendingCourse } from '../../services/pendingSyncService';
 import { Ionicons } from '../../lib/icons';
 import Button from '../../components/common/Button';
@@ -113,7 +113,9 @@ export default function CourseCreateScreen() {
         await courseService.createCourse(coursePayload as unknown as Parameters<typeof courseService.createCourse>[0]);
         await removePendingCourse(pendingId);
         // Refresh course list silently
-        useCourseStore.getState().fetchCourses().catch(() => {});
+        useCourseListStore.getState().fetchCourses().catch((err) => {
+          console.warn('[CourseCreate] 코스 목록 갱신 실패:', err);
+        });
       } catch {
         // Server unreachable — pending data stays in queue
       }

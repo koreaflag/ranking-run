@@ -17,10 +17,13 @@ import BlurredBackground from '../../components/common/BlurredBackground';
 import type { HomeStackParamList } from '../../types/navigation';
 import type { CrewItem } from '../../types/api';
 import { useCrewStore } from '../../stores/crewStore';
+import RegionPickerModal from '../../components/crew/RegionPickerModal';
+import { shortProvinceName } from '../../data/koreaRegions';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
 import { formatRelativeTime } from '../../utils/format';
+import CrewLevelBadge from '../../components/crew/CrewLevelBadge';
 
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'CrewSearch'>;
 
@@ -37,17 +40,21 @@ export default function CrewSearchScreen() {
     isLoadingMore,
     totalCount,
     searchQuery,
+    regionFilter,
     setSearchQuery,
+    setRegionFilter,
     fetchCrews,
     fetchMoreCrews,
   } = useCrewStore();
+  const [regionPickerVisible, setRegionPickerVisible] = useState(false);
 
   useEffect(() => {
     fetchCrews(true);
     return () => {
       setSearchQuery('');
+      setRegionFilter('');
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSearch = useCallback(
     (text: string) => {
@@ -58,6 +65,14 @@ export default function CrewSearchScreen() {
       }, 400);
     },
     [setSearchQuery, fetchCrews],
+  );
+
+  const handleRegionSelect = useCallback(
+    (region: string | null) => {
+      setRegionFilter(region ?? '');
+      fetchCrews(true);
+    },
+    [setRegionFilter, fetchCrews],
   );
 
   const handleCrewPress = useCallback(
@@ -78,9 +93,12 @@ export default function CrewSearchScreen() {
           <Ionicons name="people" size={22} color={item.badge_color} />
         </View>
         <View style={styles.crewInfo}>
-          <Text style={styles.crewName} numberOfLines={1}>
-            {item.name}
-          </Text>
+          <View style={styles.crewNameRow}>
+            <CrewLevelBadge level={item.level} size="sm" />
+            <Text style={styles.crewName} numberOfLines={1}>
+              {item.name}
+            </Text>
+          </View>
           <View style={styles.crewMeta}>
             <Ionicons name="people-outline" size={13} color={colors.textTertiary} />
             <Text style={styles.crewMetaText}>
@@ -154,6 +172,41 @@ export default function CrewSearchScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Region filter chip */}
+        <View style={styles.filterRow}>
+          <TouchableOpacity
+            style={[styles.filterChip, regionFilter ? styles.filterChipActive : null]}
+            onPress={() => setRegionPickerVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="location-outline"
+              size={14}
+              color={regionFilter ? colors.primary : colors.textSecondary}
+            />
+            <Text style={[styles.filterChipText, regionFilter ? styles.filterChipTextActive : null]}>
+              {regionFilter ? shortProvinceName(regionFilter) : t('crew.selectRegion')}
+            </Text>
+            {regionFilter ? (
+              <TouchableOpacity
+                onPress={() => handleRegionSelect(null)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close-circle" size={14} color={colors.primary} />
+              </TouchableOpacity>
+            ) : (
+              <Ionicons name="chevron-down" size={12} color={colors.textSecondary} />
+            )}
+          </TouchableOpacity>
+        </View>
+        <RegionPickerModal
+          visible={regionPickerVisible}
+          onClose={() => setRegionPickerVisible(false)}
+          onSelect={handleRegionSelect}
+          selectedRegion={regionFilter || null}
+          provinceOnly
+        />
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -249,6 +302,37 @@ const createStyles = (c: ThemeColors) =>
       paddingVertical: SPACING.md,
     },
 
+    // Filter
+    filterRow: {
+      flexDirection: 'row',
+      paddingHorizontal: SPACING.xxl,
+      marginBottom: SPACING.md,
+      gap: SPACING.sm,
+    },
+    filterChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.sm,
+      borderRadius: BORDER_RADIUS.full,
+      backgroundColor: c.card,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    filterChipActive: {
+      backgroundColor: c.primary + '15',
+      borderColor: c.primary,
+    },
+    filterChipText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '600',
+      color: c.textSecondary,
+    },
+    filterChipTextActive: {
+      color: c.primary,
+    },
+
     // List
     listContent: {
       paddingHorizontal: SPACING.xxl,
@@ -276,10 +360,16 @@ const createStyles = (c: ThemeColors) =>
       flex: 1,
       gap: 3,
     },
+    crewNameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
     crewName: {
       fontSize: FONT_SIZES.md,
       fontWeight: '700',
       color: c.text,
+      flexShrink: 1,
     },
     crewMeta: {
       flexDirection: 'row',

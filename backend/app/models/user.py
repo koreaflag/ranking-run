@@ -1,11 +1,13 @@
 """User, SocialAccount, and RefreshToken models."""
 
-import random
+import secrets
+import string
 import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
@@ -27,6 +29,11 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("total_distance_meters >= 0", name="ck_user_distance_non_negative"),
+        CheckConstraint("total_runs >= 0", name="ck_user_runs_non_negative"),
+        CheckConstraint("total_points >= 0", name="ck_user_points_non_negative"),
+    )
 
     user_code: Mapped[str] = mapped_column(String(8), unique=True, index=True, nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -48,6 +55,8 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     consent_marketing_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     total_distance_meters: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     total_runs: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    total_points: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    runner_level: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
     # Relationships
     social_accounts: Mapped[list["SocialAccount"]] = relationship(
@@ -67,9 +76,12 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
 
+_USER_CODE_ALPHABET = string.ascii_uppercase + string.digits
+
+
 def _generate_user_code() -> str:
-    """Generate a random 5-digit user code (10000–99999)."""
-    return str(random.randint(10000, 99999))
+    """Generate a random 8-character alphanumeric (uppercase) user code."""
+    return "".join(secrets.choice(_USER_CODE_ALPHABET) for _ in range(8))
 
 
 @event.listens_for(User, "init")
@@ -107,6 +119,7 @@ class RefreshToken(Base, UUIDPrimaryKeyMixin):
     __tablename__ = "refresh_tokens"
     __table_args__ = (
         Index("idx_refresh_user", "user_id", "is_revoked"),
+        Index("idx_refresh_token_hash", "token_hash"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -120,6 +133,11 @@ class RefreshToken(Base, UUIDPrimaryKeyMixin):
         nullable=False,
     )
     is_revoked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

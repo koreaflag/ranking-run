@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import HealthKit
 import WatchConnectivity
@@ -28,11 +29,28 @@ class WatchSessionService: NSObject, WCSessionDelegate {
         print("[WatchSessionSvc] WCSession activate() called")
 
         preAuthorizeHealthKit()
+        preAuthorizeLocation()
+    }
+
+    /// Request location permission eagerly on first launch so it's ready for standalone runs.
+    private func preAuthorizeLocation() {
+        let status = CLLocationManager.authorizationStatus()
+        if status == .notDetermined {
+            WatchLocationManager.shared.requestPermission()
+            print("[WatchSessionSvc] Location permission requested on launch")
+        }
     }
 
     private func preAuthorizeHealthKit() {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        let share: Set<HKSampleType> = [HKObjectType.workoutType()]
+        var share: Set<HKSampleType> = [HKObjectType.workoutType()]
+        // Request write permission for distance and energy so workouts record actual metrics
+        if let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
+            share.insert(distanceType)
+        }
+        if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+            share.insert(energyType)
+        }
         var read: Set<HKObjectType> = []
         if let hr = HKQuantityType.quantityType(forIdentifier: .heartRate) {
             read.insert(hr)
@@ -245,11 +263,11 @@ class WatchSessionService: NSObject, WCSessionDelegate {
                 let phase = ctx["phase"] as? String
                 print("[WatchSessionSvc] found pending appContext: phase=\(phase ?? "nil")")
 
-                if shouldAutoForeground(phase: phase) {
-                    if isAutoForegroundFresh(ctx, phase: phase!) {
+                if let phase = phase, shouldAutoForeground(phase: phase) {
+                    if isAutoForegroundFresh(ctx, phase: phase) {
                         ensureWorkoutSessionForRunning()
                     } else {
-                        print("[WatchSessionSvc] STALE appContext phase=\(phase!) — skipping auto-foreground")
+                        print("[WatchSessionSvc] STALE appContext phase=\(phase) — skipping auto-foreground")
                     }
                 }
 

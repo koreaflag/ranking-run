@@ -25,7 +25,7 @@ function smoothHeading(
   if (delta < -180) delta += 360;
 
   // Skip tiny changes to avoid excessive re-renders
-  if (Math.abs(delta) < 2) return -1;
+  if (Math.abs(delta) < 0.5) return -1;
 
   const smoothed = (smoothedRef.current + (1 - alpha) * delta + 360) % 360;
   smoothedRef.current = smoothed;
@@ -91,7 +91,9 @@ export function useCompassHeading(
 
     return () => {
       subscription.remove();
-      GPSTrackerModule.stopHeadingUpdates().catch(() => {});
+      GPSTrackerModule.stopHeadingUpdates().catch((err: any) => {
+        console.warn('[useCompassHeading] stopHeadingUpdates 실패:', err);
+      });
     };
   }, []);
 

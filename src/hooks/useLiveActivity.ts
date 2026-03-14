@@ -63,7 +63,9 @@ export function useLiveActivity() {
         avgPace: state.avgPaceSecondsPerKm,
         calories: state.calories,
         isPaused: state.phase === 'paused',
-      }).catch(() => {});
+      }).catch((err: any) => {
+        console.warn('[useLiveActivity] 라이브 액티비티 업데이트 실패:', err);
+      });
     };
 
     pushUpdate();
@@ -127,7 +129,9 @@ export function useLiveActivity() {
             currentPace: state.currentPaceSecondsPerKm,
             avgPace: state.avgPaceSecondsPerKm,
             calories: state.calories,
-          }).catch(() => {});
+          }).catch((err: any) => {
+            console.warn('[useLiveActivity] 라이브 액티비티 종료 실패:', err);
+          });
         }
       }
     };

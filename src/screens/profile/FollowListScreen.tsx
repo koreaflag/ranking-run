@@ -21,6 +21,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
+import { ListEndIndicator } from '../../components/common/Skeleton';
 
 type Nav = NativeStackNavigationProp<MyPageStackParamList, 'FollowList'>;
 type Route = RouteProp<MyPageStackParamList, 'FollowList'>;
@@ -204,6 +205,8 @@ export default function FollowListScreen() {
                 <View style={styles.footerLoader}>
                   <ActivityIndicator size="small" color={colors.primary} />
                 </View>
+              ) : !hasMore && items.length > 0 ? (
+                <ListEndIndicator text={t('common.endOfList')} />
               ) : null
             }
           />

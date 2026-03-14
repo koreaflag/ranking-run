@@ -1,7 +1,9 @@
 """FastAPI application entry point."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request, status
@@ -32,6 +34,29 @@ logger = logging.getLogger(__name__)
 container = Container()
 
 
+async def _cleanup_expired_tokens():
+    """Periodically delete expired/revoked refresh tokens (every 6 hours)."""
+    from app.db.session import async_session_factory
+    from sqlalchemy import delete
+    from app.models.user import RefreshToken
+
+    while True:
+        await asyncio.sleep(6 * 3600)  # 6 hours
+        try:
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    delete(RefreshToken).where(
+                        (RefreshToken.expires_at < datetime.now(timezone.utc))
+                        | (RefreshToken.is_revoked == True)  # noqa: E712
+                    )
+                )
+                await session.commit()
+                if result.rowcount:
+                    logger.info("Cleaned up %d expired/revoked refresh tokens", result.rowcount)
+        except Exception:
+            logger.exception("Token cleanup failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle manager."""
@@ -41,8 +66,11 @@ async def lifespan(app: FastAPI):
     upload_dir.mkdir(parents=True, exist_ok=True)
     (upload_dir / "avatars").mkdir(parents=True, exist_ok=True)
 
+    cleanup_task = asyncio.create_task(_cleanup_expired_tokens())
+
     yield
 
+    cleanup_task.cancel()
     logger.info("Shutting down %s", settings.APP_NAME)
     from app.db.session import engine
     await engine.dispose()

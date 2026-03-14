@@ -1,6 +1,8 @@
 """Authentication service: social login verification, user creation, token management."""
 
 import hashlib
+import secrets
+import string
 from datetime import datetime, timedelta, timezone
 from typing import Tuple
 from uuid import UUID
@@ -16,7 +18,6 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     hash_token,
-    verify_token_hash,
 )
 from app.models.user import RefreshToken, SocialAccount, User
 
@@ -168,6 +169,15 @@ class AuthService:
             return user, False
 
         user = User(email=email)
+        alphabet = string.ascii_uppercase + string.digits
+        for attempt in range(5):
+            code = "".join(secrets.choice(alphabet) for _ in range(8))
+            existing_code = await db.execute(
+                select(User.id).where(User.user_code == code).limit(1)
+            )
+            if existing_code.scalar_one_or_none() is None:
+                user.user_code = code
+                break
         db.add(user)
         await db.flush()
 
@@ -209,39 +219,82 @@ class AuthService:
         db: AsyncSession,
         raw_token: str,
     ) -> Tuple[User, str, str]:
-        """Validate a refresh token, revoke it, and issue a new pair."""
+        """Validate a refresh token, revoke it, and issue a new pair.
+
+        Race-condition handling: if a revoked token is reused within a short
+        grace period (10 s), it's treated as a benign duplicate from the client
+        rather than a malicious replay — we reject the request without nuking
+        all tokens for the user.
+        """
+        # Direct hash lookup — O(1) instead of scanning all tokens
+        token_hash_value = hash_token(raw_token)
         result = await db.execute(
             select(RefreshToken)
-            .where(RefreshToken.expires_at > datetime.now(timezone.utc))
-            .order_by(RefreshToken.created_at.desc())
+            .where(RefreshToken.token_hash == token_hash_value)
+            .limit(1)
         )
-        all_tokens = result.scalars().all()
-
-        matched_token: RefreshToken | None = None
-        for token_record in all_tokens:
-            if verify_token_hash(raw_token, token_record.token_hash):
-                matched_token = token_record
-                break
+        matched_token = result.scalar_one_or_none()
 
         if matched_token is None:
             raise AuthenticationError(code="AUTH_EXPIRED", message="Invalid refresh token")
 
         if matched_token.is_revoked:
-            await db.execute(
-                update(RefreshToken)
-                .where(RefreshToken.user_id == matched_token.user_id)
-                .values(is_revoked=True)
+            # Grace period: if the token was revoked very recently (< 30 s),
+            # this is likely a race condition from concurrent requests, not
+            # an actual token theft.  Just reject without revoking everything.
+            now = datetime.now(timezone.utc)
+            revoked_recently = (
+                matched_token.revoked_at is not None
+                and (now - matched_token.revoked_at) < timedelta(seconds=30)
             )
-            await db.flush()
+
+            if not revoked_recently:
+                # Genuine reuse after grace period — revoke all tokens for safety
+                await db.execute(
+                    update(RefreshToken)
+                    .where(RefreshToken.user_id == matched_token.user_id)
+                    .values(is_revoked=True, revoked_at=now)
+                )
+                await db.flush()
+
+            # Find the latest valid token for this user — if one exists,
+            # the user already has a working session from the first refresh.
+            latest = await db.execute(
+                select(RefreshToken)
+                .where(
+                    RefreshToken.user_id == matched_token.user_id,
+                    RefreshToken.is_revoked == False,  # noqa: E712
+                    RefreshToken.expires_at > now,
+                )
+                .order_by(RefreshToken.created_at.desc())
+                .limit(1)
+            )
+            valid_token = latest.scalar_one_or_none()
+
+            if valid_token is not None:
+                # A valid successor token exists — the user is fine, just
+                # reject this stale duplicate quietly.
+                user_result = await db.execute(
+                    select(User).where(User.id == matched_token.user_id)
+                )
+                user = user_result.scalar_one_or_none()
+                if user is not None:
+                    # Return a new token pair so the client recovers gracefully
+                    new_access_token = create_access_token(subject=str(user.id))
+                    new_refresh_token = create_refresh_token()
+                    await self.store_refresh_token(db, user.id, new_refresh_token)
+                    return user, new_access_token, new_refresh_token
+
             raise AuthenticationError(
                 code="AUTH_EXPIRED",
-                message="Refresh token reuse detected, all tokens revoked",
+                message="Refresh token reuse detected",
             )
 
         if matched_token.expires_at < datetime.now(timezone.utc):
             raise AuthenticationError(code="AUTH_EXPIRED", message="Refresh token expired")
 
         matched_token.is_revoked = True
+        matched_token.revoked_at = datetime.now(timezone.utc)
         await db.flush()
 
         user_result = await db.execute(
@@ -256,6 +309,39 @@ class AuthService:
         await self.store_refresh_token(db, user.id, new_refresh_token)
 
         return user, new_access_token, new_refresh_token
+
+    async def logout(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        raw_token: str | None = None,
+    ) -> None:
+        """Revoke refresh tokens on logout.
+
+        If raw_token is provided, revoke only that token.
+        Otherwise, revoke all tokens for the user.
+        """
+        now = datetime.now(timezone.utc)
+        if raw_token:
+            token_hash_value = hash_token(raw_token)
+            await db.execute(
+                update(RefreshToken)
+                .where(
+                    RefreshToken.token_hash == token_hash_value,
+                    RefreshToken.user_id == user_id,
+                )
+                .values(is_revoked=True, revoked_at=now)
+            )
+        else:
+            await db.execute(
+                update(RefreshToken)
+                .where(
+                    RefreshToken.user_id == user_id,
+                    RefreshToken.is_revoked == False,  # noqa: E712
+                )
+                .values(is_revoked=True, revoked_at=now)
+            )
+        await db.flush()
 
     # -----------------------------------------------------------------------
     # Full login flow

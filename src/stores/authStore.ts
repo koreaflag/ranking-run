@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import type { AuthProvider, AuthResponse, UserProfile } from '../types/api';
 import { SECURE_STORE_KEYS } from '../utils/constants';
 import { authService } from '../services/authService';
+import { performTokenRefresh } from '../services/api';
 import i18n from '../i18n';
 
 interface AuthState {
@@ -34,7 +35,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   error: null,
 
   login: async (provider, token, nonce): Promise<boolean> => {
-    set({ isLoading: true, error: null });
+    set({ error: null });
     try {
       const response: AuthResponse = await authService.login({
         provider,
@@ -56,7 +57,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           accessToken: response.access_token,
           refreshToken: response.refresh_token,
           isNewUser: true,
-          isLoading: false,
         });
       } else {
         let profile = null;
@@ -71,7 +71,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isNewUser: false,
           user: profile,
           isAuthenticated: true,
-          isLoading: false,
         });
       }
 
@@ -79,13 +78,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : i18n.t('auth.errors.loginFailed');
-      set({ isLoading: false, error: message });
+      set({ error: message });
       throw error;
     }
   },
 
   devLogin: async (nickname, email) => {
-    set({ isLoading: true, error: null });
+    if (!__DEV__) {
+      console.warn('[Auth] devLogin is disabled in production');
+      return;
+    }
+    set({ error: null });
     try {
       const response = await authService.devLogin(nickname, email);
 
@@ -115,16 +118,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           country: null,
           total_distance_meters: 0,
           total_runs: 0,
+          total_points: 0,
           created_at: new Date().toISOString(),
         },
         isAuthenticated: true,
         isNewUser: false,
-        isLoading: false,
       });
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : i18n.t('auth.errors.loginFailed');
-      set({ isLoading: false, error: message });
+      set({ error: message });
       throw error;
     }
   },
@@ -143,32 +146,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   refreshAuth: async () => {
-    const { refreshToken } = get();
-    if (!refreshToken) return false;
+    const storedRefresh = await SecureStore.getItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
+    if (!storedRefresh) return false;
 
     try {
-      const response = await authService.refreshToken({
-        refresh_token: refreshToken,
-      });
+      // Use the single performTokenRefresh() from api.ts to prevent
+      // race conditions with the 401 interceptor.
+      const newAccessToken = await performTokenRefresh();
 
-      await SecureStore.setItemAsync(
-        SECURE_STORE_KEYS.ACCESS_TOKEN,
-        response.access_token,
-      );
-      await SecureStore.setItemAsync(
-        SECURE_STORE_KEYS.REFRESH_TOKEN,
-        response.refresh_token,
-      );
-
+      const newRefreshToken = await SecureStore.getItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
       set({
-        accessToken: response.access_token,
-        refreshToken: response.refresh_token,
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
       });
 
       return true;
     } catch (error: unknown) {
-      // Only logout on definitive auth failures (4xx), NOT on network/timeout errors.
-      // Transient issues (network offline, server down) should not wipe credentials.
       const isAuthFailure =
         error instanceof Error &&
         'status' in error &&
@@ -208,9 +201,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           authService.getProfile(),
           timeout,
         ]);
+        // If user has no nickname, onboarding was never completed
+        // (e.g. first login created user but app navigated back to login)
+        const needsOnboarding = !profile.nickname;
         set({
           user: profile,
-          isAuthenticated: true,
+          isAuthenticated: !needsOnboarding,
+          isNewUser: needsOnboarding,
           isLoading: false,
         });
       } catch {
@@ -220,9 +217,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if (refreshed) {
             try {
               const profile = await authService.getProfile();
+              const needsOnboarding = !profile.nickname;
               set({
                 user: profile,
-                isAuthenticated: true,
+                isAuthenticated: !needsOnboarding,
+                isNewUser: needsOnboarding,
                 isLoading: false,
               });
             } catch {
@@ -260,7 +259,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   completeOnboarding: async (nickname, avatarUrl) => {
-    set({ isLoading: true, error: null });
+    set({ error: null });
     try {
       const profile = await authService.setupProfile({
         nickname,
@@ -281,18 +280,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           country: null,
           total_distance_meters: profile.total_distance_meters,
           total_runs: profile.total_runs,
+          total_points: profile.total_points ?? 0,
           created_at: profile.created_at,
         },
         isAuthenticated: true,
         isNewUser: false,
-        isLoading: false,
       });
     } catch (error: unknown) {
       const message =
         error instanceof Error
           ? error.message
           : i18n.t('auth.errors.profileSetupFailed');
-      set({ isLoading: false, error: message });
+      set({ error: message });
       throw error;
     }
   },

@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import HealthKit
 
@@ -13,11 +14,14 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
     private let healthStore = HKHealthStore()
     private(set) var session: HKWorkoutSession?
     private(set) var builder: HKLiveWorkoutBuilder?
+    private var routeBuilder: HKWorkoutRouteBuilder?
 
     /// Fires when HKWorkoutSession state changes. Parameters: (oldPhase, newPhase)
     var onPhaseChange: ((String, String) -> Void)?
     /// Fires when heart rate data is collected from the builder
     var onHeartRateUpdate: ((Double) -> Void)?
+    /// Fires when active energy burned data is collected from the builder
+    var onCaloriesUpdate: ((Int) -> Void)?
 
     /// When true, the next HKWorkoutSession delegate phase callback is suppressed.
     /// Set by WatchSessionService.ensureWorkoutSessionForRunning() to prevent
@@ -98,7 +102,10 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
             }
         }
 
-        print("[WorkoutMirror] ✅ Full setup complete (builder + mirroring)")
+        // Create route builder for Apple Fitness map display
+        routeBuilder = HKWorkoutRouteBuilder(healthStore: healthStore, device: nil)
+
+        print("[WorkoutMirror] ✅ Full setup complete (builder + mirroring + route)")
     }
 
     /// Adopt an existing HKWorkoutSession created by WatchSessionService on a background thread.
@@ -159,6 +166,16 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
         }
     }
 
+    /// Insert a CLLocation into the route builder for Apple Fitness map display.
+    /// Call this from StandaloneRunManager whenever a valid GPS point is received.
+    func insertRouteLocation(_ location: CLLocation) {
+        routeBuilder?.insertRouteData([location]) { success, error in
+            if let error = error {
+                print("[WorkoutMirror] insertRouteData error: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func pauseRun() {
         guard let session = session else { return }
         session.pause()
@@ -171,15 +188,115 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
         print("[WorkoutMirror] resume() called")
     }
 
+    /// Accumulated distance in meters for the current workout.
+    /// Updated by the ViewModel whenever distance changes.
+    private(set) var accumulatedDistanceMeters: Double = 0
+    private var lastSampledDistance: Double = 0
+
+    /// Update the accumulated distance. Call this from the ViewModel
+    /// whenever `state.distance` changes during a workout.
+    func updateDistance(_ meters: Double) {
+        guard meters > accumulatedDistanceMeters else { return }
+        accumulatedDistanceMeters = meters
+    }
+
+    /// Add accumulated distance and estimated energy samples to the builder
+    /// so that HealthKit records actual workout metrics (not just heart rate).
+    private func addFinalSamples(endDate: Date, completion: @escaping () -> Void) {
+        guard let builder = builder else {
+            completion()
+            return
+        }
+
+        var samples: [HKSample] = []
+        let startDate = session?.startDate ?? endDate.addingTimeInterval(-1)
+
+        // Distance sample
+        if accumulatedDistanceMeters > 0 {
+            let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
+            let distanceQuantity = HKQuantity(unit: .meter(), doubleValue: accumulatedDistanceMeters)
+            let distanceSample = HKQuantitySample(
+                type: distanceType,
+                quantity: distanceQuantity,
+                start: startDate,
+                end: endDate
+            )
+            samples.append(distanceSample)
+        }
+
+        // Estimated active energy: ~1 kcal per kg per km.
+        // Use HealthKit body mass if available, otherwise fall back to 65kg.
+        if accumulatedDistanceMeters > 0 {
+            let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
+            // Check if builder already has energy data from the live data source
+            let builderEnergy = builder.statistics(for: energyType)?.sumQuantity()
+            let builderKcal = builderEnergy?.doubleValue(for: HKUnit.kilocalorie()) ?? 0
+
+            if builderKcal > 0 {
+                // Builder already accumulated energy — skip manual estimate to avoid doubling
+                print("[WorkoutMirror] Builder has \(String(format: "%.0f", builderKcal))kcal — skipping manual energy sample")
+            } else {
+                // Fall back to distance-based estimate
+                let bodyMassKg: Double = 65.0  // TODO: read from HKQuantityType(.bodyMass) if authorized
+                let estimatedKcal = (accumulatedDistanceMeters / 1000.0) * bodyMassKg
+                let energyQuantity = HKQuantity(unit: .kilocalorie(), doubleValue: estimatedKcal)
+                let energySample = HKQuantitySample(
+                    type: energyType,
+                    quantity: energyQuantity,
+                    start: startDate,
+                    end: endDate
+                )
+                samples.append(energySample)
+            }
+        }
+
+        guard !samples.isEmpty else {
+            completion()
+            return
+        }
+
+        builder.add(samples) { success, error in
+            if let error = error {
+                print("[WorkoutMirror] addSamples error: \(error.localizedDescription)")
+            } else {
+                print("[WorkoutMirror] Added \(samples.count) samples (dist=\(self.accumulatedDistanceMeters)m)")
+            }
+            completion()
+        }
+    }
+
     func stopRun() {
         guard let session = session else { return }
-        session.end()
-        print("[WorkoutMirror] end() called")
 
-        builder?.endCollection(withEnd: Date()) { [weak self] success, error in
-            self?.builder?.finishWorkout { workout, error in
-                DispatchQueue.main.async {
-                    self?.cleanup()
+        let endDate = Date()
+
+        // Add distance/energy samples, then end collection and finish workout.
+        addFinalSamples(endDate: endDate) { [weak self] in
+            guard let self = self else { return }
+            self.builder?.endCollection(withEnd: endDate) { [weak self] success, error in
+                if let error = error {
+                    print("[WorkoutMirror] endCollection error: \(error.localizedDescription)")
+                }
+                self?.builder?.finishWorkout { [weak self] workout, error in
+                    if let error = error {
+                        print("[WorkoutMirror] finishWorkout error: \(error.localizedDescription)")
+                    }
+                    if let w = workout {
+                        print("[WorkoutMirror] Workout saved: dist=\(w.totalDistance?.doubleValue(for: .meter()) ?? 0)m energy=\(w.totalEnergyBurned?.doubleValue(for: .kilocalorie()) ?? 0)kcal")
+
+                        // Finalize route data for Apple Fitness map
+                        self?.routeBuilder?.finishRoute(with: w, metadata: nil) { route, error in
+                            if let error = error {
+                                print("[WorkoutMirror] finishRoute error: \(error.localizedDescription)")
+                            } else if route != nil {
+                                print("[WorkoutMirror] Route saved to HealthKit (Apple Fitness map)")
+                            }
+                        }
+                    }
+                    DispatchQueue.main.async {
+                        session.end()
+                        print("[WorkoutMirror] end() called (after samples + endCollection + finishWorkout)")
+                    }
                 }
             }
         }
@@ -194,6 +311,9 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
         }
         session = nil
         builder = nil
+        routeBuilder = nil
+        accumulatedDistanceMeters = 0
+        lastSampledDistance = 0
         print("[WorkoutMirror] cleanup complete")
     }
 
@@ -268,19 +388,28 @@ extension WorkoutMirroringManager: HKLiveWorkoutBuilderDelegate {
         didCollectDataOf collectedTypes: Set<HKSampleType>
     ) {
         for type in collectedTypes {
-            guard let quantityType = type as? HKQuantityType,
-                  quantityType == HKQuantityType.quantityType(forIdentifier: .heartRate)
-            else { continue }
+            guard let quantityType = type as? HKQuantityType else { continue }
 
-            let statistics = workoutBuilder.statistics(for: quantityType)
-            guard let heartRateQuantity = statistics?.mostRecentQuantity() else { continue }
+            if quantityType == HKQuantityType.quantityType(forIdentifier: .heartRate) {
+                let statistics = workoutBuilder.statistics(for: quantityType)
+                guard let heartRateQuantity = statistics?.mostRecentQuantity() else { continue }
 
-            let bpm = heartRateQuantity.doubleValue(
-                for: HKUnit.count().unitDivided(by: .minute())
-            )
+                let bpm = heartRateQuantity.doubleValue(
+                    for: HKUnit.count().unitDivided(by: .minute())
+                )
 
-            DispatchQueue.main.async { [weak self] in
-                self?.onHeartRateUpdate?(bpm)
+                DispatchQueue.main.async { [weak self] in
+                    self?.onHeartRateUpdate?(bpm)
+                }
+            } else if quantityType == HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+                let statistics = workoutBuilder.statistics(for: quantityType)
+                guard let energySum = statistics?.sumQuantity() else { continue }
+
+                let kcal = energySum.doubleValue(for: .kilocalorie())
+
+                DispatchQueue.main.async { [weak self] in
+                    self?.onCaloriesUpdate?(Int(kcal))
+                }
             }
         }
     }
