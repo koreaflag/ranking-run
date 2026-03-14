@@ -35,6 +35,7 @@ class LiveActivityModule: NSObject {
             currentPace: 0,
             avgPace: 0,
             calories: 0,
+            heartRate: 0,
             isPaused: false,
             timerStartDate: Date().addingTimeInterval(-Double(durationSeconds))
         )
@@ -70,6 +71,7 @@ class LiveActivityModule: NSObject {
         let currentPace = data["currentPace"] as? Int ?? 0
         let avgPace = data["avgPace"] as? Int ?? 0
         let calories = data["calories"] as? Int ?? 0
+        let heartRate = data["heartRate"] as? Int ?? 0
         let isPaused = data["isPaused"] as? Bool ?? false
 
         let state = RunningActivityAttributes.ContentState(
@@ -78,6 +80,7 @@ class LiveActivityModule: NSObject {
             currentPace: currentPace,
             avgPace: avgPace,
             calories: calories,
+            heartRate: heartRate,
             isPaused: isPaused,
             timerStartDate: Date().addingTimeInterval(-Double(durationSeconds))
         )
@@ -88,6 +91,7 @@ class LiveActivityModule: NSObject {
                     resolve(false)
                     return
                 }
+                self.activityId = fallback.id
                 await fallback.update(.init(state: state, staleDate: nil))
                 resolve(true)
                 return
@@ -113,6 +117,7 @@ class LiveActivityModule: NSObject {
         let currentPace = data["currentPace"] as? Int ?? 0
         let avgPace = data["avgPace"] as? Int ?? 0
         let calories = data["calories"] as? Int ?? 0
+        let heartRate = data["heartRate"] as? Int ?? 0
 
         let finalState = RunningActivityAttributes.ContentState(
             distanceMeters: distanceMeters,
@@ -120,6 +125,7 @@ class LiveActivityModule: NSObject {
             currentPace: currentPace,
             avgPace: avgPace,
             calories: calories,
+            heartRate: heartRate,
             isPaused: false,
             timerStartDate: Date().addingTimeInterval(-Double(durationSeconds))
         )

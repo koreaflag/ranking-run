@@ -20,7 +20,16 @@ const { GPSTrackerModule } = NativeModules;
  */
 export function useGPSTracker() {
   const subscriptionsRef = useRef<Array<{ remove: () => void }>>([]);
-  const { updateLocation, updateGPSStatus, addSplit, setAutoPaused, phase } = useRunningStore();
+  const gpsLockedRef = useRef(false);
+
+  // Use individual selectors for stable references (Zustand returns the same
+  // function object across renders when selected individually, preventing
+  // the useEffect from re-subscribing on every store update).
+  const phase = useRunningStore(s => s.phase);
+  const updateLocation = useRunningStore(s => s.updateLocation);
+  const updateGPSStatus = useRunningStore(s => s.updateGPSStatus);
+  const addSplit = useRunningStore(s => s.addSplit);
+  const setAutoPaused = useRunningStore(s => s.setAutoPaused);
 
   const startTracking = useCallback(async () => {
     if (!GPSTrackerModule) {
@@ -118,11 +127,16 @@ export function useGPSTracker() {
     subscriptionsRef.current = [locationSub, statusSub, milestoneSub, runningStateSub];
 
     // Fetch current GPS status in case we missed the initial event
+    gpsLockedRef.current = false;
     const pollStatus = () => {
+      if (gpsLockedRef.current) return; // Stop polling once locked
       GPSTrackerModule.getCurrentStatus()
         .then((status: string) => {
           if (status === 'locked' || status === 'searching' || status === 'lost' || status === 'disabled') {
             updateGPSStatus(status as any);
+            if (status === 'locked') {
+              gpsLockedRef.current = true;
+            }
           }
         })
         .catch((err: any) => {

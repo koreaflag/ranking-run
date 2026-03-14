@@ -219,7 +219,11 @@ class LocationEngine(
 
     // --- Private: Location request management ---
 
+    @Synchronized
     private fun requestLocationUpdates() {
+        // Clean up any existing callback before creating a new one
+        removeLocationUpdates()
+
         val request = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY,
             BatteryOptimizer.INTERVAL_MOVING_MS
@@ -257,6 +261,7 @@ class LocationEngine(
         }
     }
 
+    @Synchronized
     private fun removeLocationUpdates() {
         locationCallback?.let { callback ->
             fusedLocationClient?.removeLocationUpdates(callback)
@@ -385,7 +390,7 @@ class LocationEngine(
         if (currentKm > prevKm && currentKm > 0) {
             val elapsedMs = session.getElapsedTime()
             val elapsedSec = (elapsedMs / 1000).toInt()
-            val splitSeconds = elapsedSec - (previousMilestoneTime / 1000).toInt()
+            val splitSeconds = ((elapsedMs - previousMilestoneTime) / 1000).toInt()
             val splitPace = if (splitSeconds > 0) splitSeconds else 0
             previousMilestoneTime = elapsedMs
             listener?.onMilestoneReached(currentKm, splitPace, elapsedSec)

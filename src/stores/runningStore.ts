@@ -384,6 +384,12 @@ export const useRunningStore = create<RunningState>((set, get) => ({
           loopDetected = true;
           loopDetectedAt = Date.now();
         }
+
+        // Clear loop flag when user moves away from start (cooldown expired)
+        if (distanceToStart > LOOP_APPROACH_RADIUS_M) {
+          loopDetected = false;
+          loopDetectedAt = null;
+        }
       } else {
         // During cooldown, clear flags if user moves away
         if (distanceToStart > LOOP_APPROACH_RADIUS_M) {

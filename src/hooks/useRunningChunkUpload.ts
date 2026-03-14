@@ -27,6 +27,8 @@ export function useRunningChunkUpload() {
 
   const {
     phase,
+    isPaused,
+    isAutoPaused,
     sessionId,
     distanceMeters,
     lastChunkDistance,
@@ -165,8 +167,9 @@ export function useRunningChunkUpload() {
   }, [phase, distanceMeters, lastChunkDistance]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Time-based trigger: check every 30s if 5 minutes have elapsed since last chunk
+  // Skip during pause/auto-pause — no new data to upload
   useEffect(() => {
-    if (phase !== 'running') {
+    if (phase !== 'running' || isPaused || isAutoPaused) {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -188,7 +191,7 @@ export function useRunningChunkUpload() {
         timerRef.current = null;
       }
     };
-  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, isPaused, isAutoPaused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Proactive token refresh during long runs — every 15 minutes
   // Ensures the token never expires even if chunk uploads are sparse

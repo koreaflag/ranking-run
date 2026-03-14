@@ -67,32 +67,32 @@ class MotionTracker {
             motion.userAcceleration.y * motion.userAcceleration.y +
             motion.userAcceleration.z * motion.userAcceleration.z
         )
+
+        // Single lock scope covers magnitude, recentMagnitudes, and variance
+        // to prevent data races when read from main thread.
         lock.lock()
         _accelerationMagnitude = mag
-        lock.unlock()
 
         // Track variance for Kalman Filter process noise adjustment
         recentMagnitudes.append(mag)
         if recentMagnitudes.count > varianceWindowSize {
             recentMagnitudes.removeFirst()
         }
-        updateVariance()
+        updateVarianceLocked()
+        lock.unlock()
     }
 
-    private func updateVariance() {
+    /// Must be called while `lock` is held.
+    private func updateVarianceLocked() {
         guard recentMagnitudes.count >= 5 else {
-            lock.lock()
             _accelerationVariance = 1.0
-            lock.unlock()
             return
         }
         let mean = recentMagnitudes.reduce(0, +) / Double(recentMagnitudes.count)
         let variance = recentMagnitudes.reduce(0) {
             $0 + ($1 - mean) * ($1 - mean)
         } / Double(recentMagnitudes.count)
-        lock.lock()
         _accelerationVariance = variance
-        lock.unlock()
     }
 
     /// Get heading direction from device motion (radians)

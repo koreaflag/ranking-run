@@ -15,6 +15,7 @@ class GPSTrackerModule: RCTEventEmitter {
     /// Flushed when startObserving() is called again (app returns to foreground).
     private var pendingEvents: [(name: String, body: Any?)] = []
     private let eventLock = NSLock()
+    private var notificationObservers: [NSObjectProtocol] = []
 
     override init() {
         super.init()
@@ -67,8 +68,15 @@ class GPSTrackerModule: RCTEventEmitter {
 
     /// Listen for Watch commands via NotificationCenter.
     /// Handles start/pause/resume/stop natively for instant response (bypasses JS bridge round-trip).
+    deinit {
+        for observer in notificationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        notificationObservers.removeAll()
+    }
+
     private func observeWatchStartCommand() {
-        NotificationCenter.default.addObserver(
+        let startObserver = NotificationCenter.default.addObserver(
             forName: WatchSessionManager.watchStartRunNotification,
             object: nil,
             queue: .main
@@ -89,8 +97,9 @@ class GPSTrackerModule: RCTEventEmitter {
             // Notify RN so it can navigate to RunningScreen
             self.sendEvent(withName: "GPSTracker_onWatchStartRun", body: nil)
         }
+        notificationObservers.append(startObserver)
 
-        NotificationCenter.default.addObserver(
+        let pauseObserver = NotificationCenter.default.addObserver(
             forName: WatchSessionManager.watchPauseRunNotification,
             object: nil,
             queue: .main
@@ -100,8 +109,9 @@ class GPSTrackerModule: RCTEventEmitter {
             self.locationEngine?.pauseTracking()
             WatchSessionManager.shared.sendRunStateUpdate(["phase": "paused"])
         }
+        notificationObservers.append(pauseObserver)
 
-        NotificationCenter.default.addObserver(
+        let resumeObserver = NotificationCenter.default.addObserver(
             forName: WatchSessionManager.watchResumeRunNotification,
             object: nil,
             queue: .main
@@ -111,8 +121,9 @@ class GPSTrackerModule: RCTEventEmitter {
             self.locationEngine?.resumeTracking()
             WatchSessionManager.shared.sendRunStateUpdate(["phase": "running"])
         }
+        notificationObservers.append(resumeObserver)
 
-        NotificationCenter.default.addObserver(
+        let stopObserver = NotificationCenter.default.addObserver(
             forName: WatchSessionManager.watchStopRunNotification,
             object: nil,
             queue: .main
@@ -123,6 +134,7 @@ class GPSTrackerModule: RCTEventEmitter {
             self.locationEngine?.stopTracking()
             WatchSessionManager.shared.sendRunStateUpdate(["phase": "completed"])
         }
+        notificationObservers.append(stopObserver)
     }
 
     // MARK: - RCTEventEmitter
@@ -256,7 +268,6 @@ class GPSTrackerModule: RCTEventEmitter {
         isTrackingActive = true
         DispatchQueue.main.async { [weak self] in
             self?.locationEngine?.startTracking()
-            resolve(nil)
             // Watch app is already launched via launchWatchApp() during countdown phase.
             // WCSession delivery (also carries metrics)
             WatchSessionManager.shared.sendRunStateUpdate([
@@ -267,6 +278,7 @@ class GPSTrackerModule: RCTEventEmitter {
                 "avgPace": 0,
                 "calories": 0
             ])
+            resolve(nil)
         }
     }
 
@@ -276,9 +288,9 @@ class GPSTrackerModule: RCTEventEmitter {
         isTrackingActive = false
         DispatchQueue.main.async { [weak self] in
             self?.locationEngine?.stopTracking()
-            resolve(nil)
             WatchSessionManager.shared.stopMirroredWorkout()
             WatchSessionManager.shared.sendRunStateUpdate(["phase": "completed"])
+            resolve(nil)
         }
     }
 
@@ -287,9 +299,9 @@ class GPSTrackerModule: RCTEventEmitter {
                         rejecter reject: @escaping RCTPromiseRejectBlock) {
         DispatchQueue.main.async { [weak self] in
             self?.locationEngine?.pauseTracking()
-            resolve(nil)
             WatchSessionManager.shared.pauseMirroredWorkout()
             WatchSessionManager.shared.sendRunStateUpdate(["phase": "paused"])
+            resolve(nil)
         }
     }
 
@@ -298,9 +310,9 @@ class GPSTrackerModule: RCTEventEmitter {
                          rejecter reject: @escaping RCTPromiseRejectBlock) {
         DispatchQueue.main.async { [weak self] in
             self?.locationEngine?.resumeTracking()
-            resolve(nil)
             WatchSessionManager.shared.resumeMirroredWorkout()
             WatchSessionManager.shared.sendRunStateUpdate(["phase": "running"])
+            resolve(nil)
         }
     }
 

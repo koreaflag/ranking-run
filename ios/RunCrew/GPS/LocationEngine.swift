@@ -41,10 +41,16 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
     override init() {
         super.init()
-        // CLLocationManager must be created on main thread
-        DispatchQueue.main.async { [weak self] in
-            self?.setupLocationManager()
-        }
+        // CLLocationManager must be created and configured on main thread.
+        // requiresMainQueueSetup() = true in GPSTrackerModule ensures init runs on main.
+        // Synchronous setup prevents race where startTracking is called before
+        // locationManager is configured.
+        setupLocationManager()
+    }
+
+    deinit {
+        coldStartTimer?.invalidate()
+        gpsLostTimer?.invalidate()
     }
 
     private func setupLocationManager() {

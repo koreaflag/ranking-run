@@ -155,6 +155,7 @@ export function useCheckpointTracker(
     setFinishReached(false);
     nextIndexRef.current = 0;
     if (justPassedTimerRef.current) clearTimeout(justPassedTimerRef.current);
+    justPassedTimerRef.current = null;
   }, []);
 
   const nextCheckpoint = nextIndexRef.current < total ? sorted[nextIndexRef.current] : null;

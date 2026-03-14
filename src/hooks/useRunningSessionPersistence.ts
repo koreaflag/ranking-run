@@ -40,7 +40,7 @@ function buildSnapshot(): PersistedRunningSession | null {
     elevationGainMeters: s.elevationGainMeters,
     elevationLossMeters: s.elevationLossMeters,
     calories: s.calories,
-    filteredLocations: s.filteredLocations,
+    filteredLocations: s.filteredLocations.slice(-5000),
     // Keep last 500 route points for map display
     routePoints: s.routePoints.slice(-500),
     splits: s.splits,

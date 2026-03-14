@@ -57,6 +57,7 @@ class GPSTrackerModule(
     private var locationEngine: LocationEngine? = null
     private var listenerCount = 0
     private var notificationUpdateCounter = 0
+    private val trackingLock = Any()
 
     override fun getName(): String = NAME
 
@@ -102,84 +103,92 @@ class GPSTrackerModule(
 
     @ReactMethod
     fun startTracking(promise: Promise) {
-        try {
-            // Check fine location permission
-            if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
-                promise.reject(ERROR_PERMISSION_DENIED, "Fine location permission not granted")
-                return
-            }
-
-            // Check background location permission (Android 10+)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                if (!hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
-                    Log.w(TAG, "Background location permission not granted. Tracking may stop in background.")
-                    // Don't reject -- allow foreground-only tracking, but warn
+        synchronized(trackingLock) {
+            try {
+                // Check fine location permission
+                if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
+                    promise.reject(ERROR_PERMISSION_DENIED, "Fine location permission not granted")
+                    return
                 }
-            }
 
-            // Check POST_NOTIFICATIONS permission (Android 13+)
-            // Required for foreground service notification
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (!hasPermission(Manifest.permission.POST_NOTIFICATIONS)) {
-                    Log.w(TAG, "POST_NOTIFICATIONS permission not granted. Foreground service notification may not appear.")
-                    // Don't reject -- the service can still run, but the notification won't show
-                    // The JS layer should request this permission before calling startTracking
+                // Check background location permission (Android 10+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    if (!hasPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
+                        Log.w(TAG, "Background location permission not granted. Tracking may stop in background.")
+                        // Don't reject -- allow foreground-only tracking, but warn
+                    }
                 }
+
+                // Check POST_NOTIFICATIONS permission (Android 13+)
+                // Required for foreground service notification
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (!hasPermission(Manifest.permission.POST_NOTIFICATIONS)) {
+                        Log.w(TAG, "POST_NOTIFICATIONS permission not granted. Foreground service notification may not appear.")
+                        // Don't reject -- the service can still run, but the notification won't show
+                        // The JS layer should request this permission before calling startTracking
+                    }
+                }
+
+                val engine = locationEngine
+                if (engine == null) {
+                    promise.reject(ERROR_SERVICE_UNAVAILABLE, "LocationEngine not initialized")
+                    return
+                }
+
+                // Start foreground service for background tracking
+                GPSForegroundService.startService(reactApplicationContext)
+
+                // Reset cadence tracking for new session
+                recentStepTimestamps.clear()
+
+                // Start the engine (GPS + sensors)
+                engine.start()
+
+                promise.resolve(null)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting tracking", e)
+                promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to start tracking: ${e.message}", e)
             }
-
-            val engine = locationEngine
-            if (engine == null) {
-                promise.reject(ERROR_SERVICE_UNAVAILABLE, "LocationEngine not initialized")
-                return
-            }
-
-            // Start foreground service for background tracking
-            GPSForegroundService.startService(reactApplicationContext)
-
-            // Reset cadence tracking for new session
-            recentStepTimestamps.clear()
-
-            // Start the engine (GPS + sensors)
-            engine.start()
-
-            promise.resolve(null)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error starting tracking", e)
-            promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to start tracking: ${e.message}", e)
         }
     }
 
     @ReactMethod
     fun stopTracking(promise: Promise) {
-        try {
-            locationEngine?.stop()
-            GPSForegroundService.stopService(reactApplicationContext)
-            promise.resolve(null)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping tracking", e)
-            promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to stop tracking: ${e.message}", e)
+        synchronized(trackingLock) {
+            try {
+                locationEngine?.stop()
+                GPSForegroundService.stopService(reactApplicationContext)
+                promise.resolve(null)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error stopping tracking", e)
+                promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to stop tracking: ${e.message}", e)
+            }
         }
     }
 
     @ReactMethod
     fun pauseTracking(promise: Promise) {
-        try {
-            locationEngine?.pause()
-            promise.resolve(null)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error pausing tracking", e)
-            promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to pause tracking: ${e.message}", e)
+        synchronized(trackingLock) {
+            try {
+                locationEngine?.pause()
+                promise.resolve(null)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error pausing tracking", e)
+                promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to pause tracking: ${e.message}", e)
+            }
         }
     }
 
     @ReactMethod
     fun resumeTracking(promise: Promise) {
-        try {
-            locationEngine?.resume()
-            promise.resolve(null)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error resuming tracking", e)
-            promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to resume tracking: ${e.message}", e)
+        synchronized(trackingLock) {
+            try {
+                locationEngine?.resume()
+                promise.resolve(null)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error resuming tracking", e)
+                promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to resume tracking: ${e.message}", e)
+            }
         }
     }
 

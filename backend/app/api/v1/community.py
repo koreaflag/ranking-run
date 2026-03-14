@@ -200,7 +200,7 @@ async def create_comment(
                 target_type="post",
             )
         except Exception:
-            logger.warning("Failed to send comment notification for post %s", post_id)
+            logger.error("Failed to send comment notification for post %s", post_id, exc_info=True)
 
     return CommunityCommentResponse(**comment)
 
@@ -258,6 +258,6 @@ async def toggle_like(
                 target_type="post",
             )
         except Exception:
-            logger.warning("Failed to send like notification for post %s", post_id)
+            logger.error("Failed to send like notification for post %s", post_id, exc_info=True)
 
     return CommunityLikeResponse(is_liked=is_liked, like_count=like_count)

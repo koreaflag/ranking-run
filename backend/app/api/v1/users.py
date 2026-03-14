@@ -9,11 +9,11 @@ from fastapi import APIRouter, Body, Depends, Query, status
 import json
 
 from geoalchemy2.functions import ST_AsGeoJSON
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, update
 
 from app.core.container import Container
 from app.core.deps import CurrentUser, DbSession
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import AuthenticationError, ConflictError, NotFoundError
 from app.models.course import Course, CourseStats
 from app.models.like import CourseLike
 from app.models.ranking import Ranking
@@ -60,6 +60,9 @@ async def search_by_code(
     follow_service: FollowService = Depends(Provide[Container.follow_service]),
 ) -> PublicProfileResponse:
     """Search for a user by their unique 5-digit code."""
+    if current_user is None:
+        raise AuthenticationError(code="AUTH_REQUIRED", message="인증이 필요합니다")
+
     result = await db.execute(select(User).where(User.user_code == code))
     user = result.scalar_one_or_none()
     if user is None:
@@ -351,8 +354,14 @@ async def daily_checkin(
     if existing.scalar() is not None:
         return {"checked_in": True, "points_earned": 0, "total_points": user.total_points, "already": True}
 
-    # Award 5 points
-    user.total_points += 5
+    # Award 5 points atomically to prevent race conditions
+    await db.execute(
+        update(User)
+        .where(User.id == current_user.id)
+        .values(total_points=User.total_points + 5)
+    )
+    # Refresh to get the updated value
+    await db.refresh(user, ["total_points"])
 
     tx = PointTransaction(
         user_id=current_user.id,

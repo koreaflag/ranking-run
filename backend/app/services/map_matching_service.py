@@ -43,7 +43,7 @@ class MapMatchingService:
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=30.0)
+            self._client = httpx.AsyncClient(timeout=5.0)
         return self._client
 
     async def match_route(
@@ -190,13 +190,25 @@ class MapMatchingService:
         params["radiuses"] = ";".join(radiuses)
 
         client = await self._get_client()
-        response = await client.get(url, params=params)
+        try:
+            response = await client.get(url, params=params)
+        except httpx.TimeoutException:
+            logger.error("[MapMatching] Mapbox API request timed out (5s limit)")
+            return None, None
+        except httpx.HTTPError as e:
+            logger.error(f"[MapMatching] Mapbox API HTTP error: {e}")
+            return None, None
 
         if response.status_code != 200:
             logger.warning(f"[MapMatching] API returned {response.status_code}")
             return None, None
 
-        data = response.json()
+        try:
+            data = response.json()
+        except (ValueError, KeyError):
+            logger.error("[MapMatching] Failed to parse Mapbox API response")
+            return None, None
+
         if data.get("code") != "Ok" or not data.get("matchings"):
             logger.warning(f"[MapMatching] No match: {data.get('code')}")
             return None, None

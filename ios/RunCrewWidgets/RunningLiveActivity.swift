@@ -13,86 +13,145 @@ struct RunningLiveActivity: Widget {
             LockScreenRunView(context: context)
         } dynamicIsland: { context in
             DynamicIsland {
-                // Expanded regions
+                // ── Expanded ──
                 DynamicIslandExpandedRegion(.leading) {
-                    VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 3) {
                         Text(formatDistance(context.state.distanceMeters))
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
+                            .font(.system(size: 28, weight: .heavy, design: .rounded).monospacedDigit())
+                            .foregroundColor(appOrange)
                         Text("km")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.gray)
                     }
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        if context.state.isPaused {
+                    if context.state.isPaused {
+                        VStack(alignment: .trailing, spacing: 1) {
                             Text(formatDuration(context.state.durationSeconds))
-                                .font(.system(size: 24, weight: .bold, design: .rounded).monospacedDigit())
+                                .font(.system(size: 28, weight: .heavy, design: .rounded).monospacedDigit())
                                 .foregroundColor(.yellow)
-                        } else {
-                            Text(context.state.timerStartDate, style: .timer)
-                                .font(.system(size: 24, weight: .bold, design: .rounded).monospacedDigit())
-                                .foregroundColor(.white)
-                                .multilineTextAlignment(.trailing)
+                            Text("PAUSED")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.yellow.opacity(0.7))
                         }
-                        Text("시간")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                    } else {
+                        Text(context.state.timerStartDate, style: .timer)
+                            .font(.system(size: 28, weight: .heavy, design: .rounded).monospacedDigit())
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.trailing)
                     }
                 }
 
                 DynamicIslandExpandedRegion(.center) {
-                    if context.state.isPaused {
-                        Text("일시정지")
-                            .font(.caption.bold())
-                            .foregroundColor(.yellow)
-                    }
+                    // intentionally empty — clean look
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack(spacing: 16) {
-                        StatItem(
+                    HStack(spacing: 0) {
+                        ExpandedStatCell(
+                            icon: "speedometer",
+                            value: formatPace(context.state.currentPace),
                             label: "페이스",
-                            value: formatPace(context.state.currentPace)
+                            accentColor: appOrange
                         )
-                        StatItem(
+
+                        capsuleDivider
+
+                        ExpandedStatCell(
+                            icon: "chart.line.uptrend.xyaxis",
+                            value: formatPace(context.state.avgPace),
                             label: "평균",
-                            value: formatPace(context.state.avgPace)
+                            accentColor: .cyan
                         )
-                        StatItem(
-                            label: "칼로리",
-                            value: "\(context.state.calories)"
+
+                        capsuleDivider
+
+                        ExpandedStatCell(
+                            icon: "heart.fill",
+                            value: context.state.heartRate > 0 ? "\(context.state.heartRate)" : "--",
+                            label: "BPM",
+                            accentColor: .red
+                        )
+
+                        capsuleDivider
+
+                        ExpandedStatCell(
+                            icon: "flame.fill",
+                            value: "\(context.state.calories)",
+                            label: "kcal",
+                            accentColor: Color(red: 1.0, green: 0.35, blue: 0.35)
                         )
                     }
-                    .padding(.top, 4)
+                    .padding(.top, 2)
+                    .padding(.horizontal, 4)
                 }
             } compactLeading: {
+                // Compact — left pill
                 HStack(spacing: 4) {
                     Image(systemName: "figure.run")
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundColor(appOrange)
                     Text(formatDistance(context.state.distanceMeters))
-                        .font(.system(.caption, design: .rounded).bold().monospacedDigit())
+                        .font(.system(size: 14, weight: .heavy, design: .rounded).monospacedDigit())
                         .foregroundColor(.white)
                 }
             } compactTrailing: {
+                // Compact — right pill
                 if context.state.isPaused {
                     Image(systemName: "pause.fill")
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.yellow)
-                        .font(.caption)
                 } else {
                     Text(context.state.timerStartDate, style: .timer)
-                        .font(.system(.caption, design: .rounded).bold().monospacedDigit())
+                        .font(.system(size: 14, weight: .heavy, design: .rounded).monospacedDigit())
                         .foregroundColor(appOrange)
                         .multilineTextAlignment(.center)
-                        .frame(minWidth: 36)
+                        .frame(minWidth: 40)
                 }
             } minimal: {
-                Image(systemName: "figure.run")
-                    .foregroundColor(appOrange)
+                // Minimal (when another app also has a live activity)
+                ZStack {
+                    Circle()
+                        .strokeBorder(appOrange, lineWidth: 1.5)
+                    Image(systemName: "figure.run")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(appOrange)
+                }
             }
         }
+    }
+
+    private var capsuleDivider: some View {
+        RoundedRectangle(cornerRadius: 0.5)
+            .fill(Color.white.opacity(0.15))
+            .frame(width: 1, height: 22)
+    }
+}
+
+// MARK: - Expanded Stat Cell
+
+private struct ExpandedStatCell: View {
+    let icon: String
+    let value: String
+    let label: String
+    var accentColor: Color = .white
+
+    var body: some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(accentColor)
+                Text(value)
+                    .font(.system(size: 15, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundColor(.white)
+            }
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.gray)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -102,118 +161,148 @@ private struct LockScreenRunView: View {
     let context: ActivityViewContext<RunningActivityAttributes>
 
     var body: some View {
-        VStack(spacing: 12) {
-            // Header row
-            HStack {
+        VStack(spacing: 0) {
+            // ── Top: Brand + status ──
+            HStack(spacing: 5) {
                 Image(systemName: "figure.run")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundColor(appOrange)
                 Text("RUNVS")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 10, weight: .heavy, design: .rounded))
+                    .foregroundColor(.white.opacity(0.35))
+                    .tracking(1.2)
 
                 if context.state.isPaused {
-                    Text("일시정지")
-                        .font(.system(size: 12, weight: .bold))
+                    Text("PAUSED")
+                        .font(.system(size: 8, weight: .black))
                         .foregroundColor(.black)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(.yellow)
-                        .cornerRadius(4)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(Capsule().fill(.yellow))
                 }
 
                 Spacer()
 
-                // Timer
+                if context.attributes.isCourseRun && !context.attributes.courseName.isEmpty {
+                    HStack(spacing: 3) {
+                        Image(systemName: "map.fill")
+                            .font(.system(size: 8))
+                            .foregroundColor(appOrange.opacity(0.6))
+                        Text(context.attributes.courseName)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white.opacity(0.3))
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 6)
+
+            // ── Center: Distance + Timer ──
+            HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(formatDistance(context.state.distanceMeters))
+                        .font(.system(size: 38, weight: .heavy, design: .rounded).monospacedDigit())
+                        .foregroundColor(appOrange)
+                    Text("km")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white.opacity(0.35))
+                }
+
+                Spacer()
+
                 if context.state.isPaused {
                     Text(formatDuration(context.state.durationSeconds))
-                        .font(.system(size: 28, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(.system(size: 28, weight: .heavy, design: .rounded).monospacedDigit())
                         .foregroundColor(.yellow)
                 } else {
                     Text(context.state.timerStartDate, style: .timer)
-                        .font(.system(size: 28, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(.system(size: 28, weight: .heavy, design: .rounded).monospacedDigit())
                         .foregroundColor(.white)
                         .multilineTextAlignment(.trailing)
                 }
             }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
 
-            // Stats row
+            // ── Divider ──
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(height: 1)
+                .padding(.horizontal, 20)
+
+            // ── Bottom: Stats row ──
             HStack(spacing: 0) {
-                // Distance
-                VStack(spacing: 2) {
-                    Text(formatDistance(context.state.distanceMeters))
-                        .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundColor(.white)
-                    Text("거리")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
+                LockScreenStatCell(
+                    icon: "speedometer",
+                    value: formatPace(context.state.currentPace),
+                    label: "페이스",
+                    accentColor: appOrange
+                )
 
-                Divider()
-                    .frame(height: 28)
-                    .background(Color.white.opacity(0.2))
+                lockDivider
 
-                // Current pace
-                VStack(spacing: 2) {
-                    Text(formatPace(context.state.currentPace))
-                        .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundColor(.white)
-                    Text("페이스")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
+                LockScreenStatCell(
+                    icon: "chart.line.uptrend.xyaxis",
+                    value: formatPace(context.state.avgPace),
+                    label: "평균",
+                    accentColor: .cyan
+                )
 
-                Divider()
-                    .frame(height: 28)
-                    .background(Color.white.opacity(0.2))
+                lockDivider
 
-                // Calories
-                VStack(spacing: 2) {
-                    Text("\(context.state.calories)")
-                        .font(.system(size: 22, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundColor(.white)
-                    Text("kcal")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
+                LockScreenStatCell(
+                    icon: "heart.fill",
+                    value: context.state.heartRate > 0 ? "\(context.state.heartRate)" : "--",
+                    label: "BPM",
+                    accentColor: .red
+                )
+
+                lockDivider
+
+                LockScreenStatCell(
+                    icon: "flame.fill",
+                    value: "\(context.state.calories)",
+                    label: "kcal",
+                    accentColor: Color(red: 1.0, green: 0.35, blue: 0.35)
+                )
             }
-
-            // Course name (if applicable)
-            if context.attributes.isCourseRun && !context.attributes.courseName.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: "map")
-                        .font(.system(size: 10))
-                        .foregroundColor(appOrange)
-                    Text(context.attributes.courseName)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
         }
-        .padding(16)
         .activityBackgroundTint(.black)
         .activitySystemActionForegroundColor(appOrange)
     }
+
+    private var lockDivider: some View {
+        RoundedRectangle(cornerRadius: 0.5)
+            .fill(Color.white.opacity(0.1))
+            .frame(width: 1, height: 24)
+    }
 }
 
-// MARK: - Reusable Stat Item (Dynamic Island expanded)
+// MARK: - Lock Screen Stat Cell
 
-private struct StatItem: View {
-    let label: String
+private struct LockScreenStatCell: View {
+    let icon: String
     let value: String
+    let label: String
+    var accentColor: Color = .white
 
     var body: some View {
         VStack(spacing: 2) {
-            Text(value)
-                .font(.system(size: 14, weight: .bold, design: .rounded).monospacedDigit())
-                .foregroundColor(.white)
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(accentColor)
+                Text(value)
+                    .font(.system(size: 16, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundColor(.white)
+            }
             Text(label)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.white.opacity(0.35))
         }
         .frame(maxWidth: .infinity)
     }

@@ -52,8 +52,7 @@ export default function RunStartOverlay({
     ]).start();
   }, [visible, translateY, opacity]);
 
-  const resolvedLabel = goalLabel ?? defaultGoalLabel;
-  const hasGoal = resolvedLabel !== defaultGoalLabel;
+  const hasGoal = goalLabel != null && goalLabel !== defaultGoalLabel && goalLabel !== t('world.goalSetting');
 
   return (
     <Animated.View

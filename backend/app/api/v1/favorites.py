@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from app.core.deps import CurrentUser, DbSession
@@ -21,12 +22,18 @@ async def toggle_favorite(
     current_user: CurrentUser,
     db: DbSession,
 ) -> FavoriteToggleResponse:
-    """Toggle favorite status for a course. Returns new state."""
+    """Toggle favorite status for a course. Returns new state.
+
+    Uses SELECT ... FOR UPDATE to prevent race conditions when
+    concurrent requests toggle the same favorite simultaneously.
+    """
     existing = await db.execute(
-        select(CourseFavorite).where(
+        select(CourseFavorite)
+        .where(
             CourseFavorite.user_id == current_user.id,
             CourseFavorite.course_id == course_id,
         )
+        .with_for_update()
     )
     fav = existing.scalar_one_or_none()
 
@@ -39,7 +46,24 @@ async def toggle_favorite(
     else:
         new_fav = CourseFavorite(user_id=current_user.id, course_id=course_id)
         db.add(new_fav)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            # Concurrent insert won — treat as already favorited, remove it
+            existing = await db.execute(
+                select(CourseFavorite).where(
+                    CourseFavorite.user_id == current_user.id,
+                    CourseFavorite.course_id == course_id,
+                )
+            )
+            fav = existing.scalar_one_or_none()
+            if fav:
+                await db.execute(
+                    delete(CourseFavorite).where(CourseFavorite.id == fav.id)
+                )
+                await db.flush()
+            return FavoriteToggleResponse(is_favorited=False)
         return FavoriteToggleResponse(is_favorited=True)
 
 

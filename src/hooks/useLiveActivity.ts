@@ -18,7 +18,7 @@ export function useLiveActivity() {
   const [activityId, setActivityId] = useState<string | null>(null);
   const updateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { phase, courseId } = useRunningStore();
+  const { phase, courseId, isPaused, isAutoPaused } = useRunningStore();
 
   // Start Live Activity when entering 'running' phase
   useEffect(() => {
@@ -62,7 +62,8 @@ export function useLiveActivity() {
         currentPace: state.currentPaceSecondsPerKm,
         avgPace: state.avgPaceSecondsPerKm,
         calories: state.calories,
-        isPaused: state.phase === 'paused',
+        heartRate: state.heartRate,
+        isPaused: state.phase === 'paused' || state.isPaused || state.isAutoPaused,
       }).catch((err: any) => {
         console.warn('[useLiveActivity] 라이브 액티비티 업데이트 실패:', err);
       });
@@ -77,7 +78,7 @@ export function useLiveActivity() {
         updateTimerRef.current = null;
       }
     };
-  }, [phase, activityId]);
+  }, [phase, activityId, isPaused, isAutoPaused]);
 
   // End Live Activity when run completes or resets
   useEffect(() => {
@@ -94,6 +95,7 @@ export function useLiveActivity() {
           currentPace: state.currentPaceSecondsPerKm,
           avgPace: state.avgPaceSecondsPerKm,
           calories: state.calories,
+          heartRate: state.heartRate,
         });
         console.log('[LiveActivity] Ended');
       } catch {
@@ -129,6 +131,7 @@ export function useLiveActivity() {
             currentPace: state.currentPaceSecondsPerKm,
             avgPace: state.avgPaceSecondsPerKm,
             calories: state.calories,
+            heartRate: state.heartRate,
           }).catch((err: any) => {
             console.warn('[useLiveActivity] 라이브 액티비티 종료 실패:', err);
           });

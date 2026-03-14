@@ -40,6 +40,7 @@ import { useCourseNavigation } from '../../hooks/useCourseNavigation';
 import { useCheckpointTracker } from '../../hooks/useCheckpointTracker';
 import { usePaceCoaching } from '../../hooks/usePaceCoaching';
 import { useVoiceGuidance } from '../../hooks/useVoiceGuidance';
+import { useLiveActivity } from '../../hooks/useLiveActivity';
 
 import * as Location from 'expo-location';
 import { useTheme } from '../../hooks/useTheme';
@@ -305,6 +306,7 @@ export default function WorldScreen() {
   // GPS & timer hooks (always mounted, only active when phase is running/paused)
   const { startTracking, stopTracking, pauseTracking, resumeTracking } = useGPSTracker();
   useRunTimer();
+  useLiveActivity();
 
   // Pace coaching (program goal only)
   const paceCoachingEnabled = storeRunGoal?.type === 'program';
@@ -1807,16 +1809,12 @@ export default function WorldScreen() {
               </SafeAreaView>
 
               {/* Banners */}
-              {phase === 'paused' && (
+              {(phase === 'paused' || isAutoPaused) && (
                 <View style={styles.pausedBanner}>
-                  <Ionicons name="pause" size={16} color={colors.background} />
-                  <Text style={styles.pausedText}>일시정지</Text>
-                </View>
-              )}
-              {isAutoPaused && phase === 'running' && (
-                <View style={styles.autoPausedBanner}>
-                  <Ionicons name="pause-circle-outline" size={16} color={colors.textSecondary} />
-                  <Text style={styles.autoPausedText}>자동 일시정지</Text>
+                  <Ionicons name="pause" size={14} color="#000" />
+                  <Text style={styles.pausedText}>
+                    {isAutoPaused && phase !== 'paused' ? 'AUTO PAUSED' : 'PAUSED'}
+                  </Text>
                 </View>
               )}
               {competitionStartShown && (
@@ -2015,7 +2013,9 @@ export default function WorldScreen() {
               <View style={styles.runMetricRow}>
                 <View style={styles.runMetricCell}>
                   <Text style={styles.runMetricLabel}>시간</Text>
-                  <Text style={styles.runMetricValue}>{formatDuration(durationSeconds)}</Text>
+                  <Text style={[styles.runMetricValue, (phase === 'paused' || isAutoPaused) && { color: '#FFD60A' }]}>
+                    {formatDuration(durationSeconds)}
+                  </Text>
                 </View>
                 <View style={styles.runMetricDivider} />
                 <View style={styles.runMetricCell}>
@@ -2666,43 +2666,21 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   pausedBanner: {
     position: 'absolute',
     top: 110,
-    left: SPACING.xl,
-    right: 80,
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    backgroundColor: c.warning,
-    paddingVertical: SPACING.sm,
-    borderRadius: BORDER_RADIUS.sm,
+    gap: 5,
+    backgroundColor: '#FFD60A',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
     zIndex: 60,
   },
   pausedText: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '700',
-    color: c.background,
-  },
-  autoPausedBanner: {
-    position: 'absolute',
-    top: 110,
-    left: SPACING.xl,
-    right: 80,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    backgroundColor: c.card,
-    paddingVertical: SPACING.sm,
-    borderRadius: BORDER_RADIUS.sm,
-    borderWidth: 1,
-    borderColor: c.divider,
-    zIndex: 60,
-    ...SHADOWS.sm,
-  },
-  autoPausedText: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
-    color: c.textSecondary,
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#000',
+    letterSpacing: 1,
   },
   goalReachedBanner: {
     position: 'absolute',

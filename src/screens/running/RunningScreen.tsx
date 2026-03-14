@@ -639,18 +639,12 @@ export default function RunningScreen() {
         </View>
 
         {/* Paused Banner */}
-        {phase === 'paused' && (
+        {(phase === 'paused' || isAutoPaused) && (
           <View style={styles.pausedBanner}>
-            <Ionicons name="pause" size={16} color={colors.background} />
-            <Text style={styles.pausedText}>{t('running.status.paused')}</Text>
-          </View>
-        )}
-
-        {/* Auto-paused Banner */}
-        {isAutoPaused && phase === 'running' && (
-          <View style={styles.autoPausedBanner}>
-            <Ionicons name="pause-circle-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.autoPausedText}>{t('running.status.autoPaused')}</Text>
+            <Ionicons name="pause" size={14} color="#000" />
+            <Text style={styles.pausedText}>
+              {isAutoPaused && phase !== 'paused' ? 'AUTO PAUSED' : 'PAUSED'}
+            </Text>
           </View>
         )}
 
@@ -754,7 +748,7 @@ export default function RunningScreen() {
           <View style={styles.dashboardRow}>
             <View style={styles.dashboardCell}>
               <Text style={styles.dashboardLabel}>{t('running.metrics.time')}</Text>
-              <Text style={styles.dashboardValue}>
+              <Text style={[styles.dashboardValue, (phase === 'paused' || isAutoPaused) && { color: '#FFD60A' }]}>
                 {formatDuration(durationSeconds)}
               </Text>
             </View>
@@ -1195,34 +1189,19 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   pausedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    backgroundColor: c.warning,
-    paddingVertical: SPACING.sm,
-    borderRadius: BORDER_RADIUS.sm,
+    alignSelf: 'center',
+    gap: 5,
+    backgroundColor: '#FFD60A',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
     marginTop: SPACING.md,
   },
   pausedText: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '700',
-    color: c.background,
-  },
-  autoPausedBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.sm,
-    backgroundColor: c.surface,
-    paddingVertical: SPACING.sm,
-    borderRadius: BORDER_RADIUS.sm,
-    marginTop: SPACING.md,
-    borderWidth: 1,
-    borderColor: c.divider,
-  },
-  autoPausedText: {
-    fontSize: FONT_SIZES.md,
-    fontWeight: '600',
-    color: c.textSecondary,
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#000',
+    letterSpacing: 1,
   },
 
   // Hero distance

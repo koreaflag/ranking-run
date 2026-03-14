@@ -85,14 +85,14 @@ class SessionCreateResponse(BaseModel):
 
 class ChunkUploadRequest(BaseModel):
     session_id: str
-    sequence: int = Field(..., ge=0)
+    sequence: int = Field(..., ge=0, le=10000)
     chunk_type: str = Field(
         ...,
         pattern="^(intermediate|final)$",
         description="intermediate or final",
     )
-    raw_gps_points: list[RawGPSPoint]
-    filtered_points: list[FilteredPoint] | None = None
+    raw_gps_points: list[RawGPSPoint] = Field(..., max_length=10000)
+    filtered_points: list[FilteredPoint] | None = Field(None, max_length=10000)
     chunk_summary: ChunkSummary
     cumulative: CumulativeSummary
     completed_splits: list[SplitInfo] = []
