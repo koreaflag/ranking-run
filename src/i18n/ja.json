@@ -111,14 +111,19 @@
       "gpsConnected": "GPS接続済み",
       "gpsRecovering": "GPS復旧中",
       "gpsReady": "GPS準備完了",
+      "gpsInitializing": "GPS初期化中...",
       "courseRunning": "コースラン",
       "freeRunning": "フリーラン",
       "offCourse": "コースから外れました",
+      "offCourseReturn": "コース逸脱 · 戻ってください",
+      "offCoursePenalty": "コース逸脱 · ランキング対象外",
       "fromCourse": "逸脱",
       "offCourseDistance": "コース逸脱 {{distance}}m",
       "courseProgressLabel": "コース進捗",
       "courseProgress": "進捗 · 残り {{distance}} km",
-      "checkpointPassed": "チェックポイント {{order}}/{{total}} 通過！"
+      "checkpointPassed": "チェックポイント {{order}}/{{total}} 通過！",
+      "loopComplete": "完走！ループ完成",
+      "approachingStart": "スタート地点に接近 ~{{distance}}m"
     },
     "countdown": {
       "ready": "準備してください"

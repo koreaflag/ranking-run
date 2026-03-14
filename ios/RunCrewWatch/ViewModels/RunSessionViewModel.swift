@@ -86,19 +86,26 @@ class RunSessionViewModel: ObservableObject {
 
     private func wireSettingsManager() {
         settingsManager.onSettingsChanged = { [weak self] in
-            guard let self = self else { return }
-            self.standaloneGoalType = self.settingsManager.standaloneGoalType
-            self.standaloneGoalDistance = self.settingsManager.standaloneGoalDistance
-            self.standaloneGoalTime = self.settingsManager.standaloneGoalTime
-            self.standaloneGoalTargetTime = self.settingsManager.standaloneGoalTargetTime
-            self.isIndoorRun = self.settingsManager.isIndoorRun
-            self.isAutoPauseEnabled = self.settingsManager.isAutoPauseEnabled
-            self.isVoiceGuidanceEnabled = self.settingsManager.isVoiceGuidanceEnabled
-            self.voiceFrequencyKm = self.settingsManager.voiceFrequencyKm
-            self.isCountdownEnabled = self.settingsManager.isCountdownEnabled
-            self.weeklyGoalKm = self.settingsManager.weeklyGoalKm
-            self.weeklyDistanceKm = self.settingsManager.weeklyDistanceKm
-            self.weeklyRunCount = self.settingsManager.weeklyRunCount
+            let update = {
+                guard let self = self else { return }
+                self.standaloneGoalType = self.settingsManager.standaloneGoalType
+                self.standaloneGoalDistance = self.settingsManager.standaloneGoalDistance
+                self.standaloneGoalTime = self.settingsManager.standaloneGoalTime
+                self.standaloneGoalTargetTime = self.settingsManager.standaloneGoalTargetTime
+                self.isIndoorRun = self.settingsManager.isIndoorRun
+                self.isAutoPauseEnabled = self.settingsManager.isAutoPauseEnabled
+                self.isVoiceGuidanceEnabled = self.settingsManager.isVoiceGuidanceEnabled
+                self.voiceFrequencyKm = self.settingsManager.voiceFrequencyKm
+                self.isCountdownEnabled = self.settingsManager.isCountdownEnabled
+                self.weeklyGoalKm = self.settingsManager.weeklyGoalKm
+                self.weeklyDistanceKm = self.settingsManager.weeklyDistanceKm
+                self.weeklyRunCount = self.settingsManager.weeklyRunCount
+            }
+            if Thread.isMainThread {
+                update()
+            } else {
+                DispatchQueue.main.async { update() }
+            }
         }
     }
 
@@ -267,6 +274,7 @@ class RunSessionViewModel: ObservableObject {
             timerManager.stopDurationTimer()
             stopHeartRateMonitoring()
             startStatePollTimer()
+            // Reset ALL run state for the new run to prevent stale data from previous run
             state.distance = 0
             state.duration = 0
             state.currentPace = 0
@@ -274,8 +282,27 @@ class RunSessionViewModel: ObservableObject {
             state.calories = 0
             state.cadence = 0
             state.heartRate = 0
+            state.speed = 0
             state.sessionId = nil
             state.isAutoPaused = false
+            state.lastMilestoneKm = 0
+            state.lastMilestoneSplitPace = 0
+            // Reset course navigation state
+            state.isCourseRun = false
+            state.navBearing = -1
+            state.navRemainingDistance = -1
+            state.navDeviation = -1
+            state.navDirection = ""
+            state.navProgress = -1
+            state.navIsOffCourse = false
+            state.navNextTurnDirection = ""
+            state.navDistanceToNextTurn = -1
+            state.navToStartBearing = -1
+            state.navToStartDistance = -1
+            state.navToStartReady = false
+            state.cpPassed = 0
+            state.cpTotal = 0
+            state.cpJustPassed = false
             isStandaloneMode = false
             timerManager.resetAnchors()
             state.goalType = ""
@@ -286,6 +313,12 @@ class RunSessionViewModel: ObservableObject {
             state.programRequiredPace = 0
             state.programStatus = ""
             state.metronomeBPM = 0
+            // Reset companion manager internal state (haptic tracking, session tracking)
+            companionManager.resetForNewRun()
+            // Reset WorkoutMirroringManager accumulated distance from previous run
+            if #available(watchOS 10, *) {
+                WorkoutMirroringManager.shared.resetAccumulatedDistance()
+            }
             scheduleCountdownAutoTransition()
 
         case "running":
@@ -296,6 +329,10 @@ class RunSessionViewModel: ObservableObject {
                 startMirroringSessionIfNeeded()
             }
             if oldPhase == "paused" {
+                // Re-anchor duration from the paused value so the timer
+                // continues from where it left off, not from a stale server value.
+                timerManager.anchorDuration = state.duration
+                timerManager.anchorTime = Date()
                 HapticManager.shared.resumed()
             } else {
                 timerManager.resetAnchors()
@@ -309,6 +346,10 @@ class RunSessionViewModel: ObservableObject {
         case "paused":
             HapticManager.shared.paused()
             HapticManager.shared.stopCadenceHaptic()
+            // Snapshot current duration into anchor BEFORE stopping the timer,
+            // so that resume starts counting from the correct paused duration.
+            timerManager.anchorDuration = state.duration
+            timerManager.anchorTime = Date()
             timerManager.stopDurationTimer()
             if !isStandaloneMode { startStatePollTimer() }
 
@@ -387,12 +428,27 @@ class RunSessionViewModel: ObservableObject {
     private func startHeartRateMonitoring() {
         heartRateManager.requestAuthorization { [weak self] granted in
             guard granted, let self = self else { return }
-            if #available(watchOS 10, *),
-               let builder = WorkoutMirroringManager.shared.builder {
-                self.heartRateManager.attachToBuilder(builder)
-            } else {
-                self.heartRateManager.startWorkoutSession()
+            self.attachHeartRateToBuilderOrStartSession(retryCount: 0)
+        }
+    }
+
+    /// Try to attach HeartRateManager to WorkoutMirroringManager's builder.
+    /// If the builder isn't ready yet (async session setup), retry a few times.
+    /// Falls back to standalone HKWorkoutSession if no builder appears.
+    private func attachHeartRateToBuilderOrStartSession(retryCount: Int) {
+        if #available(watchOS 10, *),
+           let builder = WorkoutMirroringManager.shared.builder {
+            heartRateManager.attachToBuilder(builder)
+            print("[RunSessionVM] HeartRate attached to mirroring builder")
+        } else if retryCount < 5 {
+            // Builder may not be ready yet (async session setup). Retry after a short delay.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.attachHeartRateToBuilderOrStartSession(retryCount: retryCount + 1)
             }
+        } else {
+            // No builder available after retries — fall back to standalone session
+            heartRateManager.startWorkoutSession()
+            print("[RunSessionVM] HeartRate started standalone session (no mirroring builder)")
         }
     }
 

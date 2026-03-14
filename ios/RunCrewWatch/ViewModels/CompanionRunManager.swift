@@ -29,6 +29,9 @@ class CompanionRunManager {
     private var wasOffCourse: Bool = false
     private var lastHapticThreshold: Double = 0
 
+    /// Session ID of the current run. Used to detect new runs and reset stale state.
+    private var currentSessionId: String?
+
     // MARK: - Init
 
     init(timerManager: WatchTimerManager) {
@@ -41,11 +44,14 @@ class CompanionRunManager {
         guard isStandaloneMode?() == false else { return }
 
         updateState?({ state in
+            // During countdown or when distance is 0 (new run), allow any distance value.
+            // Otherwise only accept monotonically increasing values.
+            let isNewRun = state.phase == "countdown" || state.distance == 0
             if let distance = message[WatchMessageKeys.distanceFromStart] as? Double,
-               distance >= state.distance {
+               isNewRun || distance >= state.distance {
                 state.distance = distance
             } else if let distance = message[WatchMessageKeys.distance] as? Double,
-                      distance >= state.distance {
+                      isNewRun || distance >= state.distance {
                 state.distance = distance
             }
 
@@ -128,12 +134,29 @@ class CompanionRunManager {
             }
         }
 
-        // Distance
-        if let distance = message[WatchMessageKeys.distanceMeters] as? Double,
-           distance >= currentState.distance {
-            currentState.distance = distance
-            if #available(watchOS 10, *) {
-                WorkoutMirroringManager.shared.updateDistance(distance)
+        // Detect new session: if sessionId changed, this is a new run.
+        // Reset distance tracking so the new run's smaller values are accepted.
+        let incomingSessionId = message[WatchMessageKeys.sessionId] as? String
+        let isNewSession: Bool
+        if let incomingId = incomingSessionId, !incomingId.isEmpty,
+           incomingId != currentSessionId {
+            currentSessionId = incomingId
+            isNewSession = true
+            print("[CompanionRunManager] New session detected: \(incomingId)")
+        } else if currentState.phase == "countdown" {
+            // Countdown always indicates a new run, even without sessionId
+            isNewSession = true
+        } else {
+            isNewSession = false
+        }
+
+        // Distance: allow reset to lower values when a new session starts
+        if let distance = message[WatchMessageKeys.distanceMeters] as? Double {
+            if isNewSession || distance >= currentState.distance {
+                currentState.distance = distance
+                if #available(watchOS 10, *) {
+                    WorkoutMirroringManager.shared.updateDistance(distance)
+                }
             }
         }
 
@@ -300,6 +323,17 @@ class CompanionRunManager {
         })
         setPhaseLockedUntil?(Date().addingTimeInterval(5.0))
         onPhaseTransition?(previousPhase, newPhase)
+    }
+
+    // MARK: - Reset
+
+    /// Reset internal state for a new run. Called when a new session starts
+    /// to prevent stale data from the previous run bleeding through.
+    func resetForNewRun() {
+        wasOffCourse = false
+        lastHapticThreshold = 0
+        currentSessionId = nil
+        print("[CompanionRunManager] resetForNewRun: internal state cleared")
     }
 
     // MARK: - Polling

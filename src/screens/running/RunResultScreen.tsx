@@ -90,6 +90,7 @@ export default function RunResultScreen() {
   const [result, setResult] = useState<RunCompleteResponse | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [savedLocally, setSavedLocally] = useState(false);
+  const submitStartedRef = useRef(false);
   // Final distance after RTS smoothing (may differ from live distanceMeters).
   // Display and server must use the same value for consistency.
   const [finalDistanceMeters, setFinalDistanceMeters] = useState(distanceMeters);
@@ -130,12 +131,14 @@ export default function RunResultScreen() {
 
   // Submit run: save locally first, then try server in background
   // Skip when the run was already completed (e.g., watch standalone runs)
+  // Uses submitStartedRef to prevent double-execution from React effect re-fires
   useEffect(() => {
     const submitRun = async () => {
-      if (submitted || alreadyCompleted) {
+      if (submitStartedRef.current || submitted || alreadyCompleted) {
         if (alreadyCompleted) setSubmitted(true);
         return;
       }
+      submitStartedRef.current = true;
       setIsSubmitting(true);
 
       const pendingId = `local-run-${Date.now()}`;
@@ -304,21 +307,11 @@ export default function RunResultScreen() {
     };
 
     submitRun();
-  }, [
-    sessionId,
-    distanceMeters,
-    durationSeconds,
-    avgPaceSecondsPerKm,
-    calories,
-    routePoints,
-    splits,
-    elevationGainMeters,
-    elevationLossMeters,
-    submitted,
-    alreadyCompleted,
-    chunkSequence,
-    uploadedChunkSequences,
-  ]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // All run data is read from store/state at call time via useRunningStore.getState()
+  // and component state captured in the closure. Only sessionId and alreadyCompleted
+  // are true triggers — the rest would cause spurious re-fires.
+  }, [sessionId, alreadyCompleted]);
 
   const resetToWorld = () => {
     reset();
@@ -875,9 +868,9 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     position: 'absolute',
     bottom: SPACING.sm,
     right: SPACING.sm,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center',

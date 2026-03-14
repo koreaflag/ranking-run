@@ -8,6 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '../../lib/icons';
+import { useTranslation } from 'react-i18next';
 import { useRunningStore } from '../../stores/runningStore';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
@@ -63,6 +64,7 @@ export default function RunningHUD({
   checkpointJustPassed,
   offCourseLevel = 0,
 }: RunningHUDProps) {
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -94,7 +96,7 @@ export default function RunningHUD({
 
     return (
       <View style={styles.countdownContainer}>
-        <Text style={styles.countdownLabel}>준비하세요</Text>
+        <Text style={styles.countdownLabel}>{t('running.countdown.ready')}</Text>
         <Text style={styles.countdownNumber}>
           {countdownValue ?? countdownTotal}
         </Text>
@@ -123,10 +125,10 @@ export default function RunningHUD({
           ? colors.error
           : colors.warning;
   const gpsLabel = gpsDisabled
-    ? '위치 권한 필요'
+    ? t('running.status.gpsPermissionNeeded')
     : gpsAccuracy != null
       ? `±${Math.round(gpsAccuracy)}m`
-      : 'GPS 초기화 중...';
+      : t('running.status.gpsInitializing');
 
   return (
     <View style={styles.hudContainer}>
@@ -138,7 +140,7 @@ export default function RunningHUD({
         </View>
         <View style={styles.modeChip}>
           <Text style={styles.modeChipText}>
-            {courseId ? '코스 러닝' : '자유 러닝'}
+            {courseId ? t('running.status.courseRunning') : t('running.status.freeRunning')}
           </Text>
         </View>
         {watchConnected && (
@@ -180,7 +182,7 @@ export default function RunningHUD({
             <Text style={styles.navBarInstruction} numberOfLines={1}>
               {courseNavigation.distanceToNextTurn >= 0
                 ? formatTurnInstruction(courseNavigation.distanceToNextTurn, courseNavigation.nextTurnDirection)
-                : '직진'}
+                : t('running.nav.straightAhead')}
             </Text>
           </View>
           <Text style={styles.navBarRemaining}>
@@ -222,7 +224,7 @@ export default function RunningHUD({
       {/* Course progress bar */}
       {courseNavigation && courseId && (
         <View style={styles.courseProgressRow}>
-          <Text style={styles.courseProgressLabel}>코스 진행</Text>
+          <Text style={styles.courseProgressLabel}>{t('running.status.courseProgressLabel')}</Text>
           <View style={styles.courseProgressBarTrack}>
             <View
               style={[
@@ -232,7 +234,7 @@ export default function RunningHUD({
             />
           </View>
           <Text style={styles.courseProgressText}>
-            {metersToKm(courseNavigation.remainingDistanceMeters)} km 남음
+            {t('running.status.courseProgress', { distance: metersToKm(courseNavigation.remainingDistanceMeters) })}
           </Text>
         </View>
       )}
@@ -241,19 +243,19 @@ export default function RunningHUD({
       <View style={styles.dashboardGrid}>
         <View style={styles.dashboardRow}>
           <DashboardCell
-            label="시간"
+            label={t('running.metrics.time')}
             value={formatDuration(durationSeconds)}
             styles={styles}
           />
           <View style={styles.dashboardDivider} />
           <DashboardCell
-            label="평균 페이스"
+            label={t('running.metrics.avgPace')}
             value={formatPace(avgPaceSecondsPerKm)}
             styles={styles}
           />
           <View style={styles.dashboardDivider} />
           <DashboardCell
-            label="칼로리"
+            label={t('running.metrics.calories')}
             value={String(calories)}
             styles={styles}
           />
@@ -261,20 +263,20 @@ export default function RunningHUD({
         <View style={styles.dashboardRowDivider} />
         <View style={styles.dashboardRow}>
           <DashboardCell
-            label="심박수"
+            label={t('running.metrics.heartRate')}
             value={heartRate > 0 ? String(Math.round(heartRate)) : '--'}
             valueColor={heartRate > 0 ? colors.error : undefined}
             styles={styles}
           />
           <View style={styles.dashboardDivider} />
           <DashboardCell
-            label="케이던스"
+            label={t('running.metrics.cadence')}
             value={cadence > 0 ? String(cadence) : '--'}
             styles={styles}
           />
           <View style={styles.dashboardDivider} />
           <DashboardCell
-            label="고도(m)"
+            label={t('running.metrics.elevation')}
             value={elevationGainMeters > 0 ? `+${Math.round(elevationGainMeters)}` : '--'}
             styles={styles}
           />
@@ -289,17 +291,21 @@ export default function RunningHUD({
               style={styles.resumeButton}
               onPress={onResume}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('running.controls.resume')}
             >
               <Ionicons name="play" size={28} color={colors.white} />
-              <Text style={styles.resumeLabel}>재개</Text>
+              <Text style={styles.resumeLabel}>{t('running.controls.resume')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.stopButton}
               onPress={onStop}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('running.controls.stop')}
             >
               <Ionicons name="stop" size={28} color={colors.white} />
-              <Text style={styles.stopLabel}>종료</Text>
+              <Text style={styles.stopLabel}>{t('running.controls.stop')}</Text>
             </TouchableOpacity>
           </>
         ) : (
@@ -308,17 +314,21 @@ export default function RunningHUD({
               style={styles.pauseButton}
               onPress={onPause}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('running.controls.pause')}
             >
               <Ionicons name="pause" size={28} color={colors.text} />
-              <Text style={styles.pauseLabel}>일시정지</Text>
+              <Text style={styles.pauseLabel}>{t('running.controls.pause')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.stopButton}
               onPress={onStop}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={t('running.controls.stop')}
             >
               <Ionicons name="stop" size={28} color={colors.white} />
-              <Text style={styles.stopLabel}>종료</Text>
+              <Text style={styles.stopLabel}>{t('running.controls.stop')}</Text>
             </TouchableOpacity>
           </>
         )}
@@ -408,13 +418,14 @@ function BannerArea({
   colors: ThemeColors;
   styles: ReturnType<typeof createStyles>;
 }) {
+  const { t } = useTranslation();
   return (
     <>
       {/* Paused banner */}
       {phase === 'paused' && (
         <View style={styles.pausedBanner}>
           <Ionicons name="pause" size={16} color={colors.background} />
-          <Text style={styles.pausedText}>일시정지</Text>
+          <Text style={styles.pausedText}>{t('running.status.paused')}</Text>
         </View>
       )}
 
@@ -422,7 +433,7 @@ function BannerArea({
       {isAutoPaused && phase === 'running' && (
         <View style={styles.autoPausedBanner}>
           <Ionicons name="pause-circle-outline" size={16} color={colors.textSecondary} />
-          <Text style={styles.autoPausedText}>자동 일시정지</Text>
+          <Text style={styles.autoPausedText}>{t('running.status.autoPaused')}</Text>
         </View>
       )}
 
@@ -433,13 +444,13 @@ function BannerArea({
           <View style={{ flex: 1 }}>
             <Text style={styles.offCourseText}>
               {offCourseLevel >= 2
-                ? '코스 이탈 — 랭킹 미반영 중'
+                ? t('running.status.offCoursePenalty')
                 : offCourseLevel === 1
-                  ? '코스를 이탈했습니다 · 복귀하세요'
-                  : '코스를 이탈했습니다'}
+                  ? t('running.status.offCourseReturn')
+                  : t('running.status.offCourse')}
             </Text>
             <Text style={styles.offCourseDistText}>
-              {Math.round(courseNavigation.deviationMeters)}m 이탈
+              {Math.round(courseNavigation.deviationMeters)}m {t('running.status.fromCourse')}
             </Text>
           </View>
         </View>
@@ -450,7 +461,7 @@ function BannerArea({
         <View style={styles.checkpointBanner}>
           <Ionicons name="flag" size={16} color={colors.background} />
           <Text style={styles.checkpointBannerText}>
-            CP {checkpointJustPassed.order}/{checkpointJustPassed.total} 통과
+            {t('running.status.checkpointPassed', { order: checkpointJustPassed.order, total: checkpointJustPassed.total })}
           </Text>
         </View>
       )}
@@ -459,14 +470,14 @@ function BannerArea({
       {!courseId && loopDetected && distanceMeters >= 300 && (
         <View style={styles.loopArrivedBanner}>
           <Ionicons name="flag" size={16} color={colors.white} />
-          <Text style={styles.loopArrivedText}>Finish! Loop complete</Text>
+          <Text style={styles.loopArrivedText}>{t('running.status.loopComplete')}</Text>
         </View>
       )}
       {!courseId && isApproachingStart && !isNearStart && !loopDetected && distanceMeters >= 300 && (
         <View style={styles.loopApproachBanner}>
           <Ionicons name="navigate" size={16} color={colors.text} />
           <Text style={styles.loopApproachText}>
-            Approaching start ~{Math.round(distanceToStart)}m
+            {t('running.status.approachingStart', { distance: Math.round(distanceToStart) })}
           </Text>
         </View>
       )}

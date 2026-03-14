@@ -11,8 +11,10 @@ class KalmanFilter {
     private var lastValidResult: (lat: Double, lon: Double, alt: Double, speed: Double, bearing: Double)?
 
     // Process noise base values (higher = more responsive to actual movement)
-    private let processNoisePosition: Double = 0.5
-    private let processNoiseVelocity: Double = 1.5
+    // Previous values (0.5/1.5) were too low — filter was sluggish following transitions
+    // from stopped to running, causing distance under-counting and route lag.
+    private let processNoisePosition: Double = 1.0
+    private let processNoiseVelocity: Double = 3.0
     private var dynamicProcessNoise: Double = 1.0
 
     // RTS Smoother: store intermediate states for backward pass
@@ -50,9 +52,11 @@ class KalmanFilter {
     func updateProcessNoise(accelerationVariance: Double) {
         // Scale from g^2 domain to process noise domain:
         // Multiply by 50 to map typical range [0.001, 0.15] -> [0.05, 7.5],
-        // then add baseline of 0.3 and clamp to [0.3, 8.0].
-        let scaled = accelerationVariance * 50.0 + 0.3
-        dynamicProcessNoise = max(0.3, min(scaled, 8.0))
+        // then add baseline of 0.5 and clamp to [0.5, 10.0].
+        // Previous floor of 0.3 made the filter too sluggish during transitions
+        // (e.g., stationary -> running), causing distance under-counting.
+        let scaled = accelerationVariance * 50.0 + 0.5
+        dynamicProcessNoise = max(0.5, min(scaled, 10.0))
     }
 
     /// Predict + Update step with new GPS measurement
@@ -245,10 +249,12 @@ class KalmanFilter {
 
     private func measurementNoiseMatrix(horizontalAccuracy: Double,
                                          speedAccuracy: Double) -> [[Double]] {
-        // Floor: GPS reports optimistic accuracy; actual scatter is always larger
-        let clamped = max(horizontalAccuracy, 8.0)
+        // Floor: GPS reports optimistic accuracy; actual scatter is always larger.
+        // Previous floor of 8.0m made the filter too sluggish with good GPS signal (3-5m accuracy).
+        // Modern iPhones with L5 GPS regularly achieve 3-5m accuracy — trust that signal more.
+        let clamped = max(horizontalAccuracy, 4.0)
         // Urban canyon inflation: when accuracy > 20m, multipath likely — trust GPS less
-        let inflated = clamped > 20 ? clamped * 2.5 : clamped
+        let inflated = clamped > 20 ? clamped * 2.0 : clamped
         let posVar = inflated * inflated
         let spdVar: Double
         if speedAccuracy < -100 {

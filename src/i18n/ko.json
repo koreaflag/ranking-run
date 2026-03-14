@@ -111,14 +111,19 @@
       "gpsConnected": "GPS 연결됨",
       "gpsRecovering": "GPS 복구 중",
       "gpsReady": "GPS 준비됨",
+      "gpsInitializing": "GPS 초기화 중...",
       "courseRunning": "코스 러닝",
       "freeRunning": "자유 러닝",
       "offCourse": "코스를 이탈했습니다",
+      "offCourseReturn": "코스를 이탈했습니다 · 복귀하세요",
+      "offCoursePenalty": "코스 이탈 — 랭킹 미반영 중",
       "fromCourse": "이탈",
       "offCourseDistance": "코스 이탈 {{distance}}m",
       "courseProgressLabel": "코스 진행",
       "courseProgress": "{{distance}} km 남음",
-      "checkpointPassed": "CP {{order}}/{{total}} 통과"
+      "checkpointPassed": "CP {{order}}/{{total}} 통과",
+      "loopComplete": "완주! 루프 완성",
+      "approachingStart": "출발점 접근 ~{{distance}}m"
     },
     "countdown": {
       "ready": "준비하세요"

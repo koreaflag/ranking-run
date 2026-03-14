@@ -186,5 +186,5 @@ async def get_pending_count(
         Provide[Container.crew_join_request_service]
     ),
 ) -> dict:
-    count = await service.get_pending_count(db=db, crew_id=crew_id)
+    count = await service.get_pending_count(db=db, crew_id=crew_id, user_id=current_user.id)
     return {"count": count}

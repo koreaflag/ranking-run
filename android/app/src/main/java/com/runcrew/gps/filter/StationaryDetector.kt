@@ -52,7 +52,7 @@ class StationaryDetector(
     private val listeners = CopyOnWriteArrayList<StateChangeListener>()
 
     @Volatile
-    var currentState: MovementState = MovementState.STATIONARY
+    var currentState: MovementState = MovementState.MOVING
         private set
 
     @Volatile
@@ -171,7 +171,10 @@ class StationaryDetector(
     }
 
     fun reset() {
-        currentState = MovementState.STATIONARY
+        // Start in MOVING state — tracking begins while the user is actively running.
+        // Starting in STATIONARY would immediately suppress distance accumulation and
+        // require an extra state transition before data flows correctly.
+        currentState = MovementState.MOVING
         lastStateChangeTime = System.currentTimeMillis()
         lastGpsSpeed = 0.0
         currentAccelVariance = 0.0

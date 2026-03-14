@@ -334,6 +334,12 @@ async def daily_checkin(
 
     today = date.today()
 
+    # Lock the user row first to prevent race conditions on concurrent check-ins
+    user_result = await db.execute(
+        select(User).where(User.id == current_user.id).with_for_update()
+    )
+    user = user_result.scalar_one()
+
     # Check if already checked in today
     existing = await db.execute(
         select(PointTransaction.id).where(
@@ -343,11 +349,9 @@ async def daily_checkin(
         )
     )
     if existing.scalar() is not None:
-        return {"checked_in": True, "points_earned": 0, "total_points": current_user.total_points, "already": True}
+        return {"checked_in": True, "points_earned": 0, "total_points": user.total_points, "already": True}
 
     # Award 5 points
-    user_result = await db.execute(select(User).where(User.id == current_user.id))
-    user = user_result.scalar_one()
     user.total_points += 5
 
     tx = PointTransaction(
@@ -540,7 +544,7 @@ async def get_analytics(
         for row in cal_result.all()
     ]
 
-    # 4. Best efforts at standard distances
+    # 4. Best efforts at standard distances (single query using LATERAL or window)
     DISTANCES = [
         ("1K", 1000),
         ("3K", 3000),
@@ -549,35 +553,43 @@ async def get_analytics(
         ("Half", 21097),
         ("Full", 42195),
     ]
+
+    # Fetch all qualifying runs in a single query, then pick bests in Python
+    max_target = max(t for _, t in DISTANCES)
+    all_efforts_result = await db.execute(
+        select(
+            RunRecord.id,
+            RunRecord.finished_at,
+            RunRecord.avg_pace_seconds_per_km,
+            RunRecord.distance_meters,
+            RunRecord.duration_seconds,
+        )
+        .where(
+            RunRecord.user_id == current_user.id,
+            RunRecord.distance_meters >= DISTANCES[0][1],  # >= 1K
+            RunRecord.avg_pace_seconds_per_km.isnot(None),
+            RunRecord.avg_pace_seconds_per_km > 0,
+        )
+        .order_by(RunRecord.avg_pace_seconds_per_km.asc())
+    )
+    all_effort_rows = all_efforts_result.all()
+
     best_efforts = []
     for label, target in DISTANCES:
-        effort_result = await db.execute(
-            select(
-                RunRecord.id,
-                RunRecord.finished_at,
-                RunRecord.avg_pace_seconds_per_km,
-                RunRecord.distance_meters,
-                RunRecord.duration_seconds,
-            )
-            .where(
-                RunRecord.user_id == current_user.id,
-                RunRecord.distance_meters >= target,
-                RunRecord.avg_pace_seconds_per_km.isnot(None),
-                RunRecord.avg_pace_seconds_per_km > 0,
-            )
-            .order_by(RunRecord.avg_pace_seconds_per_km.asc())
-            .limit(1)
-        )
-        row = effort_result.first()
-        if row:
-            estimated_time = int(target / 1000 * row.avg_pace_seconds_per_km)
+        best_row = None
+        for row in all_effort_rows:
+            if row.distance_meters >= target:
+                best_row = row
+                break
+        if best_row:
+            estimated_time = int(target / 1000 * best_row.avg_pace_seconds_per_km)
             best_efforts.append(BestEffortItem(
                 distance_label=label,
                 target_meters=target,
                 best_time_seconds=estimated_time,
-                best_pace=row.avg_pace_seconds_per_km,
-                achieved_date=row.finished_at.isoformat(),
-                run_id=str(row.id),
+                best_pace=best_row.avg_pace_seconds_per_km,
+                achieved_date=best_row.finished_at.isoformat(),
+                run_id=str(best_row.id),
             ))
         else:
             best_efforts.append(BestEffortItem(
@@ -703,14 +715,20 @@ async def get_public_profile(
     )
     courses = courses_result.scalars().all()
 
+    # Batch fetch like counts for all courses (avoids N+1 queries)
+    course_ids = [c.id for c in courses]
+    like_counts_map: dict = {}
+    if course_ids:
+        like_counts_result = await db.execute(
+            select(CourseLike.course_id, func.count(CourseLike.id))
+            .where(CourseLike.course_id.in_(course_ids))
+            .group_by(CourseLike.course_id)
+        )
+        like_counts_map = {row[0]: row[1] for row in like_counts_result.all()}
+
     course_items = []
     for c in courses:
-        # Get like count
-        like_count_result = await db.execute(
-            select(func.count(CourseLike.id)).where(CourseLike.course_id == c.id)
-        )
-        like_count = like_count_result.scalar_one()
-
+        like_count = like_counts_map.get(c.id, 0)
         course_items.append(PublicProfileCourse(
             id=str(c.id),
             title=c.title,
@@ -721,25 +739,21 @@ async def get_public_profile(
             like_count=like_count,
         ))
 
-    # Top rankings (top 5 best ranks)
+    # Top rankings (top 5 best ranks) with course title joined (avoids N+1)
     rankings_result = await db.execute(
-        select(Ranking)
+        select(Ranking, Course.title)
+        .join(Course, Ranking.course_id == Course.id)
         .where(Ranking.user_id == user_id)
         .order_by(Ranking.rank.asc())
         .limit(5)
     )
-    rankings = rankings_result.scalars().all()
+    ranking_rows = rankings_result.all()
 
     ranking_items = []
-    for r in rankings:
-        # Get course title
-        course_result = await db.execute(
-            select(Course.title).where(Course.id == r.course_id)
-        )
-        course_title = course_result.scalar_one_or_none() or "알 수 없는 코스"
+    for r, course_title in ranking_rows:
         ranking_items.append(PublicProfileRanking(
             course_id=str(r.course_id),
-            course_title=course_title,
+            course_title=course_title or "알 수 없는 코스",
             rank=r.rank,
             best_duration_seconds=r.best_duration_seconds,
         ))

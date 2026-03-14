@@ -72,9 +72,21 @@ class MapMatchingService:
         if len(coordinates) < 2:
             return MatchResult(coordinates=coordinates, confidence=None, gap_indices=[])
 
+        # Filter out invalid (0,0) coordinates (GPS not initialized)
+        valid_coords = [c for c in coordinates if not (abs(c[0]) < 0.001 and abs(c[1]) < 0.001)]
+        if len(valid_coords) < 2:
+            logger.warning("[MapMatching] All coordinates are invalid (0,0), skipping")
+            return MatchResult(coordinates=coordinates, confidence=None, gap_indices=[])
+        coordinates = valid_coords
+
         # Pre-process: downsample dense points to reduce noise before matching
         downsampled = self._downsample(coordinates, min_spacing_m=5.0)
         logger.info(f"[MapMatching] Downsampled {len(coordinates)} → {len(downsampled)} points")
+
+        # Mapbox requires at least 2 distinct coordinates
+        if len(downsampled) < 2:
+            logger.warning("[MapMatching] Too few points after downsampling, skipping")
+            return MatchResult(coordinates=coordinates, confidence=None, gap_indices=[])
 
         # Split into segments at signal gaps and collect gap positions
         segments, gap_positions = self._split_at_gaps_with_indices(downsampled)

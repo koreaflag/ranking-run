@@ -123,17 +123,15 @@ class HeartRateManager: NSObject, ObservableObject {
                 }
             }
         } else {
-            // External session — capture builder reference before clearing,
-            // then end collection asynchronously without risk of nil access
-            let externalBuilder = builder
+            // External session — WorkoutMirroringManager owns the builder lifecycle.
+            // Do NOT call endCollection here — it would conflict with
+            // WorkoutMirroringManager.stopRun() which calls endCollection + finishWorkout.
+            // Just detach our references and let the owner handle cleanup.
             isActive = false
             currentHeartRate = 0
             session = nil
             builder = nil
-            externalBuilder?.endCollection(withEnd: Date()) { _, _ in
-                print("[HeartRateManager] External builder collection ended")
-            }
-            print("[HeartRateManager] Detached from external builder")
+            print("[HeartRateManager] Detached from external builder (owner handles lifecycle)")
         }
     }
 }

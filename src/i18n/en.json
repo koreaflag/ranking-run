@@ -111,14 +111,19 @@
       "gpsConnected": "GPS Connected",
       "gpsRecovering": "GPS Recovering",
       "gpsReady": "GPS Ready",
+      "gpsInitializing": "GPS Initializing...",
       "courseRunning": "Course Run",
       "freeRunning": "Free Run",
       "offCourse": "Off course",
+      "offCourseReturn": "Off course - please return",
+      "offCoursePenalty": "Off course - ranking disabled",
       "fromCourse": "off course",
       "offCourseDistance": "Off course {{distance}}m",
       "courseProgressLabel": "Course Progress",
       "courseProgress": "Progress · {{distance}} km left",
-      "checkpointPassed": "Checkpoint {{order}}/{{total}} passed!"
+      "checkpointPassed": "Checkpoint {{order}}/{{total}} passed!",
+      "loopComplete": "Finish! Loop complete",
+      "approachingStart": "Approaching start ~{{distance}}m"
     },
     "countdown": {
       "ready": "Get Ready"

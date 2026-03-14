@@ -191,7 +191,17 @@ class WatchSessionService: NSObject, WCSessionDelegate {
         // Already have a session
         if foregroundSession != nil { return }
         if #available(watchOS 10, *) {
-            if WorkoutMirroringManager.shared.session != nil { return }
+            let mgr = WorkoutMirroringManager.shared
+            if let existing = mgr.session {
+                // If the existing session is stopped/ended (stale from previous run),
+                // clean it up so we can create a new one
+                if existing.state == .stopped || existing.state == .ended {
+                    print("[WatchSessionSvc] Cleaning up stale mirroring session before creating new one")
+                    mgr.cleanup()
+                } else {
+                    return
+                }
+            }
         }
 
         let config = HKWorkoutConfiguration()

@@ -90,6 +90,41 @@ class WatchRunStorage {
         print("[WatchRunStorage] Removed synced run: \(filename)")
     }
 
+    /// Mark a run file as synced by renaming to .synced extension.
+    /// The file is kept as a safety net until the OS transfer queue is confirmed empty.
+    func markAsSynced(filename: String) {
+        let sourceURL = storageDir.appendingPathComponent(filename)
+        let destURL = storageDir.appendingPathComponent(filename + ".synced")
+        do {
+            try FileManager.default.moveItem(at: sourceURL, to: destURL)
+            print("[WatchRunStorage] Marked as synced: \(filename)")
+        } catch {
+            // If rename fails (already moved, etc.), try removing
+            try? FileManager.default.removeItem(at: sourceURL)
+            print("[WatchRunStorage] markAsSynced fallback remove: \(filename)")
+        }
+    }
+
+    /// Remove all .synced files. Called only when the OS transfer queue is empty,
+    /// confirming all transfers were delivered successfully.
+    func cleanupSyncedFiles() {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: storageDir,
+            includingPropertiesForKeys: nil
+        ) else { return }
+
+        var cleaned = 0
+        for fileURL in files {
+            if fileURL.pathExtension == "synced" {
+                try? FileManager.default.removeItem(at: fileURL)
+                cleaned += 1
+            }
+        }
+        if cleaned > 0 {
+            print("[WatchRunStorage] Cleaned up \(cleaned) confirmed synced file(s)")
+        }
+    }
+
     /// Number of pending runs.
     var pendingCount: Int {
         let files = try? FileManager.default.contentsOfDirectory(

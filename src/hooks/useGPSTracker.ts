@@ -20,7 +20,7 @@ const { GPSTrackerModule } = NativeModules;
  */
 export function useGPSTracker() {
   const subscriptionsRef = useRef<Array<{ remove: () => void }>>([]);
-  const { updateLocation, updateGPSStatus, addSplit, phase } = useRunningStore();
+  const { updateLocation, updateGPSStatus, addSplit, setAutoPaused, phase } = useRunningStore();
 
   const startTracking = useCallback(async () => {
     if (!GPSTrackerModule) {
@@ -98,7 +98,24 @@ export function useGPSTracker() {
       },
     );
 
-    subscriptionsRef.current = [locationSub, statusSub, milestoneSub];
+    // Listen for native stationary/moving state changes.
+    // This is critical for auto-pause resume: when the native StationaryDetector
+    // transitions to "moving", we must immediately clear auto-pause even if
+    // the next location update hasn't arrived yet (GPS may be slow to deliver
+    // updates after BatteryOptimizer restores accuracy).
+    const runningStateSub = emitter.addListener(
+      GPS_EVENTS.RUNNING_STATE_CHANGE,
+      (event: { state: string; duration: number }) => {
+        if (event.state === 'moving') {
+          const store = useRunningStore.getState();
+          if (store.isAutoPaused) {
+            setAutoPaused(false);
+          }
+        }
+      },
+    );
+
+    subscriptionsRef.current = [locationSub, statusSub, milestoneSub, runningStateSub];
 
     // Fetch current GPS status in case we missed the initial event
     const pollStatus = () => {
@@ -124,7 +141,7 @@ export function useGPSTracker() {
       subscriptionsRef.current = [];
       clearInterval(pollInterval);
     };
-  }, [phase, updateLocation, updateGPSStatus, addSplit]);
+  }, [phase, updateLocation, updateGPSStatus, addSplit, setAutoPaused]);
 
   return {
     startTracking,

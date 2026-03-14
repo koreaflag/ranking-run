@@ -45,9 +45,22 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
     /// Called synchronously from WCSession callbacks via DispatchQueue.main.sync.
     /// Builder, mirroring, and data collection are deferred to startRunFullSetup().
     func startRunMinimal() {
-        guard session == nil else {
-            print("[WorkoutMirror] startRunMinimal SKIP: session already exists (state=\(session?.state.rawValue ?? -1))")
-            return
+        // If an old session exists but is stopped/ended (from a previous run),
+        // clean it up immediately so we can create a new one.
+        // This prevents the 1-second delayed cleanup from blocking new session creation.
+        if let existing = session {
+            if existing.state == .stopped || existing.state == .ended {
+                print("[WorkoutMirror] startRunMinimal: cleaning up stale session (state=\(existing.state.rawValue))")
+                session = nil
+                builder = nil
+                routeBuilder = nil
+                accumulatedDistanceMeters = 0
+                lastSampledDistance = 0
+                suppressInitialCallback = false
+            } else {
+                print("[WorkoutMirror] startRunMinimal SKIP: session already exists (state=\(existing.state.rawValue))")
+                return
+            }
         }
 
         let config = HKWorkoutConfiguration()
@@ -73,8 +86,9 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
             print("[WorkoutMirror] startRunFullSetup SKIP: no session")
             return
         }
-        guard builder == nil else {
-            print("[WorkoutMirror] startRunFullSetup SKIP: builder already exists")
+        // If the session is stopped/ended, the builder is stale — don't skip
+        if builder != nil && (session.state == .running || session.state == .paused || session.state == .prepared) {
+            print("[WorkoutMirror] startRunFullSetup SKIP: builder already exists for active session")
             return
         }
 
@@ -112,9 +126,17 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
     /// The session already has startActivity() called — we just need to take ownership,
     /// set ourselves as delegate, and prepare for full setup (builder + mirroring).
     func adoptSession(_ existingSession: HKWorkoutSession) {
-        guard session == nil else {
-            print("[WorkoutMirror] adoptSession SKIP: already have session (state=\(session?.state.rawValue ?? -1))")
-            return
+        // If we have a stale (stopped/ended) session from a previous run, clean it up
+        if let existing = session, existing !== existingSession {
+            if existing.state == .stopped || existing.state == .ended {
+                print("[WorkoutMirror] adoptSession: cleaning up stale session (state=\(existing.state.rawValue))")
+                session = nil
+                builder = nil
+                routeBuilder = nil
+            } else {
+                print("[WorkoutMirror] adoptSession SKIP: already have active session (state=\(existing.state.rawValue))")
+                return
+            }
         }
         existingSession.delegate = self
         session = existingSession
@@ -302,6 +324,14 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
         }
     }
 
+    /// Reset accumulated distance for a new run without ending the session.
+    /// Called at countdown to ensure the new run starts from 0.
+    func resetAccumulatedDistance() {
+        accumulatedDistanceMeters = 0
+        lastSampledDistance = 0
+        print("[WorkoutMirror] resetAccumulatedDistance: distance counters cleared")
+    }
+
     /// Reset session state without ending (for when session already ended via mirroring)
     func cleanup() {
         if let session = session {
@@ -314,6 +344,7 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
         routeBuilder = nil
         accumulatedDistanceMeters = 0
         lastSampledDistance = 0
+        suppressInitialCallback = false
         print("[WorkoutMirror] cleanup complete")
     }
 

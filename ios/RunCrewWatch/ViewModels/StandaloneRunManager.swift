@@ -522,13 +522,18 @@ class StandaloneRunManager {
 
             session.transferUserInfo(payload)
             print("[StandaloneRunManager] Queued transferUserInfo for: \(filename) (type=\(payload["type"] ?? "nil"))")
+
+            // Mark as synced (rename) instead of deleting immediately.
+            // transferUserInfo is queued by the OS, but if the watch reboots before
+            // the transfer completes, the data would be lost. Keep a .synced copy
+            // that gets cleaned up on next successful sync cycle.
+            WatchRunStorage.shared.markAsSynced(filename: filename)
         }
 
-        // Remove locally after queueing
-        for run in pending {
-            if let filename = run["_filename"] as? String {
-                WatchRunStorage.shared.removeRun(filename: filename)
-            }
+        // Clean up old .synced files only when transfer queue is empty
+        // (confirms OS has delivered all pending transfers)
+        if session.outstandingUserInfoTransfers.isEmpty {
+            WatchRunStorage.shared.cleanupSyncedFiles()
         }
 
         return WatchRunStorage.shared.pendingCount

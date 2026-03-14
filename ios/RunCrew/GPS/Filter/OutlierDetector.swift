@@ -8,10 +8,10 @@ class OutlierDetector {
     private let maxRecentSpeeds = 10
 
     // Thresholds
-    private let maxHorizontalAccuracy: Double = 25.0  // meters (reject urban multipath noise)
+    private let maxHorizontalAccuracy: Double = 30.0  // meters (matches Android + CLAUDE.md spec; 25m rejected too many valid urban GPS readings)
     private let maxSpeed: Double = 15.0                // m/s (~54 km/h)
     private let maxAcceleration: Double = 8.0          // m/s²
-    private let maxTimestampAge: TimeInterval = 5.0    // seconds (fresher data only)
+    private let maxTimestampAge: TimeInterval = 10.0   // seconds (matches Android; 5s was too strict for background/brief signal loss)
     private let minTimeBetweenUpdates: TimeInterval = 0.05 // seconds (allow more frequent updates)
 
     private var lastTimestamp: TimeInterval = 0

@@ -221,7 +221,11 @@ class CrewJoinRequestService:
         self,
         db: AsyncSession,
         crew_id: UUID,
+        user_id: UUID | None = None,
     ) -> int:
+        # Only owner/admin should see pending count
+        if user_id is not None:
+            await self._check_admin(db, crew_id, user_id)
         result = await db.execute(
             select(func.count(CrewJoinRequest.id)).where(
                 CrewJoinRequest.crew_id == crew_id,

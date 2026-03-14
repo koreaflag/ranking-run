@@ -1557,7 +1557,7 @@ export default function WorldScreen() {
         showUserLocation={true}
         hideRouteMarkers={isInRun}
         customUserLocation={myLocation ?? undefined}
-        customUserHeading={isInRun ? runHeadingValue : headingAnim}
+        customUserHeading={isInRun ? runHeadingValue : undefined}
         interactive={!isInRun || phase !== 'running'}
         pitchEnabled={map3DStyle || is3DMode || isInRun}
         use3DStyle={map3DStyle}

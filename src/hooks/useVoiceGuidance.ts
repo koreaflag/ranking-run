@@ -211,5 +211,5 @@ export function useVoiceGuidance({
       });
       lastAnnouncementTimeRef.current = now;
     }
-  }, [enabled, phase, navigation, distanceMeters, offCourseLevel, elevationProfile]);
+  }, [enabled, phase, navigation, distanceMeters, offCourseLevel, elevationProfile, paceCoachingMessage]);
 }

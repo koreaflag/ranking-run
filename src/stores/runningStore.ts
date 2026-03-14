@@ -276,9 +276,19 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       startTime = Date.now();
     }
 
-    // While auto-paused, only update timer state — skip route/distance accumulation
+    // While auto-paused, update timer state + current location (for map display)
+    // but skip route/distance accumulation.
     if (isAutoPaused) {
-      set({ isAutoPaused, startTime, elapsedBeforePause });
+      set({
+        isAutoPaused,
+        startTime,
+        elapsedBeforePause,
+        // Keep updating currentLocation so the map shows the user's real position
+        // even while auto-paused. Without this, the blue dot freezes at the pause
+        // location and only jumps when resume triggers.
+        currentLocation: event,
+        currentSpeedMs: event.speed,
+      });
       return;
     }
 

@@ -44,7 +44,7 @@ struct RunCrewWatchApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(viewModel)
-                .onChange(of: scenePhase) { newPhase in
+                .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active {
                         viewModel.updateReachabilityStatus()
                         // Immediately poll phone for fresh stats when wrist is raised.

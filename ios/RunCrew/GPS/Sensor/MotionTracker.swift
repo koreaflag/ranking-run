@@ -10,8 +10,23 @@ class MotionTracker {
     private(set) var userAcceleration: CMAcceleration = CMAcceleration(x: 0, y: 0, z: 0)
     private(set) var attitude: CMAttitude?
     private(set) var rotationRate: CMRotationRate = CMRotationRate(x: 0, y: 0, z: 0)
-    private(set) var accelerationMagnitude: Double = 0
-    private(set) var accelerationVariance: Double = 1.0
+    /// Thread-safe: written on motion queue, read on main thread.
+    /// Using atomic load/store via lock to prevent data races.
+    private var _accelerationMagnitude: Double = 0
+    private var _accelerationVariance: Double = 1.0
+    private let lock = NSLock()
+
+    var accelerationMagnitude: Double {
+        lock.lock()
+        defer { lock.unlock() }
+        return _accelerationMagnitude
+    }
+
+    var accelerationVariance: Double {
+        lock.lock()
+        defer { lock.unlock() }
+        return _accelerationVariance
+    }
 
     private var recentMagnitudes: [Double] = []
     private let varianceWindowSize = 50
@@ -52,7 +67,9 @@ class MotionTracker {
             motion.userAcceleration.y * motion.userAcceleration.y +
             motion.userAcceleration.z * motion.userAcceleration.z
         )
-        accelerationMagnitude = mag
+        lock.lock()
+        _accelerationMagnitude = mag
+        lock.unlock()
 
         // Track variance for Kalman Filter process noise adjustment
         recentMagnitudes.append(mag)
@@ -64,13 +81,18 @@ class MotionTracker {
 
     private func updateVariance() {
         guard recentMagnitudes.count >= 5 else {
-            accelerationVariance = 1.0
+            lock.lock()
+            _accelerationVariance = 1.0
+            lock.unlock()
             return
         }
         let mean = recentMagnitudes.reduce(0, +) / Double(recentMagnitudes.count)
-        accelerationVariance = recentMagnitudes.reduce(0) {
+        let variance = recentMagnitudes.reduce(0) {
             $0 + ($1 - mean) * ($1 - mean)
         } / Double(recentMagnitudes.count)
+        lock.lock()
+        _accelerationVariance = variance
+        lock.unlock()
     }
 
     /// Get heading direction from device motion (radians)

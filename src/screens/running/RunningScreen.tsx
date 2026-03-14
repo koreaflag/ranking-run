@@ -397,13 +397,16 @@ export default function RunningScreen() {
             );
           }
 
-          if (sessionId) {
-            navigation.replace('RunResult', { sessionId });
+          // Read sessionId from store at action time to avoid stale closure —
+          // the server session ID may have arrived after the Alert was shown.
+          const currentSessionId = useRunningStore.getState().sessionId;
+          if (currentSessionId) {
+            navigation.replace('RunResult', { sessionId: currentSessionId });
           }
         },
       },
     ]);
-  }, [stopTracking, complete, hapticFeedback, sessionId, navigation, checkpointPasses, setCheckpointPasses]);
+  }, [stopTracking, complete, hapticFeedback, navigation, checkpointPasses, setCheckpointPasses, t]);
 
   // Watch stop (no confirmation — user already tapped stop on Watch)
   const handleWatchStop = useCallback(async () => {
@@ -415,10 +418,12 @@ export default function RunningScreen() {
     if (hapticFeedback) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-    if (sessionId) {
-      navigation.replace('RunResult', { sessionId });
+    // Read sessionId from store at action time to avoid stale closure
+    const currentSessionId = useRunningStore.getState().sessionId;
+    if (currentSessionId) {
+      navigation.replace('RunResult', { sessionId: currentSessionId });
     }
-  }, [stopTracking, complete, hapticFeedback, sessionId, navigation, checkpointPasses, setCheckpointPasses]);
+  }, [stopTracking, complete, hapticFeedback, navigation, checkpointPasses, setCheckpointPasses]);
 
   // Watch companion
   useWatchCompanion({
@@ -704,14 +709,14 @@ export default function RunningScreen() {
         {!courseId && loopDetected && distanceMeters >= 300 && (
           <View style={styles.loopArrivedBanner}>
             <Ionicons name="flag" size={16} color={colors.white} />
-            <Text style={styles.loopArrivedText}>Finish! Loop complete</Text>
+            <Text style={styles.loopArrivedText}>{t('running.status.loopComplete')}</Text>
           </View>
         )}
         {!courseId && isApproachingStart && !isNearStart && !loopDetected && distanceMeters >= 300 && (
           <View style={styles.loopApproachBanner}>
             <Ionicons name="navigate" size={16} color={colors.text} />
             <Text style={styles.loopApproachText}>
-              Approaching start ~{Math.round(distanceToStart)}m
+              {t('running.status.approachingStart', { distance: Math.round(distanceToStart) })}
             </Text>
           </View>
         )}

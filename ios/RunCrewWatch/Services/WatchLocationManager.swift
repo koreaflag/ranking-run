@@ -85,6 +85,7 @@ class WatchLocationManager: NSObject, CLLocationManagerDelegate {
             }
 
             // Distance accumulation
+            var isValidPoint = true
             if let last = lastLocation {
                 let delta = location.distance(from: last)
                 let timeDiff = location.timestamp.timeIntervalSince(last.timestamp)
@@ -95,6 +96,9 @@ class WatchLocationManager: NSObject, CLLocationManagerDelegate {
                     if speed <= 15.0 && delta > 1.0 {
                         totalDistance += delta
                         lastLocation = location
+                    } else if speed > 15.0 {
+                        // Teleport/noise — skip this point entirely
+                        isValidPoint = false
                     }
                     // If filtered out (teleport/noise), do NOT update lastLocation
                     // so the next delta is measured from the last valid position.
@@ -104,6 +108,9 @@ class WatchLocationManager: NSObject, CLLocationManagerDelegate {
             } else {
                 lastLocation = location
             }
+
+            // Only store valid points in route to prevent noisy data in sync
+            guard isValidPoint else { continue }
             locations.append(location)
 
             // Store route point for sync

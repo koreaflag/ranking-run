@@ -8,6 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '../../lib/icons';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import { COLORS, FONT_SIZES, SPACING, SHADOWS } from '../../utils/constants';
@@ -24,10 +25,12 @@ export default function RunStartOverlay({
   onStart,
   onGoalPress,
   onSettingsPress,
-  goalLabel = '목표 설정',
+  goalLabel,
   visible,
 }: RunStartOverlayProps) {
+  const { t } = useTranslation();
   const colors = useTheme();
+  const defaultGoalLabel = t('running.goalSetting');
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const translateY = useRef(new Animated.Value(visible ? 0 : 120)).current;
@@ -49,7 +52,8 @@ export default function RunStartOverlay({
     ]).start();
   }, [visible, translateY, opacity]);
 
-  const hasGoal = goalLabel !== '목표 설정';
+  const resolvedLabel = goalLabel ?? defaultGoalLabel;
+  const hasGoal = resolvedLabel !== defaultGoalLabel;
 
   return (
     <Animated.View
@@ -79,7 +83,7 @@ export default function RunStartOverlay({
           onPress={onStart}
           activeOpacity={0.85}
         >
-          <Text style={styles.startText}>시작</Text>
+          <Text style={styles.startText}>{t('running.controls.start')}</Text>
         </TouchableOpacity>
 
         {/* Goal button */}

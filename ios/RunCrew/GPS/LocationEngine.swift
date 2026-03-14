@@ -357,22 +357,29 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         gpsLostTime = nil
 
         // Spike detection: reject physically impossible jumps BEFORE kalman update
-        // to prevent kalman state corruption from bad data
+        // to prevent kalman state corruption from bad data.
+        // NOTE: We compare raw GPS against the last *filtered* position. The Kalman filter
+        // smooths position, so raw-vs-filtered distance can appear larger than actual movement.
+        // Use generous limits to avoid rejecting valid points during direction changes or
+        // when the filter is lagging behind (e.g., after resuming from stationary).
         if let lastLoc = lastFilteredLocation {
             let rawDist = GeoMath.distance(
                 lat1: lastLoc.latitude, lon1: lastLoc.longitude,
                 lat2: validLocation.coordinate.latitude, lon2: validLocation.coordinate.longitude
             )
             let timeDelta = (validLocation.timestamp.timeIntervalSince1970 * 1000 - lastLoc.timestamp) / 1000.0
-            // 10 m/s generous limit (raw GPS can overshoot vs filtered position)
-            let maxPlausibleDist = max(10.0 * max(timeDelta, 0.1), 5.0)
+            // 15 m/s limit (maxSpeed from OutlierDetector) — previous 10 m/s was too tight
+            // because raw GPS position can diverge from filtered position by several meters,
+            // especially after stationary periods when filter state lags behind.
+            let maxPlausibleDist = max(15.0 * max(timeDelta, 0.5), 10.0)
             if rawDist > maxPlausibleDist {
                 return
             }
             // Background GPS guard: when update interval is large (>5s),
             // GPS may report stale/cell-tower positions. Cap distance to prevent
-            // straight-line jumps across the map.
-            if timeDelta > 5.0 && rawDist > 30.0 {
+            // straight-line jumps across the map. Raised from 30m to 50m to avoid
+            // rejecting valid GPS updates after brief signal gaps.
+            if timeDelta > 5.0 && rawDist > 50.0 {
                 return
             }
         }
@@ -415,10 +422,19 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         // Stationary detection
         let previousState = stationaryDetector.state
         stationaryDetector.updateWithSpeed(filtered.speed)
+
+        let accelMagnitude = sensorFusion.getAccelerationMagnitude()
         stationaryDetector.updateWithAcceleration(
-            sensorFusion.getAccelerationMagnitude(),
+            accelMagnitude,
             isLowAccuracyMode: batteryOptimizer?.isLowAccuracy ?? false
         )
+
+        // Proactively restore GPS accuracy when accelerometer shows motion,
+        // even before StationaryDetector formally transitions to .moving.
+        // This breaks the feedback loop: low GPS accuracy → bad speed → stuck in stationary.
+        if previousState == .stationary && accelMagnitude > 0.12 {
+            batteryOptimizer?.onAccelerometerMotionDetected()
+        }
 
         if stationaryDetector.state != previousState {
             let event: [String: Any] = [
