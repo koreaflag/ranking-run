@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '../../lib/icons';
 import { useTheme } from '../../hooks/useTheme';
 import { FONT_SIZES, SPACING } from '../../utils/constants';
@@ -7,9 +7,10 @@ import { FONT_SIZES, SPACING } from '../../utils/constants';
 interface Props {
   currentKm: number;
   goalKm: number;
+  onGoalPress?: () => void;
 }
 
-export default function WeeklyGoalBar({ currentKm, goalKm }: Props) {
+export default function WeeklyGoalBar({ currentKm, goalKm, onGoalPress }: Props) {
   const colors = useTheme();
   const percent = goalKm > 0 ? Math.min((currentKm / goalKm) * 100, 100) : 0;
   const remaining = Math.max(0, goalKm - currentKm);
@@ -22,9 +23,20 @@ export default function WeeklyGoalBar({ currentKm, goalKm }: Props) {
           <Text style={[styles.currentValue, { color: colors.text }]}>
             {currentKm.toFixed(1)}
           </Text>
-          <Text style={[styles.currentUnit, { color: colors.textTertiary }]}>
-            / {goalKm} km
-          </Text>
+          <TouchableOpacity
+            onPress={onGoalPress}
+            style={styles.goalTouchable}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={onGoalPress ? 0.6 : 1}
+            disabled={!onGoalPress}
+          >
+            <Text style={[styles.currentUnit, { color: colors.textTertiary }]}>
+              / {goalKm} km
+            </Text>
+            {onGoalPress && (
+              <Ionicons name="pencil" size={10} color={colors.textTertiary} style={styles.editIcon} />
+            )}
+          </TouchableOpacity>
         </View>
         <Text style={[styles.percentText, {
           color: isComplete ? colors.success : colors.primary,
@@ -79,9 +91,17 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
+  goalTouchable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
   currentUnit: {
     fontSize: FONT_SIZES.sm,
     fontWeight: '600',
+  },
+  editIcon: {
+    marginLeft: 2,
   },
   percentText: {
     fontSize: FONT_SIZES.lg,

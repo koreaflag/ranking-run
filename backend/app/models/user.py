@@ -57,6 +57,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     total_runs: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     total_points: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     runner_level: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    weekly_goal_km: Mapped[float] = mapped_column(Float, default=20.0, server_default="20.0", nullable=False)
 
     # Relationships
     social_accounts: Mapped[list["SocialAccount"]] = relationship(

@@ -427,7 +427,11 @@
     "showLessCharts": "Collapse",
     "dailyCheckin": "Daily Check-in",
     "checkinSuccess": "Checked in!",
-    "checkinPoints": "+{{points}}P earned"
+    "checkinPoints": "+{{points}}P earned",
+    "setWeeklyGoal": "Set Weekly Goal",
+    "weeklyGoalTitle": "Weekly Goal Distance",
+    "customGoal": "Custom",
+    "saveGoal": "Save"
   },
   "profileEdit": {
     "title": "Edit Profile",

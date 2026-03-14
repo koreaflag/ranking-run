@@ -10,8 +10,10 @@ import {
   Alert,
   Image,
   Linking,
+  Modal,
   Platform,
   StatusBar,
+  TextInput,
   Animated,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -100,6 +102,9 @@ export default function MyPageScreen() {
   const [showAllCharts, setShowAllCharts] = useState(false);
   const [checkedInToday, setCheckedInToday] = useState(true); // default hidden until we check
   const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [customGoalInput, setCustomGoalInput] = useState('');
+  const [isSavingGoal, setIsSavingGoal] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(_cachedStats === null && _cachedRuns.length === 0);
 
   // Runner level info
@@ -151,6 +156,29 @@ export default function MyPageScreen() {
       setIsCheckingIn(false);
     }
   }, [checkedInToday, isCheckingIn, t]);
+
+  const handleOpenGoalModal = useCallback(() => {
+    setCustomGoalInput('');
+    setShowGoalModal(true);
+  }, []);
+
+  const handleSaveGoal = useCallback(async (goalKm: number) => {
+    if (goalKm < 1 || goalKm > 500 || isSavingGoal) return;
+    setIsSavingGoal(true);
+    try {
+      await userService.updateWeeklyGoal(goalKm);
+      if (analytics) {
+        const updated = { ...analytics, weekly_goal_km: goalKm };
+        setAnalytics(updated);
+        _cachedAnalytics = updated;
+      }
+      setShowGoalModal(false);
+    } catch {
+      Alert.alert(t('common.error'), t('common.errorRetry'));
+    } finally {
+      setIsSavingGoal(false);
+    }
+  }, [analytics, isSavingGoal, t]);
 
   const loadData = useCallback(async () => {
     try {
@@ -522,6 +550,7 @@ export default function MyPageScreen() {
                 <WeeklyGoalBar
                   currentKm={analytics.weekly_current_km}
                   goalKm={analytics.weekly_goal_km}
+                  onGoalPress={handleOpenGoalModal}
                 />
               </View>
             )}
@@ -941,6 +970,76 @@ export default function MyPageScreen() {
         </View>
       </ScrollView>
       )}
+      {/* Weekly Goal Setting Modal */}
+      <Modal
+        visible={showGoalModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGoalModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowGoalModal(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              {t('mypage.weeklyGoalTitle')}
+            </Text>
+
+            <View style={styles.goalPresets}>
+              {[10, 20, 30, 50, 100].map((km) => (
+                <TouchableOpacity
+                  key={km}
+                  style={[
+                    styles.goalPresetBtn,
+                    { backgroundColor: colors.surfaceLight, borderColor: colors.border },
+                    analytics?.weekly_goal_km === km && { backgroundColor: colors.primary, borderColor: colors.primary },
+                  ]}
+                  onPress={() => handleSaveGoal(km)}
+                  disabled={isSavingGoal}
+                >
+                  <Text style={[
+                    styles.goalPresetText,
+                    { color: colors.text },
+                    analytics?.weekly_goal_km === km && { color: '#fff' },
+                  ]}>
+                    {km} km
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={[styles.customGoalLabel, { color: colors.textSecondary }]}>
+              {t('mypage.customGoal')}
+            </Text>
+            <View style={styles.customGoalRow}>
+              <TextInput
+                style={[styles.customGoalInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceLight }]}
+                placeholder="km"
+                placeholderTextColor={colors.textTertiary}
+                keyboardType="decimal-pad"
+                value={customGoalInput}
+                onChangeText={setCustomGoalInput}
+                returnKeyType="done"
+              />
+              <TouchableOpacity
+                style={[styles.saveGoalBtn, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  const val = parseFloat(customGoalInput);
+                  if (!isNaN(val) && val >= 1 && val <= 500) {
+                    handleSaveGoal(val);
+                  }
+                }}
+                disabled={isSavingGoal || !customGoalInput}
+              >
+                <Text style={styles.saveGoalText}>{t('mypage.saveGoal')}</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
       </SafeAreaView>
     </BlurredBackground>
   );
@@ -1410,5 +1509,72 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   menuDivider: {
     height: StyleSheet.hairlineWidth, backgroundColor: c.divider,
     marginLeft: SPACING.lg + 36 + SPACING.md,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.lg,
+  },
+  modalContent: {
+    width: '100%',
+    borderRadius: BORDER_RADIUS.lg,
+    padding: SPACING.lg,
+    gap: SPACING.md,
+  },
+  modalTitle: {
+    fontSize: FONT_SIZES.lg,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  goalPresets: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+    justifyContent: 'center',
+  },
+  goalPresetBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    minWidth: 70,
+    alignItems: 'center',
+  },
+  goalPresetText: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+  },
+  customGoalLabel: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    marginTop: SPACING.xs,
+  },
+  customGoalRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    alignItems: 'center',
+  },
+  customGoalInput: {
+    flex: 1,
+    height: 42,
+    borderWidth: 1,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: 12,
+    fontSize: FONT_SIZES.md,
+    fontVariant: ['tabular-nums'] as const,
+  },
+  saveGoalBtn: {
+    height: 42,
+    paddingHorizontal: 20,
+    borderRadius: BORDER_RADIUS.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  saveGoalText: {
+    color: '#fff',
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
   },
 });

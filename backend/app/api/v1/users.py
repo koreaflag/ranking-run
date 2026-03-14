@@ -5,7 +5,7 @@ from typing import Literal
 from uuid import UUID
 
 from dependency_injector.wiring import inject, Provide
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Body, Depends, Query, status
 import json
 
 from geoalchemy2.functions import ST_AsGeoJSON
@@ -363,6 +363,20 @@ async def daily_checkin(
     return {"checked_in": True, "points_earned": 5, "total_points": user.total_points, "already": False}
 
 
+@router.patch("/me/weekly-goal")
+async def update_weekly_goal(
+    current_user: CurrentUser,
+    db: DbSession,
+    goal_km: float = Body(..., ge=1.0, le=500.0, embed=True),
+):
+    """Update the current user's weekly running goal (km)."""
+    user_result = await db.execute(select(User).where(User.id == current_user.id))
+    user = user_result.scalar_one()
+    user.weekly_goal_km = goal_km
+    await db.flush()
+    return {"weekly_goal_km": user.weekly_goal_km}
+
+
 @router.get("/me/runs", response_model=RunHistoryResponse)
 async def get_my_runs(
     current_user: CurrentUser,
@@ -581,8 +595,7 @@ async def get_analytics(
         .where(RunRecord.user_id == current_user.id, RunRecord.finished_at >= week_start_dt)
     )
     weekly_current = weekly_dist_result.scalar() or 0
-    # Default goal: 20km (could be user-configurable later)
-    weekly_goal_km = 20.0
+    weekly_goal_km = current_user.weekly_goal_km
 
     return AnalyticsResponse(
         weekly_stats=weekly_stats,

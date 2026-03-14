@@ -427,7 +427,11 @@
     "showLessCharts": "접기",
     "dailyCheckin": "오늘의 출석체크",
     "checkinSuccess": "출석 완료!",
-    "checkinPoints": "+{{points}}P 적립되었습니다"
+    "checkinPoints": "+{{points}}P 적립되었습니다",
+    "setWeeklyGoal": "주간 목표 설정",
+    "weeklyGoalTitle": "주간 목표 거리",
+    "customGoal": "직접 입력",
+    "saveGoal": "저장"
   },
   "settings": {
     "title": "설정",

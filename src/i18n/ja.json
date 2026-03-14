@@ -427,7 +427,11 @@
     "showLessCharts": "閉じる",
     "dailyCheckin": "今日の出席チェック",
     "checkinSuccess": "出席完了！",
-    "checkinPoints": "+{{points}}P 獲得しました"
+    "checkinPoints": "+{{points}}P 獲得しました",
+    "setWeeklyGoal": "週間目標設定",
+    "weeklyGoalTitle": "週間目標距離",
+    "customGoal": "カスタム入力",
+    "saveGoal": "保存"
   },
   "profileEdit": {
     "title": "プロフィール編集",

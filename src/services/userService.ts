@@ -170,4 +170,11 @@ export const userService = {
   async dailyCheckin(): Promise<{ checked_in: boolean; points_earned: number; total_points: number; already: boolean }> {
     return api.post('/users/me/daily-checkin');
   },
+
+  /**
+   * Update the user's weekly running goal (km).
+   */
+  async updateWeeklyGoal(goalKm: number): Promise<{ weekly_goal_km: number }> {
+    return api.patch<{ weekly_goal_km: number }>('/users/me/weekly-goal', { goal_km: goalKm });
+  },
 };
