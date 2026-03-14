@@ -11,6 +11,7 @@ class WatchSessionService: NSObject, WCSessionDelegate {
     var onLocationUpdate: (([String: Any]) -> Void)?
     var onMilestone: (([String: Any]) -> Void)?
     var onReachabilityChange: ((Bool) -> Void)?
+    var onWeeklyGoalUpdate: ((Double) -> Void)?
 
     private let healthStore = HKHealthStore()
     private var isHealthKitAuthorized = false
@@ -273,6 +274,12 @@ class WatchSessionService: NSObject, WCSessionDelegate {
 
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
+
+                    // Always apply weeklyGoalKm from pending context (not phase-dependent)
+                    if let goalKm = ctx[WatchMessageKeys.weeklyGoalKm] as? Double, goalKm > 0 {
+                        self.onWeeklyGoalUpdate?(goalKm)
+                    }
+
                     // Don't dispatch stale phases from previous runs on app activation.
                     // "completed"/"paused" are always stale (from a previous run).
                     // "countdown"/"running" are stale if the timestamp is too old.
@@ -328,6 +335,10 @@ class WatchSessionService: NSObject, WCSessionDelegate {
             ensureWorkoutSessionForRunning()
         }
         DispatchQueue.main.async { [weak self] in
+            // Apply weeklyGoalKm from applicationContext
+            if let goalKm = applicationContext[WatchMessageKeys.weeklyGoalKm] as? Double, goalKm > 0 {
+                self?.onWeeklyGoalUpdate?(goalKm)
+            }
             self?.onStateUpdate?(applicationContext)
         }
     }
@@ -375,6 +386,10 @@ class WatchSessionService: NSObject, WCSessionDelegate {
             case WatchMessageType.locationUpdate.rawValue:
                 self?.onLocationUpdate?(message)
             case WatchMessageType.stateUpdate.rawValue:
+                // Check for weeklyGoalKm in state updates (phone includes it)
+                if let goalKm = message[WatchMessageKeys.weeklyGoalKm] as? Double, goalKm > 0 {
+                    self?.onWeeklyGoalUpdate?(goalKm)
+                }
                 self?.onStateUpdate?(message)
             case WatchMessageType.milestone.rawValue:
                 self?.onMilestone?(message)

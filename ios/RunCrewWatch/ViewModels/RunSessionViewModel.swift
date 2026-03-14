@@ -194,6 +194,17 @@ class RunSessionViewModel: ObservableObject {
             self?.companionManager.handleMilestone(message)
         }
 
+        service.onWeeklyGoalUpdate = { [weak self] goalKm in
+            guard let self = self else { return }
+            // Apply phone's weekly goal without echoing back
+            if goalKm != self.settingsManager.weeklyGoalKm {
+                self.settingsManager.isSyncingFromPhone = true
+                self.settingsManager.setWeeklyGoal(goalKm)
+                self.settingsManager.isSyncingFromPhone = false
+                print("[RunSessionVM] Weekly goal synced from phone: \(goalKm)km")
+            }
+        }
+
         service.onReachabilityChange = { [weak self] reachable in
             self?.isPhoneReachable = reachable
             if reachable {

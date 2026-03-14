@@ -1,4 +1,5 @@
 import Foundation
+import WatchConnectivity
 
 /// Manages all standalone run settings persisted via UserDefaults.
 /// The ViewModel exposes @Published wrappers that forward to this manager.
@@ -101,10 +102,41 @@ class WatchSettingsManager {
         onSettingsChanged?()
     }
 
+    /// Flag to prevent sync loops: when the phone sends a goal update,
+    /// we set this before calling setWeeklyGoal so it doesn't echo back.
+    var isSyncingFromPhone = false
+
     func setWeeklyGoal(_ km: Double) {
         weeklyGoalKm = km
         UserDefaults.standard.set(km, forKey: "weeklyGoalKm")
         onSettingsChanged?()
+
+        // Send to phone (unless this change originated from the phone)
+        if !isSyncingFromPhone {
+            sendWeeklyGoalToPhone(km)
+        }
+    }
+
+    /// Send weekly goal change to the phone via WCSession.
+    private func sendWeeklyGoalToPhone(_ km: Double) {
+        let session = WCSession.default
+        guard session.activationState == .activated else { return }
+
+        let message: [String: Any] = [
+            WatchMessageKeys.type: WatchMessageType.weeklyGoalUpdate.rawValue,
+            WatchMessageKeys.weeklyGoalKm: km,
+            WatchMessageKeys.timestamp: Date().timeIntervalSince1970 * 1000
+        ]
+
+        // Use sendMessage for immediate delivery when reachable
+        if session.isReachable {
+            session.sendMessage(message, replyHandler: nil, errorHandler: { error in
+                print("[WatchSettingsMgr] sendWeeklyGoal sendMessage failed: \(error.localizedDescription)")
+            })
+        }
+
+        // Also use transferUserInfo for guaranteed delivery
+        session.transferUserInfo(message)
     }
 
     // MARK: - Weekly Activity

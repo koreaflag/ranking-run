@@ -13,21 +13,21 @@ class StationaryDetector {
 
     private var stateStartTime: Date = Date()
     private var recentSpeeds: [Double] = []
-    private let speedWindowSize = 5
+    private let speedWindowSize = 3
 
     // Thresholds
     private let stationarySpeedThreshold: Double = 0.3  // m/s
-    private let movingSpeedThreshold: Double = 0.5       // m/s (hysteresis, lowered for faster resume)
+    private let movingSpeedThreshold: Double = 0.4       // m/s (hysteresis)
     private let stationaryAccelThreshold: Double = 0.15  // g-force
     private let minStationaryDuration: TimeInterval = 3.0 // seconds
 
     private var consecutiveStationaryCount = 0
     private var consecutiveMovingCount = 0
-    private let requiredConsecutiveCount = 2
+    private let requiredConsecutiveCount = 1
 
     /// Grace period: don't transition to stationary until we have enough data
     private var totalUpdateCount = 0
-    private let graceUpdates = 10  // Ignore first 10 speed readings
+    private let graceUpdates = 5  // Ignore first 5 speed readings
 
     /// Update with new GPS speed
     func updateWithSpeed(_ speed: Double) {

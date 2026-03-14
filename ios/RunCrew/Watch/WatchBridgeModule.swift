@@ -28,6 +28,9 @@ class WatchBridgeModule: RCTEventEmitter {
         WatchSessionManager.shared.onWatchReachabilityChange = { [weak self] reachable in
             self?.sendEventIfListening("Watch_onReachabilityChange", body: ["isReachable": reachable])
         }
+        WatchSessionManager.shared.onWeeklyGoalFromWatch = { [weak self] data in
+            self?.sendEventIfListening("Watch_onWeeklyGoalUpdate", body: data)
+        }
         WatchSessionManager.shared.onStandaloneRunReceived = { [weak self] data in
             guard let self = self else { return }
             NSLog("[WatchBridgeModule] Standalone run received, hasListeners=%d", self.hasListeners ? 1 : 0)
@@ -50,7 +53,8 @@ class WatchBridgeModule: RCTEventEmitter {
             "Watch_onCommand",
             "Watch_onHeartRate",
             "Watch_onReachabilityChange",
-            "Watch_onStandaloneRun"
+            "Watch_onStandaloneRun",
+            "Watch_onWeeklyGoalUpdate"
         ]
     }
 
@@ -100,6 +104,14 @@ class WatchBridgeModule: RCTEventEmitter {
             // phase change from GPSTrackerModule.
             WatchSessionManager.shared.sendRunStateUpdate(dict, authoritative: false)
         }
+        resolve(nil)
+    }
+
+    @objc
+    func sendWeeklyGoalToWatch(_ goalKm: Double,
+                               resolver resolve: @escaping RCTPromiseResolveBlock,
+                               rejecter reject: @escaping RCTPromiseRejectBlock) {
+        WatchSessionManager.shared.sendWeeklyGoalToWatch(goalKm)
         resolve(nil)
     }
 

@@ -7,6 +7,7 @@ enum WatchMessageType: String {
     case command
     case heartRate
     case requestState
+    case weeklyGoalUpdate
 }
 
 enum WatchCommand: String {
@@ -76,4 +77,7 @@ struct WatchMessageKeys {
     // Countdown sync
     static let countdownStartedAt = "countdownStartedAt"
     static let countdownTotal = "countdownTotal"
+
+    // Weekly goal sync
+    static let weeklyGoalKm = "weeklyGoalKm"
 }

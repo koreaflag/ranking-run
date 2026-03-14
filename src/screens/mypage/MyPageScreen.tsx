@@ -11,6 +11,7 @@ import {
   Image,
   Linking,
   Modal,
+  NativeModules,
   Platform,
   StatusBar,
   TextInput,
@@ -171,6 +172,12 @@ export default function MyPageScreen() {
         const updated = { ...analytics, weekly_goal_km: goalKm };
         setAnalytics(updated);
         _cachedAnalytics = updated;
+      }
+      // Sync weekly goal to Apple Watch
+      if (Platform.OS === 'ios' && NativeModules.WatchBridgeModule) {
+        NativeModules.WatchBridgeModule.sendWeeklyGoalToWatch(goalKm).catch(() => {
+          // Silently ignore — watch may be unreachable
+        });
       }
       setShowGoalModal(false);
     } catch {

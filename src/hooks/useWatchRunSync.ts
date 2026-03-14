@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
 import { NativeModules, NativeEventEmitter, Platform, Alert } from 'react-native';
 import { runService } from '../services/runService';
+import { userService } from '../services/userService';
 import { useRunningStore } from '../stores/runningStore';
 import { formatDistance, formatDuration } from '../utils/format';
 import { WATCH_EVENTS } from '../types/watch';
+import type { WatchWeeklyGoalEvent } from '../types/watch';
 import i18n from '../i18n';
 
 const { WatchBridgeModule } = NativeModules;
@@ -232,8 +234,26 @@ export function useWatchRunSync() {
       }
     });
 
+    // Listen for weekly goal changes from the watch
+    const goalSub = emitter.addListener(
+      WATCH_EVENTS.WEEKLY_GOAL_UPDATE,
+      async (data: WatchWeeklyGoalEvent) => {
+        const goalKm = data.weeklyGoalKm;
+        if (!goalKm || goalKm < 1 || goalKm > 500) return;
+
+        console.log('[WatchRunSync] Weekly goal update from watch:', goalKm, 'km');
+        try {
+          await userService.updateWeeklyGoal(goalKm);
+          console.log('[WatchRunSync] Weekly goal saved to server:', goalKm, 'km');
+        } catch (error) {
+          console.warn('[WatchRunSync] Failed to save weekly goal from watch:', error);
+        }
+      },
+    );
+
     return () => {
       subscription.remove();
+      goalSub.remove();
     };
   }, []);
 }

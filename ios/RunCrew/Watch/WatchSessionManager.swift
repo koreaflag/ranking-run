@@ -13,6 +13,7 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     var onWatchCommand: (([String: Any]) -> Void)?
     var onHeartRateUpdate: (([String: Any]) -> Void)?
     var onWatchReachabilityChange: ((Bool) -> Void)?
+    var onWeeklyGoalFromWatch: (([String: Any]) -> Void)?
     var onStandaloneRunReceived: (([String: Any]) -> Void)? {
         didSet {
             // Flush any standalone runs that arrived before the callback was set
@@ -336,6 +337,41 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         }
     }
 
+    /// Send weekly goal to Watch via applicationContext (persists until next update).
+    func sendWeeklyGoalToWatch(_ goalKm: Double) {
+        guard session.activationState == .activated, session.isPaired else { return }
+
+        NSLog("[WatchSessionMgr] Sending weeklyGoalKm=%.1f to watch", goalKm)
+
+        // sendMessage for immediate delivery
+        if session.isReachable {
+            let message: [String: Any] = [
+                "type": "stateUpdate",
+                "weeklyGoalKm": goalKm,
+                "timestamp": Date().timeIntervalSince1970 * 1000
+            ]
+            session.sendMessage(message, replyHandler: nil, errorHandler: nil)
+        }
+
+        // Also merge into applicationContext so watch gets it on next launch
+        var ctx: [String: Any] = [
+            "type": "stateUpdate",
+            "weeklyGoalKm": goalKm,
+            "timestamp": Date().timeIntervalSince1970 * 1000
+        ]
+        // Merge with existing lastRunState if available
+        if let last = lastRunState {
+            for (key, value) in last where ctx[key] == nil {
+                ctx[key] = value
+            }
+        }
+        do {
+            try session.updateApplicationContext(ctx)
+        } catch {
+            NSLog("[WatchSessionMgr] updateApplicationContext failed: %@", error.localizedDescription)
+        }
+    }
+
     /// Send km milestone to Watch
     func sendMilestone(km: Int, splitPace: Int, totalTime: Int) {
         guard session.activationState == .activated, session.isPaired else { return }
@@ -402,6 +438,9 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         case "standaloneRunComplete":
             NSLog("[WatchSessionMgr] Received standalone run data from watch")
             deliverStandaloneRun(message)
+        case "weeklyGoalUpdate":
+            NSLog("[WatchSessionMgr] Received weekly goal update from watch")
+            onWeeklyGoalFromWatch?(message)
         default:
             break
         }
@@ -418,6 +457,9 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
             deliverStandaloneRun(userInfo)
         case "command":
             handleWatchCommand(userInfo)
+        case "weeklyGoalUpdate":
+            NSLog("[WatchSessionMgr] Received weekly goal via transferUserInfo")
+            onWeeklyGoalFromWatch?(userInfo)
         default:
             break
         }
@@ -441,6 +483,10 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         case "standaloneRunComplete":
             NSLog("[WatchSessionMgr] Received standalone run data from watch (with reply)")
             deliverStandaloneRun(message)
+            replyHandler(["status": "ok"])
+        case "weeklyGoalUpdate":
+            NSLog("[WatchSessionMgr] Received weekly goal from watch (with reply)")
+            onWeeklyGoalFromWatch?(message)
             replyHandler(["status": "ok"])
         case "requestState":
             // Watch is polling for current run state + location

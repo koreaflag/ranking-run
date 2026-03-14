@@ -260,7 +260,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
     let elapsedBeforePause = state.elapsedBeforePause;
 
     const elapsed = startTime ? (Date.now() - startTime) / 1000 + elapsedBeforePause : elapsedBeforePause;
-    const gracePeriodOver = elapsed >= 15;
+    const gracePeriodOver = elapsed >= 8;
 
     if (autoPause && gracePeriodOver) {
       if (!event.isMoving && !isAutoPaused) {

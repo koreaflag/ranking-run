@@ -29,6 +29,12 @@ export interface WatchReachabilityEvent {
   isReachable: boolean;
 }
 
+export interface WatchWeeklyGoalEvent {
+  type: 'weeklyGoalUpdate';
+  weeklyGoalKm: number;
+  timestamp: number;
+}
+
 // ---- JS -> Native Run State ----
 
 export interface WatchRunState {
@@ -48,4 +54,5 @@ export const WATCH_EVENTS = {
   HEART_RATE: 'Watch_onHeartRate',
   REACHABILITY_CHANGE: 'Watch_onReachabilityChange',
   STANDALONE_RUN: 'Watch_onStandaloneRun',
+  WEEKLY_GOAL_UPDATE: 'Watch_onWeeklyGoalUpdate',
 } as const;

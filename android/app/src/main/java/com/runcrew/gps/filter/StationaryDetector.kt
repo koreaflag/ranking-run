@@ -34,7 +34,7 @@ class StationaryDetector(
         private const val WINDOW_DURATION_MS = 3000L
 
         // Minimum time in a state before transition is allowed (debounce)
-        private const val MIN_STATE_DURATION_MS = 2000L
+        private const val MIN_STATE_DURATION_MS = 1000L
     }
 
     /**
