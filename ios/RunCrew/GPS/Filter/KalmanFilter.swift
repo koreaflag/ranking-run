@@ -17,6 +17,17 @@ class KalmanFilter {
     private let processNoiseVelocity: Double = 3.0
     private var dynamicProcessNoise: Double = 1.0
 
+    // Speed-adaptive Q scaling factors.
+    // Walking (< 2 m/s): lower Q trusts the prediction model more (smoother path).
+    // Jogging (2–5 m/s): default Q balances prediction and measurement.
+    // Fast running (> 5 m/s): higher Q trusts measurements more (responsive to changes).
+    private let walkingSpeedThreshold: Double = 2.0   // m/s
+    private let runningSpeedThreshold: Double = 5.0   // m/s
+    private let walkingQScale: Double = 0.6
+    private let joggingQScale: Double = 1.0
+    private let sprintingQScale: Double = 1.8
+    private var speedAdaptiveQScale: Double = 1.0
+
     // RTS Smoother: store intermediate states for backward pass
     // measTimestamp/measSpeed/measBearing carry original GPS metadata
     // so smoothRoute() output is self-contained (no need to align with filteredLocations)
@@ -57,6 +68,23 @@ class KalmanFilter {
         // (e.g., stationary -> running), causing distance under-counting.
         let scaled = accelerationVariance * 50.0 + 0.5
         dynamicProcessNoise = max(0.5, min(scaled, 10.0))
+    }
+
+    /// Update speed-adaptive Q scaling based on current estimated speed.
+    /// Walking (< 2 m/s): lower Q for smoother path (less measurement trust).
+    /// Jogging (2–5 m/s): default Q.
+    /// Fast running (> 5 m/s): higher Q for responsiveness (more measurement trust).
+    func updateSpeedAdaptiveQ() {
+        let currentSpeed = getEstimatedSpeed()
+        if currentSpeed < walkingSpeedThreshold {
+            speedAdaptiveQScale = walkingQScale
+        } else if currentSpeed > runningSpeedThreshold {
+            speedAdaptiveQScale = sprintingQScale
+        } else {
+            // Linear interpolation between walking and sprinting scales
+            let t = (currentSpeed - walkingSpeedThreshold) / (runningSpeedThreshold - walkingSpeedThreshold)
+            speedAdaptiveQScale = walkingQScale + t * (sprintingQScale - walkingQScale)
+        }
     }
 
     /// Predict + Update step with new GPS measurement
@@ -231,8 +259,8 @@ class KalmanFilter {
         let dt2 = dt * dt
         let dt3 = dt2 * dt / 2.0
         let dt4 = dt2 * dt2 / 4.0
-        let qp = processNoisePosition * dynamicProcessNoise
-        let qv = processNoiseVelocity * dynamicProcessNoise
+        let qp = processNoisePosition * dynamicProcessNoise * speedAdaptiveQScale
+        let qv = processNoiseVelocity * dynamicProcessNoise * speedAdaptiveQScale
         return [
             [qp * dt4, 0,        0,        qp * dt3, 0,        0],
             [0,        qp * dt4, 0,        0,        qp * dt3, 0],

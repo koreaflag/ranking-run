@@ -81,6 +81,24 @@ class RunService:
         await db.flush()
         return session
 
+    @staticmethod
+    def _validate_gps_temporal_order(raw_gps_points: list[dict]) -> None:
+        """Log a warning if GPS point timestamps are not monotonically increasing."""
+        if len(raw_gps_points) < 2:
+            return
+        out_of_order_count = 0
+        for i in range(1, len(raw_gps_points)):
+            prev_ts = raw_gps_points[i - 1].get("timestamp", 0)
+            curr_ts = raw_gps_points[i].get("timestamp", 0)
+            if curr_ts < prev_ts:
+                out_of_order_count += 1
+        if out_of_order_count > 0:
+            logger.warning(
+                "[RunService] %d out-of-order GPS timestamps detected in chunk (%d points)",
+                out_of_order_count,
+                len(raw_gps_points),
+            )
+
     async def upload_chunk(
         self,
         db: AsyncSession,
@@ -97,6 +115,9 @@ class RunService:
     ) -> RunChunk:
         """Upload a GPS data chunk for a run session."""
         await self._get_active_session(db, session_id, user_id)
+
+        # Validate temporal ordering of GPS points
+        self._validate_gps_temporal_order(raw_gps_points)
 
         existing = await db.execute(
             select(RunChunk).where(

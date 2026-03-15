@@ -35,6 +35,9 @@ class StationaryDetector(
 
         // Minimum time in a state before transition is allowed (debounce)
         private const val MIN_STATE_DURATION_MS = 1000L
+
+        // Number of consecutive readings in the new state required before transitioning
+        private const val HYSTERESIS_COUNT = 3
     }
 
     /**
@@ -61,6 +64,10 @@ class StationaryDetector(
 
     private var lastStateChangeTime: Long = System.currentTimeMillis()
     private var lastGpsSpeed: Double = 0.0
+
+    // Hysteresis: count consecutive readings that suggest the opposite state
+    private var pendingStateCount: Int = 0
+    private var pendingState: MovementState? = null
 
     // Accelerometer magnitude samples: Pair(timestamp_ms, magnitude)
     private val accelSamples = ArrayDeque<Pair<Long, Double>>(200)
@@ -95,6 +102,7 @@ class StationaryDetector(
     /**
      * Feed in the latest GPS-derived speed so the detector can cross-check.
      */
+    @Synchronized
     fun updateGpsSpeed(speedMs: Double) {
         lastGpsSpeed = speedMs
         evaluateState()
@@ -122,7 +130,9 @@ class StationaryDetector(
         }
 
         currentAccelVariance = computeVariance()
-        evaluateState()
+        synchronized(this) {
+            evaluateState()
+        }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
@@ -153,23 +163,40 @@ class StationaryDetector(
         val isLowAccel = currentAccelVariance < ACCEL_VARIANCE_THRESHOLD
         val isLowSpeed = lastGpsSpeed < SPEED_THRESHOLD
 
-        val newState = if (isLowAccel && isLowSpeed) {
+        val suggestedState = if (isLowAccel && isLowSpeed) {
             MovementState.STATIONARY
         } else {
             MovementState.MOVING
         }
 
-        if (newState != currentState) {
-            val durationInPreviousState = timeSinceLastChange
-            currentState = newState
-            lastStateChangeTime = now
-
-            for (listener in listeners) {
-                listener.onStateChanged(newState, durationInPreviousState)
+        if (suggestedState != currentState) {
+            // Hysteresis: require N consecutive readings in the new state
+            if (pendingState == suggestedState) {
+                pendingStateCount++
+            } else {
+                pendingState = suggestedState
+                pendingStateCount = 1
             }
+
+            if (pendingStateCount >= HYSTERESIS_COUNT) {
+                val durationInPreviousState = timeSinceLastChange
+                currentState = suggestedState
+                lastStateChangeTime = now
+                pendingState = null
+                pendingStateCount = 0
+
+                for (listener in listeners) {
+                    listener.onStateChanged(suggestedState, durationInPreviousState)
+                }
+            }
+        } else {
+            // Still in current state — reset pending counter
+            pendingState = null
+            pendingStateCount = 0
         }
     }
 
+    @Synchronized
     fun reset() {
         // Start in STATIONARY state so the first movement is properly detected
         // as a state transition. The evaluateState() call from the first accelerometer
@@ -179,5 +206,7 @@ class StationaryDetector(
         lastGpsSpeed = 0.0
         currentAccelVariance = 0.0
         accelSamples.clear()
+        pendingState = null
+        pendingStateCount = 0
     }
 }

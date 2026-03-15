@@ -1,5 +1,6 @@
 import Foundation
 import CoreLocation
+import UIKit
 
 /// Adaptive GPS accuracy control for battery optimization
 class BatteryOptimizer {
@@ -15,8 +16,28 @@ class BatteryOptimizer {
     /// while still saving battery during genuine long stops (traffic lights, rest).
     private let stationaryThreshold: TimeInterval = 60.0
 
+    /// Battery level threshold below which we suggest reduced accuracy mode.
+    /// 15% matches iOS low-power-mode alert level.
+    private let criticalBatteryLevel: Float = 0.15
+
+    /// Whether reduced accuracy was triggered by critically low battery.
+    private(set) var isCriticalBatteryMode = false
+
     init(locationManager: CLLocationManager) {
         self.locationManager = locationManager
+        // Enable battery monitoring so UIDevice.current.batteryLevel returns a valid value
+        UIDevice.current.isBatteryMonitoringEnabled = true
+    }
+
+    /// Check if battery is critically low (< 15%) and not charging.
+    /// Returns true if GPS accuracy should be reduced to conserve power.
+    func shouldReduceAccuracyForBattery() -> Bool {
+        let batteryLevel = UIDevice.current.batteryLevel
+        let batteryState = UIDevice.current.batteryState
+        // batteryLevel returns -1.0 if monitoring is not enabled or unavailable
+        guard batteryLevel >= 0 else { return false }
+        let isCharging = (batteryState == .charging || batteryState == .full)
+        return batteryLevel < criticalBatteryLevel && !isCharging
     }
 
     /// Called when stationary state is detected
@@ -25,18 +46,43 @@ class BatteryOptimizer {
             stationaryStartTime = Date()
         }
 
-        guard let start = stationaryStartTime,
-              Date().timeIntervalSince(start) >= stationaryThreshold,
-              isHighAccuracy else { return }
-
-        switchToLowAccuracy()
+        // Switch to low accuracy if stationary long enough OR battery critically low
+        if isHighAccuracy {
+            if shouldReduceAccuracyForBattery() {
+                isCriticalBatteryMode = true
+                switchToLowAccuracy()
+                return
+            }
+            guard let start = stationaryStartTime,
+                  Date().timeIntervalSince(start) >= stationaryThreshold else { return }
+            switchToLowAccuracy()
+        }
     }
 
     /// Called when movement is detected — immediately restore high accuracy GPS.
     func onMoving() {
         stationaryStartTime = nil
+        isCriticalBatteryMode = false
         if !isHighAccuracy {
             switchToHighAccuracy()
+        }
+    }
+
+    /// Periodic battery check during active tracking.
+    /// Call this from LocationEngine on each GPS update to detect critical battery
+    /// even while moving. When battery is critical, switch to kCLLocationAccuracyBest
+    /// (still good enough for running but saves power vs BestForNavigation).
+    func checkBatteryLevel() {
+        if shouldReduceAccuracyForBattery() && !isCriticalBatteryMode {
+            isCriticalBatteryMode = true
+            applyAccuracy(kCLLocationAccuracyBest)
+            // Don't set isHighAccuracy to false here — movement is still happening,
+            // we just downgrade from BestForNavigation to Best to save battery.
+        } else if !shouldReduceAccuracyForBattery() && isCriticalBatteryMode {
+            isCriticalBatteryMode = false
+            if isHighAccuracy {
+                applyAccuracy(kCLLocationAccuracyBestForNavigation)
+            }
         }
     }
 
@@ -78,6 +124,7 @@ class BatteryOptimizer {
 
     func reset() {
         stationaryStartTime = nil
+        isCriticalBatteryMode = false
         if !isHighAccuracy {
             switchToHighAccuracy()
         }

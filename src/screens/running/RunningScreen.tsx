@@ -250,6 +250,7 @@ export default function RunningScreen() {
     courseRoute,
     navLocation,
     currentLocation?.bearing ?? 0,
+    gpsAccuracy,
   );
 
   // Checkpoint tracker

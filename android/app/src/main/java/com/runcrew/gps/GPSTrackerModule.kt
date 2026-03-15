@@ -183,6 +183,12 @@ class GPSTrackerModule(
     fun resumeTracking(promise: Promise) {
         synchronized(trackingLock) {
             try {
+                // Re-check permission — user could revoke between pause/resume
+                if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
+                    promise.reject(ERROR_PERMISSION_DENIED, "Fine location permission was revoked")
+                    return
+                }
+
                 locationEngine?.resume()
                 promise.resolve(null)
             } catch (e: Exception) {

@@ -24,6 +24,8 @@ class CrewService:
 
     MAX_CREWS_PER_USER = 5
     CREW_CREATION_COST = 500
+    # Hard upper bound on crew members regardless of level config
+    ABSOLUTE_MAX_MEMBERS = 500
 
     async def create_crew(
         self,
@@ -318,7 +320,12 @@ class CrewService:
             effective_max = min(crew.max_members, level_max)
         elif crew.max_members:
             effective_max = crew.max_members
-        if effective_max is not None and crew.member_count >= effective_max:
+        # Enforce hard upper bound
+        if effective_max is None:
+            effective_max = self.ABSOLUTE_MAX_MEMBERS
+        else:
+            effective_max = min(effective_max, self.ABSOLUTE_MAX_MEMBERS)
+        if crew.member_count >= effective_max:
             raise BadRequestError(
                 code="CREW_FULL",
                 message=f"크루 정원이 가득 찼습니다 (Lv.{crew.level}: 최대 {effective_max}명)",
@@ -390,7 +397,12 @@ class CrewService:
             effective_max = min(crew.max_members, level_max)
         elif crew.max_members:
             effective_max = crew.max_members
-        if effective_max is not None and crew.member_count >= effective_max:
+        # Enforce hard upper bound
+        if effective_max is None:
+            effective_max = self.ABSOLUTE_MAX_MEMBERS
+        else:
+            effective_max = min(effective_max, self.ABSOLUTE_MAX_MEMBERS)
+        if crew.member_count >= effective_max:
             raise BadRequestError(
                 code="CREW_FULL",
                 message=f"크루 정원이 가득 찼습니다 (Lv.{crew.level}: 최대 {effective_max}명)",
@@ -692,6 +704,7 @@ class CrewService:
         self,
         db: AsyncSession,
         crew_id: UUID,
+        limit: int = 100,
     ) -> list[dict]:
         """Get this week's distance ranking for crew members."""
         from datetime import datetime, timedelta, timezone
@@ -727,6 +740,7 @@ class CrewService:
             .where(CrewMember.crew_id == crew_id)
             .group_by(CrewMember.user_id, User.nickname, User.avatar_url)
             .order_by(desc("weekly_distance"))
+            .limit(limit)
         )
         rows = result.all()
 

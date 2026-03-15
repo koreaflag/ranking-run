@@ -149,29 +149,39 @@ export const useCrewStore = create<CrewState>((set, get) => ({
   },
 
   leaveCrew: async (crewId: string) => {
+    const previousCrew = get().currentCrew;
+    // Optimistic update
+    set((state) => ({
+      currentCrew: state.currentCrew
+        ? { ...state.currentCrew, is_member: false, my_role: null, member_count: state.currentCrew.member_count - 1 }
+        : null,
+    }));
     try {
       await crewService.leaveCrew(crewId);
-      set((state) => ({
-        currentCrew: state.currentCrew
-          ? { ...state.currentCrew, is_member: false, my_role: null, member_count: state.currentCrew.member_count - 1 }
-          : null,
-      }));
     } catch {
+      // Rollback on failure
+      set({ currentCrew: previousCrew });
       throw new Error('leave failed');
     }
   },
 
   kickMember: async (crewId: string, userId: string) => {
+    const previousMembers = get().members;
+    const previousTotal = get().membersTotal;
+    const previousCrew = get().currentCrew;
+    // Optimistic update
+    set((state) => ({
+      members: state.members.filter((m) => m.user_id !== userId),
+      membersTotal: state.membersTotal - 1,
+      currentCrew: state.currentCrew
+        ? { ...state.currentCrew, member_count: state.currentCrew.member_count - 1 }
+        : null,
+    }));
     try {
       await crewService.kickMember(crewId, userId);
-      set((state) => ({
-        members: state.members.filter((m) => m.user_id !== userId),
-        membersTotal: state.membersTotal - 1,
-        currentCrew: state.currentCrew
-          ? { ...state.currentCrew, member_count: state.currentCrew.member_count - 1 }
-          : null,
-      }));
     } catch {
+      // Rollback on failure
+      set({ members: previousMembers, membersTotal: previousTotal, currentCrew: previousCrew });
       useToastStore.getState().showToast('error', '멤버 추방에 실패했습니다');
       throw new Error('kick failed');
     }

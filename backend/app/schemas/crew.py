@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CrewCreateRequest(BaseModel):
@@ -43,6 +43,8 @@ class CrewOwnerInfo(BaseModel):
 
 
 class CrewResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     name: str
     description: str | None = None
@@ -75,6 +77,8 @@ class CrewListResponse(BaseModel):
 
 
 class CrewMemberResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     user_id: str
     nickname: str | None = None
     avatar_url: str | None = None

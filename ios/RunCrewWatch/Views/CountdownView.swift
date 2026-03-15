@@ -20,8 +20,15 @@ struct CountdownView: View {
                     .scaleEffect(scale)
                     .opacity(opacity)
                     .accessibilityLabel("카운트다운 \(displayNumber)")
+                    .accessibilityAddTraits(.updatesFrequently)
+            } else {
+                // Announce start to VoiceOver when countdown finishes
+                Text("")
+                    .accessibilityLabel("러닝 시작")
+                    .accessibilityHidden(false)
             }
         }
+        .accessibilityElement(children: .contain)
         .onAppear {
             startCountdown()
         }

@@ -1,7 +1,7 @@
 """Crew challenge (raid run) service: create, end, and query crew challenges."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -20,12 +20,15 @@ logger = logging.getLogger(__name__)
 class CrewChallengeService:
     """Handles crew challenge lifecycle: creation, termination, and queries."""
 
+    MAX_CHALLENGE_DURATION_DAYS = 90
+
     async def create_challenge(
         self,
         db: AsyncSession,
         crew_id: UUID,
         course_id: UUID,
         user_id: UUID,
+        end_date: datetime | None = None,
     ) -> dict:
         """Create a new crew challenge (raid run) for the given crew and course.
 
@@ -59,6 +62,34 @@ class CrewChallengeService:
                 code="CHALLENGE_LIMIT",
                 message=f"동시 챌린지는 최대 {max_challenges}개입니다",
             )
+
+        # Validate end_date if provided
+        now = datetime.now(timezone.utc)
+        if end_date is not None:
+            if end_date <= now:
+                raise BadRequestError(
+                    code="INVALID_END_DATE",
+                    message="챌린지 종료일은 현재 시간 이후여야 합니다",
+                )
+            if end_date - now > timedelta(days=self.MAX_CHALLENGE_DURATION_DAYS):
+                raise BadRequestError(
+                    code="DURATION_TOO_LONG",
+                    message=f"챌린지 기간은 최대 {self.MAX_CHALLENGE_DURATION_DAYS}일입니다",
+                )
+
+        # Auto-end stale active challenges older than MAX_CHALLENGE_DURATION_DAYS
+        stale_cutoff = now - timedelta(days=self.MAX_CHALLENGE_DURATION_DAYS)
+        stale_result = await db.execute(
+            select(CrewChallenge).where(
+                CrewChallenge.crew_id == crew_id,
+                CrewChallenge.status == "active",
+                CrewChallenge.created_at < stale_cutoff,
+            )
+        )
+        for stale in stale_result.scalars().all():
+            stale.status = "ended"
+            stale.ended_at = now
+            logger.info("Auto-ended stale challenge %s (created %s)", stale.id, stale.created_at)
 
         # Create new challenge
         challenge = CrewChallenge(

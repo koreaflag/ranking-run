@@ -234,6 +234,8 @@ def _generate_checkpoints(route_coords: list, interval_meters: int = 500) -> lis
 class CourseService:
     """Handles course CRUD, spatial queries, and stats retrieval."""
 
+    MAX_COURSES_PER_DAY = 10
+
     async def create_course(
         self,
         db: AsyncSession,
@@ -252,6 +254,24 @@ class CourseService:
         lap_count: int | None = None,
     ) -> Course:
         """Create a new course from a run record."""
+        from datetime import datetime, timedelta, timezone
+        from app.core.exceptions import BadRequestError
+
+        # Rate limit: max courses per user per 24 hours
+        since = datetime.now(timezone.utc) - timedelta(hours=24)
+        recent_count_result = await db.execute(
+            select(func.count(Course.id)).where(
+                Course.creator_id == user_id,
+                Course.created_at >= since,
+            )
+        )
+        recent_count = recent_count_result.scalar() or 0
+        if recent_count >= self.MAX_COURSES_PER_DAY:
+            raise BadRequestError(
+                code="COURSE_RATE_LIMIT",
+                message=f"코스는 24시간 내 최대 {self.MAX_COURSES_PER_DAY}개까지 생성할 수 있습니다",
+            )
+
         result = await db.execute(
             select(RunRecord).where(
                 RunRecord.id == run_record_id,

@@ -32,9 +32,17 @@ class KalmanFilter(
         private const val VELOCITY_EAST = 4
         private const val VELOCITY_UP = 5
 
-        // Default process noise standard deviations
-        private const val DEFAULT_ACCEL_NOISE = 1.5  // m/s^2 for running
+        // Process noise standard deviations — adapted by speed
+        private const val ACCEL_NOISE_STATIONARY = 0.5  // m/s^2 when still
+        private const val ACCEL_NOISE_WALKING = 1.0     // m/s^2 when walking
+        private const val ACCEL_NOISE_RUNNING = 1.5     // m/s^2 when running
+        private const val ACCEL_NOISE_SPRINTING = 2.5   // m/s^2 when sprinting
         private const val DEFAULT_VERTICAL_NOISE = 0.5
+
+        // Speed thresholds (m/s) for process noise adaptation
+        private const val SPEED_STATIONARY = 0.3
+        private const val SPEED_WALKING = 2.0
+        private const val SPEED_RUNNING = 5.0
 
         // Initial position uncertainty (meters)
         private const val INITIAL_POSITION_VARIANCE = 100.0
@@ -101,6 +109,7 @@ class KalmanFilter(
      *
      * Returns null if the filter is not yet initialized.
      */
+    @Synchronized
     fun process(point: GPSPoint): FilterResult? {
         if (!initialized) {
             initialize(point)
@@ -180,8 +189,15 @@ class KalmanFilter(
         // Copy pNew back
         System.arraycopy(pNew, 0, P, 0, STATE_DIM * STATE_DIM)
 
-        // Add process noise Q
-        val accelNoise = DEFAULT_ACCEL_NOISE * kotlin.math.sqrt(accelerometerVariance)
+        // Add process noise Q — adapt base noise by current estimated speed
+        val currentSpeed = GeoMath.speedFromComponents(x[VELOCITY_NORTH], x[VELOCITY_EAST])
+        val baseAccelNoise = when {
+            currentSpeed < SPEED_STATIONARY -> ACCEL_NOISE_STATIONARY
+            currentSpeed < SPEED_WALKING -> ACCEL_NOISE_WALKING
+            currentSpeed < SPEED_RUNNING -> ACCEL_NOISE_RUNNING
+            else -> ACCEL_NOISE_SPRINTING
+        }
+        val accelNoise = baseAccelNoise * kotlin.math.sqrt(accelerometerVariance)
         val qAccel = accelNoise * accelNoise
         val qVert = DEFAULT_VERTICAL_NOISE * DEFAULT_VERTICAL_NOISE
 
@@ -329,6 +345,7 @@ class KalmanFilter(
     /**
      * Get current estimated position in lat/lng/alt.
      */
+    @Synchronized
     fun getCurrentPosition(): DoubleArray {
         return coordinateConverter.toLatLng(x[POSITION_NORTH], x[POSITION_EAST], x[POSITION_UP])
     }
@@ -336,6 +353,7 @@ class KalmanFilter(
     /**
      * Get current estimated speed (m/s).
      */
+    @Synchronized
     fun getCurrentSpeed(): Double {
         return GeoMath.speedFromComponents(x[VELOCITY_NORTH], x[VELOCITY_EAST])
     }
@@ -343,12 +361,14 @@ class KalmanFilter(
     /**
      * Get current estimated bearing (degrees).
      */
+    @Synchronized
     fun getCurrentBearing(): Double {
         return GeoMath.bearingFromComponents(x[VELOCITY_NORTH], x[VELOCITY_EAST])
     }
 
     fun isInitialized(): Boolean = initialized
 
+    @Synchronized
     fun reset() {
         for (i in x.indices) x[i] = 0.0
         for (i in P.indices) P[i] = 0.0

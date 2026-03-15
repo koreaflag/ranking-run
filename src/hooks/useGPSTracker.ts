@@ -18,9 +18,14 @@ const { GPSTrackerModule } = NativeModules;
  * The actual native module is implemented by the Android/iOS GPS agents.
  * This hook only handles the JS-side bridge.
  */
+/** Heartbeat interval: if no GPS updates received for this duration while running, attempt restart */
+const GPS_HEARTBEAT_TIMEOUT_MS = 30_000;
+
 export function useGPSTracker() {
   const subscriptionsRef = useRef<Array<{ remove: () => void }>>([]);
   const gpsLockedRef = useRef(false);
+  const lastUpdateTimeRef = useRef<number>(Date.now());
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Use individual selectors for stable references (Zustand returns the same
   // function object across renders when selected individually, preventing
@@ -83,6 +88,7 @@ export function useGPSTracker() {
     const locationSub = emitter.addListener(
       GPS_EVENTS.LOCATION_UPDATE,
       (event: LocationUpdateEvent) => {
+        lastUpdateTimeRef.current = Date.now();
         updateLocation(event);
       },
     );
@@ -150,10 +156,34 @@ export function useGPSTracker() {
       pollStatus();
     }, 3000);
 
+    // Heartbeat: if no GPS updates for 30s while in 'running' phase, restart tracking
+    lastUpdateTimeRef.current = Date.now();
+    heartbeatIntervalRef.current = setInterval(() => {
+      const currentPhase = useRunningStore.getState().phase;
+      if (currentPhase !== 'running') return;
+      const elapsed = Date.now() - lastUpdateTimeRef.current;
+      if (elapsed > GPS_HEARTBEAT_TIMEOUT_MS) {
+        console.warn(`[useGPSTracker] No GPS update for ${Math.round(elapsed / 1000)}s, attempting restart`);
+        GPSTrackerModule.stopTracking()
+          .then(() => GPSTrackerModule.startTracking())
+          .then(() => {
+            lastUpdateTimeRef.current = Date.now();
+            console.log('[useGPSTracker] GPS tracking restarted via heartbeat');
+          })
+          .catch((err: any) => {
+            console.error('[useGPSTracker] Heartbeat restart failed:', err);
+          });
+      }
+    }, 10_000);
+
     return () => {
       subscriptionsRef.current.forEach((sub) => sub.remove());
       subscriptionsRef.current = [];
       clearInterval(pollInterval);
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
     };
   }, [phase, updateLocation, updateGPSStatus, addSplit, setAutoPaused]);
 

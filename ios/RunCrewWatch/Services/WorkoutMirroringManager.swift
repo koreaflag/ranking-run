@@ -2,6 +2,11 @@ import CoreLocation
 import Foundation
 import HealthKit
 
+/// Error type for mirroring timeout.
+private enum MirroringError: Error {
+    case timeout
+}
+
 /// Manages HKWorkoutSession with mirroring for instant phone↔watch phase sync.
 /// On watchOS 10+, workout state changes (start/pause/resume/stop) propagate
 /// through Apple's dedicated workout channel (~10-20ms) instead of WCSession (~100-300ms).
@@ -100,13 +105,29 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
             workoutConfiguration: config
         )
 
-        // Mirror to iPhone → instant phase sync
+        // Mirror to iPhone → instant phase sync.
+        // Timeout after 15 seconds to prevent hanging indefinitely if the phone
+        // is unreachable. Falls back to standalone mode (WCSession-based sync).
         Task {
             do {
-                try await session.startMirroringToCompanionDevice()
-                print("[WorkoutMirror] ✅ Mirroring started successfully")
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    group.addTask {
+                        try await session.startMirroringToCompanionDevice()
+                    }
+                    group.addTask {
+                        try await Task.sleep(nanoseconds: 15_000_000_000) // 15 seconds
+                        throw MirroringError.timeout
+                    }
+                    // Wait for whichever finishes first
+                    try await group.next()
+                    // Cancel the other task
+                    group.cancelAll()
+                }
+                print("[WorkoutMirror] Mirroring started successfully")
+            } catch is MirroringError {
+                print("[WorkoutMirror] Mirroring timed out after 15s — falling back to WCSession sync")
             } catch {
-                print("[WorkoutMirror] ⚠️ startMirroring error: \(error)")
+                print("[WorkoutMirror] startMirroring error: \(error) — falling back to WCSession sync")
             }
         }
 

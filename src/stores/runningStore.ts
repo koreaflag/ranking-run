@@ -10,6 +10,11 @@ const LOOP_PROXIMITY_RADIUS_M = 30;   // "Near start" radius
 const LOOP_APPROACH_RADIUS_M = 100;   // "Approaching start" radius (pre-warning)
 const LOOP_COOLDOWN_MS = 60_000;      // Don't re-trigger for 60s after detection
 
+// Memory cap for filteredLocations (raw GPS data for chunk uploads).
+// When exceeded, drop oldest 20% to prevent unbounded memory growth on ultra-long runs.
+const MAX_FILTERED_LOCATIONS = 50_000;
+const FILTERED_LOCATIONS_TRIM_RATIO = 0.8; // keep last 80%
+
 export type RunningPhase = 'idle' | 'countdown' | 'running' | 'paused' | 'completed';
 
 interface RunningState {
@@ -334,7 +339,13 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       cumulativeDistance: event.distanceFromStart,
       isInterpolated: false,
     };
-    const newFilteredLocations = [...state.filteredLocations, newFilteredLocation];
+    let newFilteredLocations = [...state.filteredLocations, newFilteredLocation];
+    // Cap filteredLocations to prevent unbounded memory growth on ultra-long runs.
+    // markChunkUploaded trims uploaded points, but if uploads stall, this is a safety net.
+    if (newFilteredLocations.length > MAX_FILTERED_LOCATIONS) {
+      const keepFrom = Math.floor(newFilteredLocations.length * (1 - FILTERED_LOCATIONS_TRIM_RATIO));
+      newFilteredLocations = newFilteredLocations.slice(keepFrom);
+    }
 
     // Save start point from first GPS fix
     const startPoint = state.startPoint ?? currentPos;

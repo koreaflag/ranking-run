@@ -89,6 +89,9 @@ function decodeJwtPayload(token: string): { exp?: number } | null {
 /** Pre-emptive refresh threshold: 10 minutes before expiry */
 const REFRESH_AHEAD_SEC = 600;
 
+/** In-flight GET request deduplication map: URL → Promise */
+const pendingGetRequests = new Map<string, Promise<unknown>>();
+
 async function request<T = unknown>(
   endpoint: string,
   options: ApiOptions = {},
@@ -161,8 +164,18 @@ async function request<T = unknown>(
 }
 
 const api = {
-  get: <T = unknown>(endpoint: string, options?: ApiOptions) =>
-    request<T>(endpoint, { ...options, method: 'GET' }),
+  get: <T = unknown>(endpoint: string, options?: ApiOptions) => {
+    // Deduplicate concurrent GET requests to the same endpoint
+    const key = endpoint;
+    const existing = pendingGetRequests.get(key);
+    if (existing) return existing as Promise<T>;
+
+    const promise = request<T>(endpoint, { ...options, method: 'GET' }).finally(() => {
+      pendingGetRequests.delete(key);
+    });
+    pendingGetRequests.set(key, promise);
+    return promise;
+  },
 
   post: <T = unknown>(endpoint: string, body?: unknown, options?: ApiOptions) =>
     request<T>(endpoint, { ...options, method: 'POST', body: body instanceof FormData ? (body as unknown as BodyInit) : (body ? JSON.stringify(body) : undefined) }),

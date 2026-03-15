@@ -3,7 +3,9 @@ package com.runcrew.gps
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.GnssStatus
 import android.location.LocationManager
+import android.os.Build
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -89,6 +91,15 @@ class LocationEngine(
     @Volatile
     private var currentGpsStatus = "searching"
 
+    // --- Satellite tracking ---
+
+    @Volatile
+    private var satelliteCount = 0
+    @Volatile
+    private var usedSatelliteCount = 0
+
+    private var gnssStatusCallback: GnssStatus.Callback? = null
+
     // --- Previous filtered location for distance calculation ---
 
     @Volatile
@@ -145,7 +156,7 @@ class LocationEngine(
         coldStartComplete = false
         coldStartBeginTime = System.currentTimeMillis()
         currentGpsStatus = "searching"
-        listener?.onGPSStatusChange("searching", null, 0)
+        listener?.onGPSStatusChange("searching", null, usedSatelliteCount)
 
         // Reset all filter state
         kalmanFilter.reset()
@@ -161,6 +172,9 @@ class LocationEngine(
         // Start sensors
         sensorFusionManager?.start()
 
+        // Start satellite tracking
+        registerGnssStatusCallback()
+
         // Start GPS
         requestLocationUpdates()
     }
@@ -170,12 +184,13 @@ class LocationEngine(
      */
     fun stop() {
         removeLocationUpdates()
+        unregisterGnssStatusCallback()
         sensorFusionManager?.stop()
         session.stop()
 
         if (currentGpsStatus != "disabled") {
             currentGpsStatus = "disabled"
-            listener?.onGPSStatusChange("disabled", null, 0)
+            listener?.onGPSStatusChange("disabled", null, usedSatelliteCount)
         }
     }
 
@@ -205,7 +220,7 @@ class LocationEngine(
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval)
             .setMinUpdateIntervalMillis(fastest)
             .setMinUpdateDistanceMeters(0f)
-            .setMaxUpdateDelayMillis(0)
+            .setMaxUpdateDelayMillis(interval * 2)  // 2x interval for batching efficiency
             .build()
 
         try {
@@ -230,7 +245,7 @@ class LocationEngine(
         )
             .setMinUpdateIntervalMillis(BatteryOptimizer.FASTEST_INTERVAL_MOVING_MS)
             .setMinUpdateDistanceMeters(0f)
-            .setMaxUpdateDelayMillis(0)
+            .setMaxUpdateDelayMillis(BatteryOptimizer.INTERVAL_MOVING_MS * 2)  // 2x interval for batching efficiency
             .build()
 
         locationCallback = object : LocationCallback() {
@@ -245,7 +260,7 @@ class LocationEngine(
                     val now = System.currentTimeMillis()
                     if (now - lastGpsUpdateTime > GPS_LOST_TIMEOUT_MS && currentGpsStatus != "lost") {
                         currentGpsStatus = "lost"
-                        listener?.onGPSStatusChange("lost", null, 0)
+                        listener?.onGPSStatusChange("lost", null, usedSatelliteCount)
                     }
                 }
             }
@@ -287,18 +302,18 @@ class LocationEngine(
             if (point.horizontalAccuracy <= COLD_START_ACCURACY_THRESHOLD) {
                 coldStartComplete = true
                 currentGpsStatus = "locked"
-                listener?.onGPSStatusChange("locked", point.horizontalAccuracy, 0)
+                listener?.onGPSStatusChange("locked", point.horizontalAccuracy, usedSatelliteCount)
             } else {
                 // Check timeout
                 if (System.currentTimeMillis() - coldStartBeginTime > COLD_START_TIMEOUT_MS) {
                     // Accept what we have and proceed
                     coldStartComplete = true
                     currentGpsStatus = "locked"
-                    listener?.onGPSStatusChange("locked", point.horizontalAccuracy, 0)
+                    listener?.onGPSStatusChange("locked", point.horizontalAccuracy, usedSatelliteCount)
                     Log.w(TAG, "Cold start timeout. Proceeding with accuracy: ${point.horizontalAccuracy}m")
                 } else {
                     // Still waiting for accurate fix
-                    listener?.onGPSStatusChange("searching", point.horizontalAccuracy, 0)
+                    listener?.onGPSStatusChange("searching", point.horizontalAccuracy, usedSatelliteCount)
                     return
                 }
             }
@@ -308,11 +323,11 @@ class LocationEngine(
         if (point.horizontalAccuracy > OutlierDetector.MAX_ACCURACY_METERS) {
             if (currentGpsStatus != "lost") {
                 currentGpsStatus = "lost"
-                listener?.onGPSStatusChange("lost", point.horizontalAccuracy, 0)
+                listener?.onGPSStatusChange("lost", point.horizontalAccuracy, usedSatelliteCount)
             }
         } else if (currentGpsStatus != "locked") {
             currentGpsStatus = "locked"
-            listener?.onGPSStatusChange("locked", point.horizontalAccuracy, 0)
+            listener?.onGPSStatusChange("locked", point.horizontalAccuracy, usedSatelliteCount)
         }
 
         // If session is paused, don't process further
@@ -375,9 +390,11 @@ class LocationEngine(
         previousFilteredLat = filterResult.latitude
         previousFilteredLng = filterResult.longitude
 
-        // Adaptive GPS interval
+        // Adaptive GPS interval based on movement and battery state
         val isMoving = !isStationary
-        if (batteryOptimizer.updateMovementState(isMoving)) {
+        val movementChanged = batteryOptimizer.updateMovementState(isMoving)
+        val batteryChanged = batteryOptimizer.updateBatteryState(context)
+        if (movementChanged || batteryChanged) {
             updateLocationInterval()
         }
 
@@ -409,5 +426,40 @@ class LocationEngine(
     private fun isGPSEnabled(): Boolean {
         val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
         return locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) ?: false
+    }
+
+    // --- GNSS satellite tracking ---
+
+    private fun registerGnssStatusCallback() {
+        if (!hasLocationPermission()) return
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
+
+        val callback = object : GnssStatus.Callback() {
+            override fun onSatelliteStatusChanged(status: GnssStatus) {
+                satelliteCount = status.satelliteCount
+                var used = 0
+                for (i in 0 until status.satelliteCount) {
+                    if (status.usedInFix(i)) used++
+                }
+                usedSatelliteCount = used
+            }
+        }
+        gnssStatusCallback = callback
+
+        try {
+            locationManager.registerGnssStatusCallback(callback, android.os.Handler(Looper.getMainLooper()))
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException registering GNSS status callback", e)
+        }
+    }
+
+    private fun unregisterGnssStatusCallback() {
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
+        gnssStatusCallback?.let { callback ->
+            locationManager.unregisterGnssStatusCallback(callback)
+        }
+        gnssStatusCallback = null
+        satelliteCount = 0
+        usedSatelliteCount = 0
     }
 }

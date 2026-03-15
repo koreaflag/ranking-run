@@ -20,10 +20,21 @@ class OutlierDetector {
         const val MAX_SPEED_MS = 15.0              // ~54 km/h, sprint world record ~12 m/s
         const val MAX_ACCELERATION_MS2 = 8.0       // m/s^2
         const val MAX_STALENESS_MS = 10_000L       // 10 seconds
+
+        // Adaptive speed thresholds based on recent activity
+        private const val WALKING_SPEED_THRESHOLD = 2.0    // m/s (~7.2 km/h)
+        private const val WALKING_MAX_SPEED_MS = 6.0       // m/s (~21.6 km/h) — generous for walking
+        private const val RUNNING_MAX_SPEED_MS = MAX_SPEED_MS
+
+        // Number of recent speeds to average for adaptive threshold
+        private const val SPEED_HISTORY_SIZE = 10
     }
 
     // Circular buffer of the last 3 accepted points for acceleration check
     private val recentPoints = ArrayDeque<GPSPoint>(4)
+
+    // Recent speed history for adaptive threshold
+    private val recentSpeeds = ArrayDeque<Double>(SPEED_HISTORY_SIZE + 1)
 
     /**
      * Evaluate whether a new GPS point should be accepted or rejected.
@@ -31,6 +42,7 @@ class OutlierDetector {
      * @param point The raw GPS point to evaluate.
      * @return An [OutlierResult] indicating acceptance or rejection with a reason.
      */
+    @Synchronized
     fun evaluate(point: GPSPoint): OutlierResult {
         // Layer 1: Validity checks
         if (!isValidCoordinate(point.latitude, point.longitude)) {
@@ -51,7 +63,7 @@ class OutlierDetector {
             )
         }
 
-        // Layer 2: Speed check against previous accepted point
+        // Layer 2: Speed check against previous accepted point (adaptive threshold)
         val lastAccepted = recentPoints.lastOrNull()
         if (lastAccepted != null) {
             val dist = GeoMath.haversineDistance(
@@ -60,9 +72,10 @@ class OutlierDetector {
             )
             val dtSec = (point.timestamp - lastAccepted.timestamp) / 1000.0
             val speed = if (dtSec > 0) dist / dtSec else 0.0
-            if (speed > MAX_SPEED_MS) {
+            val adaptiveMaxSpeed = getAdaptiveSpeedThreshold()
+            if (speed > adaptiveMaxSpeed) {
                 return OutlierResult.Rejected(
-                    "Speed too high: %.1f m/s > %.1f m/s".format(speed, MAX_SPEED_MS)
+                    "Speed too high: %.1f m/s > %.1f m/s (adaptive)".format(speed, adaptiveMaxSpeed)
                 )
             }
             // Background GPS guard: when update interval is large (>5s),
@@ -100,6 +113,21 @@ class OutlierDetector {
             recentPoints.removeFirst()
         }
 
+        // Track speed for adaptive threshold
+        if (lastAccepted != null) {
+            val dist = GeoMath.haversineDistance(
+                lastAccepted.latitude, lastAccepted.longitude,
+                point.latitude, point.longitude
+            )
+            val dtSec = (point.timestamp - lastAccepted.timestamp) / 1000.0
+            if (dtSec > 0) {
+                recentSpeeds.addLast(dist / dtSec)
+                if (recentSpeeds.size > SPEED_HISTORY_SIZE) {
+                    recentSpeeds.removeFirst()
+                }
+            }
+        }
+
         return OutlierResult.Accepted
     }
 
@@ -124,13 +152,31 @@ class OutlierDetector {
         return kotlin.math.abs(v23 - v12) / dtAvg
     }
 
+    /**
+     * Return an adaptive max speed threshold based on recent average speed.
+     * If the user is walking (low average speed), use a lower threshold to catch
+     * GPS jumps that would look normal at running pace.
+     */
+    private fun getAdaptiveSpeedThreshold(): Double {
+        if (recentSpeeds.isEmpty()) return RUNNING_MAX_SPEED_MS
+
+        val avgSpeed = recentSpeeds.average()
+        return if (avgSpeed < WALKING_SPEED_THRESHOLD) {
+            WALKING_MAX_SPEED_MS
+        } else {
+            RUNNING_MAX_SPEED_MS
+        }
+    }
+
     private fun isValidCoordinate(lat: Double, lng: Double): Boolean {
         return lat in -90.0..90.0 && lng in -180.0..180.0 &&
                 !(lat == 0.0 && lng == 0.0) // Reject null island
     }
 
+    @Synchronized
     fun reset() {
         recentPoints.clear()
+        recentSpeeds.clear()
     }
 
     sealed class OutlierResult {

@@ -2,6 +2,16 @@ import AVFoundation
 import Foundation
 import React
 
+/// Standardized error codes matching Android GPSTrackerModule.kt.
+/// Used in promise rejections for consistent cross-platform error handling.
+enum GPSErrorCode: String {
+    case permissionDenied = "PERMISSION_DENIED"
+    case gpsDisabled = "GPS_DISABLED"
+    case serviceUnavailable = "SERVICE_UNAVAILABLE"
+    case coldStartTimeout = "COLD_START_TIMEOUT"
+    case backgroundRestricted = "BACKGROUND_RESTRICTED"
+}
+
 /// React Native Bridge Module for GPS Tracking
 @objc(GPSTrackerModule)
 class GPSTrackerModule: RCTEventEmitter {

@@ -13,6 +13,9 @@ import i18n from '../i18n';
 
 type ViewMode = 'list' | 'map';
 
+/** Cache TTL: data older than 5 minutes is considered stale */
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
 interface CourseListState {
   // List
   courses: CourseListItem[];
@@ -41,6 +44,12 @@ interface CourseListState {
   favoriteCourses: FavoriteCourseItem[];
   favoriteIds: string[];
   isLoadingFavorites: boolean;
+
+  // Cache timestamps
+  coursesLastFetchedAt: number;
+  nearbyLastFetchedAt: number;
+  /** Returns true if the main course list cache is stale (older than 5 minutes) */
+  isCacheStale: () => boolean;
 
   // World focus
   pendingFocusCourseId: string | null;
@@ -100,6 +109,15 @@ export const useCourseListStore = create<CourseListState>((set, get) => ({
 
   mapMarkers: [],
 
+  coursesLastFetchedAt: 0,
+  nearbyLastFetchedAt: 0,
+
+  isCacheStale: () => {
+    const { coursesLastFetchedAt } = get();
+    if (coursesLastFetchedAt === 0) return true;
+    return Date.now() - coursesLastFetchedAt > CACHE_TTL_MS;
+  },
+
   pendingFocusCourseId: null,
   pendingSelectForRaid: null,
   pendingStartCourseId: null,
@@ -135,6 +153,7 @@ export const useCourseListStore = create<CourseListState>((set, get) => ({
         hasNext: response.has_next,
         currentPage: 0,
         isLoading: false,
+        coursesLastFetchedAt: Date.now(),
       });
     } catch (error: unknown) {
       const message =
@@ -170,7 +189,7 @@ export const useCourseListStore = create<CourseListState>((set, get) => ({
   fetchNearbyCourses: async (lat, lng) => {
     try {
       const courses = await courseService.getNearbyCourses(lat, lng);
-      set({ nearbyCourses: courses });
+      set({ nearbyCourses: courses, nearbyLastFetchedAt: Date.now() });
     } catch {
       // background geo fetch — silent ok
     }

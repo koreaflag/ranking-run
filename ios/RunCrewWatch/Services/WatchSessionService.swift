@@ -16,6 +16,11 @@ class WatchSessionService: NSObject, WCSessionDelegate {
     private let healthStore = HKHealthStore()
     private var isHealthKitAuthorized = false
 
+    /// Queue of messages that failed to send. Retried on next successful connection.
+    /// Capped to prevent unbounded growth while the watch is disconnected.
+    private var pendingMessageQueue: [[String: Any]] = []
+    private let maxPendingMessages = 20
+
     private override init() {
         super.init()
     }
@@ -74,7 +79,8 @@ class WatchSessionService: NSObject, WCSessionDelegate {
         ]
 
         guard WCSession.default.activationState == .activated else {
-            print("[WatchSession] sendCommand SKIP: not activated")
+            print("[WatchSession] sendCommand SKIP: not activated — queueing")
+            enqueuePendingMessage(message)
             return
         }
 
@@ -84,12 +90,18 @@ class WatchSessionService: NSObject, WCSessionDelegate {
         // sendMessage: immediate delivery when phone is reachable.
         // Phone deduplicates by timestamp so double-processing won't occur.
         if WCSession.default.isReachable {
-            WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: nil)
+            WCSession.default.sendMessage(message, replyHandler: nil) { [weak self] error in
+                print("[WatchSession] sendCommand sendMessage failed: \(error.localizedDescription) — queued for retry")
+                self?.enqueuePendingMessage(message)
+            }
         }
     }
 
     func sendHeartRate(_ bpm: Double) {
-        guard WCSession.default.isReachable else { return }
+        guard WCSession.default.isReachable else {
+            // Heart rate is ephemeral — don't queue, just drop
+            return
+        }
         let message: [String: Any] = [
             WatchMessageKeys.type: WatchMessageType.heartRate.rawValue,
             WatchMessageKeys.bpm: bpm,
@@ -327,6 +339,10 @@ class WatchSessionService: NSObject, WCSessionDelegate {
 
     func sessionReachabilityDidChange(_ session: WCSession) {
         print("[WatchSessionSvc] reachability changed: \(session.isReachable)")
+        // Flush any queued messages when connectivity is restored
+        if session.isReachable {
+            flushPendingMessages()
+        }
         DispatchQueue.main.async { [weak self] in
             self?.onReachabilityChange?(session.isReachable)
         }
@@ -371,6 +387,31 @@ class WatchSessionService: NSObject, WCSessionDelegate {
         }
         // Route through the same path as regular messages.
         routeMessage(userInfo)
+    }
+
+    // MARK: - Message Queue
+
+    /// Enqueue a message for retry when connectivity is restored.
+    private func enqueuePendingMessage(_ message: [String: Any]) {
+        pendingMessageQueue.append(message)
+        // Cap queue size — drop oldest messages if queue is full
+        if pendingMessageQueue.count > maxPendingMessages {
+            pendingMessageQueue.removeFirst(pendingMessageQueue.count - maxPendingMessages)
+        }
+    }
+
+    /// Flush all pending messages via transferUserInfo (guaranteed delivery).
+    private func flushPendingMessages() {
+        guard !pendingMessageQueue.isEmpty,
+              WCSession.default.activationState == .activated else { return }
+
+        let messages = pendingMessageQueue
+        pendingMessageQueue.removeAll()
+        print("[WatchSessionSvc] Flushing \(messages.count) pending messages")
+
+        for message in messages {
+            WCSession.default.transferUserInfo(message)
+        }
     }
 
     private func routeMessage(_ message: [String: Any]) {

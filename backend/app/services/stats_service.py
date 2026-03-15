@@ -204,17 +204,18 @@ class StatsService:
 
         avg_pace = None
         best_pace = None
-        if course_distance and course_distance > 0:
-            if avg_duration:
-                avg_pace = int(avg_duration / (course_distance / 1000))
-            if best_duration:
-                best_pace = int(best_duration / (course_distance / 1000))
+        distance_km = (course_distance / 1000) if course_distance and course_distance > 0 else 0
+        if distance_km > 0:
+            if avg_duration and avg_duration > 0:
+                avg_pace = int(avg_duration / distance_km)
+            if best_duration and best_duration > 0:
+                best_pace = int(best_duration / distance_km)
 
         total_attempts_result = await db.execute(
             select(func.count(RunRecord.id)).where(RunRecord.course_id == course_id)
         )
         total_attempts = total_attempts_result.scalar() or 0
-        completion_rate = total_runs / total_attempts if total_attempts > 0 else 0.0
+        completion_rate = (total_runs / total_attempts) if total_attempts > 0 else 0.0
 
         hour_result = await db.execute(
             select(

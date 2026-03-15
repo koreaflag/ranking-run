@@ -13,30 +13,49 @@ class StationaryDetector {
 
     private var stateStartTime: Date = Date()
     private var recentSpeeds: [Double] = []
-    // Window of 5 for entering stationary (smooths Kalman fluctuations).
+
+    // MARK: - Configuration Constants
+
+    /// Number of recent speed samples to average for stationary/moving detection.
+    /// Window of 5 smooths Kalman filter fluctuations while remaining responsive.
     private let speedWindowSize = 5
 
-    // Thresholds
-    private let stationarySpeedThreshold: Double = 0.3  // m/s
-    // Resume threshold lowered from 0.5 to 0.35 m/s. With a 5-sample window containing
-    // stale zeros, the average must exceed this. At 0.5, a walker at 1.0 m/s needs 3+
-    // samples above zero before avg > 0.5 — too slow. At 0.35 even 2 samples of 1.0 m/s
-    // with 3 zeros gives avg = 0.4 > 0.35, enabling faster resume.
-    private let movingSpeedThreshold: Double = 0.35      // m/s
-    private let stationaryAccelThreshold: Double = 0.12  // g-force (lowered from 0.15 — walking generates ~0.08-0.15g)
-    private let minStationaryDuration: TimeInterval = 3.0 // seconds
+    /// Speed below which the user is considered stationary (m/s).
+    /// 0.3 m/s ~ 1.1 km/h — below comfortable walking pace.
+    private let stationarySpeedThreshold: Double = 0.3
+
+    /// Speed above which a stationary user is considered moving again (m/s).
+    /// Lowered from 0.5 to 0.35 m/s: with a 5-sample window containing stale zeros,
+    /// the average must exceed this. At 0.5, a walker at 1.0 m/s needs 3+ samples
+    /// above zero before avg > 0.5 — too slow. At 0.35, even 2 samples of 1.0 m/s
+    /// with 3 zeros gives avg = 0.4 > 0.35, enabling faster resume detection.
+    private let movingSpeedThreshold: Double = 0.35
+
+    /// Accelerometer magnitude threshold to detect movement (g-force).
+    /// Walking typically generates 0.08–0.15g; 0.12g catches most walking motion.
+    /// Lowered from 0.15g to avoid missing slow walkers.
+    private let stationaryAccelThreshold: Double = 0.12
+
+    /// Minimum time the user must be stationary before state transitions (seconds).
+    /// Prevents brief pauses (e.g., at crosswalks) from triggering stationary state.
+    private let minStationaryDuration: TimeInterval = 3.0
 
     private var consecutiveStationaryCount = 0
     private var consecutiveMovingCount = 0
-    // Require 3 consecutive readings to enter stationary (was 1 — too easy to false-trigger
-    // during brief slow-downs, Kalman filter lag, or GPS noise at constant pace).
-    // Keep 1 for exiting stationary — responsiveness is critical for distance accumulation.
+
+    /// Number of consecutive below-threshold readings required to enter stationary.
+    /// Set to 3 (was 1) to avoid false triggers during brief slow-downs,
+    /// Kalman filter lag, or GPS noise at constant pace.
     private let requiredStationaryCount = 3
+
+    /// Number of consecutive above-threshold readings required to resume moving.
+    /// Set to 1 for maximum responsiveness — critical for distance accumulation.
     private let requiredMovingCount = 1
 
-    /// Grace period: don't transition to stationary until we have enough data
+    /// Grace period: ignore the first N speed readings to avoid false stationary
+    /// detection during cold start (GPS speed may report -1/0 initially).
     private var totalUpdateCount = 0
-    private let graceUpdates = 5  // Ignore first 5 speed readings
+    private let graceUpdates = 5
 
     /// Update with new GPS speed.
     /// When in stationary state, uses only the latest speed (not the window average)

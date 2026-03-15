@@ -95,7 +95,12 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         case .notDetermined:
             locationManager.requestAlwaysAuthorization()
             return
-        case .denied, .restricted:
+        case .denied:
+            NSLog("[LocationEngine] [\(GPSErrorCode.permissionDenied.rawValue)] Location permission denied")
+            updateGPSStatus("disabled")
+            return
+        case .restricted:
+            NSLog("[LocationEngine] [\(GPSErrorCode.backgroundRestricted.rawValue)] Location restricted")
             updateGPSStatus("disabled")
             return
         default:
@@ -276,10 +281,13 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         if let clError = error as? CLError {
             switch clError.code {
             case .denied:
+                NSLog("[LocationEngine] [\(GPSErrorCode.permissionDenied.rawValue)] Location denied via delegate")
                 updateGPSStatus("disabled")
             case .locationUnknown:
+                NSLog("[LocationEngine] [\(GPSErrorCode.serviceUnavailable.rawValue)] Location unknown")
                 updateGPSStatus("searching")
             default:
+                NSLog("[LocationEngine] [\(GPSErrorCode.serviceUnavailable.rawValue)] CLError: \(clError.code.rawValue)")
                 updateGPSStatus("lost")
             }
         }
@@ -394,6 +402,8 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         kalmanFilter.updateProcessNoise(
             accelerationVariance: sensorFusion.getAccelerationVariance()
         )
+        // Adapt Q based on current estimated speed (walking vs sprinting)
+        kalmanFilter.updateSpeedAdaptiveQ()
 
         // Layer 3: Kalman Filter
         let gpsSpeedValid = validLocation.speed >= 0
@@ -546,11 +556,18 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
 
     // MARK: - Cold Start
 
+    /// Cold start timeout: 30 seconds.
+    /// Generous enough for areas with poor GPS signal (urban canyons, indoors near windows).
+    /// After timeout, accepts current accuracy and starts recording anyway to avoid
+    /// blocking the user indefinitely. 30s balances user patience vs GPS acquisition time.
+    private let coldStartTimeout: TimeInterval = 30.0
+
     private func startColdStartTimer() {
         coldStartTimer?.invalidate()
-        coldStartTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { [weak self] _ in
+        coldStartTimer = Timer.scheduledTimer(withTimeInterval: coldStartTimeout, repeats: false) { [weak self] _ in
             guard let self = self, self.session.state == .starting else { return }
             // Timeout - accept current accuracy and start anyway
+            NSLog("[LocationEngine] [\(GPSErrorCode.coldStartTimeout.rawValue)] Cold start timed out after \(self.coldStartTimeout)s — accepting current accuracy")
             self.session.markLocked()
             self.updateGPSStatus("locked")
         }

@@ -1,4 +1,10 @@
-"""V1 API router: aggregates all route modules under /api/v1."""
+"""V1 API router: aggregates all route modules under /api/v1.
+
+Rate limiting is configured at the application level via slowapi in app/main.py
+and app/core/rate_limit.py. Individual endpoint rate limits can be applied using
+the @limiter.limit() decorator from app.core.rate_limit on write endpoints
+(e.g., course creation, run completion, crew creation).
+"""
 
 from fastapi import APIRouter
 

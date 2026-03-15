@@ -17,11 +17,13 @@ class RunSession(Base, UUIDPrimaryKeyMixin):
         UUID(as_uuid=True),
         ForeignKey("users.id"),
         nullable=False,
+        index=True,
     )
     course_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("courses.id"),
         nullable=True,
+        index=True,
     )
     status: Mapped[str] = mapped_column(
         String(20),

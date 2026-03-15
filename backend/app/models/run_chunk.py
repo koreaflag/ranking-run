@@ -20,6 +20,7 @@ class RunChunk(Base, UUIDPrimaryKeyMixin):
         UUID(as_uuid=True),
         ForeignKey("run_sessions.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_type: Mapped[str] = mapped_column(String(20), nullable=False)

@@ -141,13 +141,28 @@ export interface RouteMapViewHandle {
 
 // ---- Helpers ----
 
-/** Convert lat/lng points to GeoJSON LineString */
+/** Downsample a points array to at most `maxPoints` by evenly skipping.
+ *  Always keeps the first and last point for visual continuity. */
+const MAX_ROUTE_DISPLAY_POINTS = 1000;
+function downsamplePoints<T>(points: T[], maxPoints: number = MAX_ROUTE_DISPLAY_POINTS): T[] {
+  if (points.length <= maxPoints) return points;
+  const step = (points.length - 1) / (maxPoints - 1);
+  const result: T[] = [];
+  for (let i = 0; i < maxPoints - 1; i++) {
+    result.push(points[Math.round(i * step)]);
+  }
+  result.push(points[points.length - 1]);
+  return result;
+}
+
+/** Convert lat/lng points to GeoJSON LineString (downsampled if > 1000 points) */
 function toLineGeoJSON(points: Array<{ latitude: number; longitude: number }>): GeoJSON.Feature<GeoJSON.LineString> {
+  const sampled = downsamplePoints(points);
   return {
     type: 'Feature',
     geometry: {
       type: 'LineString',
-      coordinates: points.map(p => [p.longitude, p.latitude]),
+      coordinates: sampled.map(p => [p.longitude, p.latitude]),
     },
     properties: {},
   };

@@ -88,7 +88,11 @@ export const useSettingsStore = create<SettingsState>()(
       setHapticFeedback: (enabled) => set({ hapticFeedback: enabled }),
       setAutoLockDisabled: (disabled) => set({ autoLockDisabled: disabled }),
       setAutoPause: (enabled) => set({ autoPause: enabled }),
-      setCountdownSeconds: (seconds) => set({ countdownSeconds: seconds }),
+      setCountdownSeconds: (seconds) => {
+        // Validate: countdown must be between 0 and 10 seconds
+        const validated = Math.max(0, Math.min(10, Math.round(seconds)));
+        set({ countdownSeconds: validated });
+      },
       setSplitAlertEnabled: (enabled) => set({ splitAlertEnabled: enabled }),
       setVoiceGuidance: (enabled) => set({ voiceGuidance: enabled }),
       setBackgroundImageUri: (uri) => set({ backgroundImageUri: uri }),

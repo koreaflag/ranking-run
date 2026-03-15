@@ -116,9 +116,27 @@ private struct ActivityPage: View {
 
 private struct StartPage: View {
     @EnvironmentObject var viewModel: RunSessionViewModel
+    /// Pulsing animation state for the connection indicator
+    @State private var isPulsing = false
 
     var body: some View {
         VStack(spacing: 0) {
+            // Phone connection status indicator
+            if !viewModel.isPhoneReachable {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Color.yellow)
+                        .frame(width: 6, height: 6)
+                        .opacity(isPulsing ? 0.3 : 1.0)
+                        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
+                        .onAppear { isPulsing = true }
+                    Text("iPhone 연결 중...")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.yellow.opacity(0.8))
+                }
+                .padding(.top, 4)
+            }
+
             Spacer()
 
             Button(action: {

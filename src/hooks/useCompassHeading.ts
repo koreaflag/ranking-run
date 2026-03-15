@@ -63,37 +63,48 @@ export function useCompassHeading(
   useEffect(() => {
     if (Platform.OS !== 'ios' || !GPSTrackerModule) return;
 
-    const emitter = new NativeEventEmitter(GPSTrackerModule);
+    let subscription: { remove: () => void } | null = null;
 
-    // Register listener FIRST so hasListeners=true before events fire
-    const subscription = emitter.addListener(
-      'GPSTracker_onHeadingUpdate',
-      (event: { heading: number; accuracy?: number; trueHeading?: number; magneticHeading?: number }) => {
-        // Update debug info
-        if (event.accuracy != null) {
-          setDebug({
-            accuracy: event.accuracy ?? -1,
-            trueHeading: event.trueHeading ?? -1,
-            magneticHeading: event.magneticHeading ?? -1,
-          });
-        }
-        if (useGpsRef.current) return;
-        if (event.heading >= 0) {
-          const result = smoothHeading(smoothedRef, event.heading, NATIVE_ALPHA);
-          if (result >= 0) setHeading(result);
-        }
-      },
-    );
+    try {
+      const emitter = new NativeEventEmitter(GPSTrackerModule);
 
-    GPSTrackerModule.startHeadingUpdates().catch((err: any) => {
-      console.warn('[useCompassHeading] startHeadingUpdates failed:', err);
-    });
+      // Register listener FIRST so hasListeners=true before events fire
+      subscription = emitter.addListener(
+        'GPSTracker_onHeadingUpdate',
+        (event: { heading: number; accuracy?: number; trueHeading?: number; magneticHeading?: number }) => {
+          // Update debug info
+          if (event.accuracy != null) {
+            setDebug({
+              accuracy: event.accuracy ?? -1,
+              trueHeading: event.trueHeading ?? -1,
+              magneticHeading: event.magneticHeading ?? -1,
+            });
+          }
+          if (useGpsRef.current) return;
+          if (event.heading >= 0) {
+            const result = smoothHeading(smoothedRef, event.heading, NATIVE_ALPHA);
+            if (result >= 0) setHeading(result);
+          }
+        },
+      );
+
+      GPSTrackerModule.startHeadingUpdates().catch((err: any) => {
+        console.warn('[useCompassHeading] startHeadingUpdates failed:', err);
+      });
+    } catch (err) {
+      // Compass sensor unavailable or NativeEventEmitter failed — return null heading gracefully
+      console.warn('[useCompassHeading] Sensor subscription failed, heading will be null:', err);
+    }
 
     return () => {
-      subscription.remove();
-      GPSTrackerModule.stopHeadingUpdates().catch((err: any) => {
-        console.warn('[useCompassHeading] stopHeadingUpdates 실패:', err);
-      });
+      try {
+        subscription?.remove();
+        GPSTrackerModule.stopHeadingUpdates().catch((err: any) => {
+          console.warn('[useCompassHeading] stopHeadingUpdates failed:', err);
+        });
+      } catch (err) {
+        console.warn('[useCompassHeading] Cleanup failed:', err);
+      }
     };
   }, []);
 

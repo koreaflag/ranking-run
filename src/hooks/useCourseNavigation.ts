@@ -93,6 +93,8 @@ export function useCourseNavigation(
   courseRoute: Coordinate[] | null,
   currentLocation: Coordinate | null,
   currentBearing: number,
+  /** Current GPS accuracy in meters. When poor (>20m), deviation threshold is increased to avoid false alarms. */
+  gpsAccuracy?: number | null,
 ): CourseNavigation | null {
   const lastIndexRef = useRef(0);
   const lastLocationRef = useRef<Coordinate | null>(null);
@@ -176,7 +178,11 @@ export function useCourseNavigation(
 
     lastIndexRef.current = nearestIdx;
 
-    const isOffCourse = deviationMeters > OFF_COURSE_THRESHOLD;
+    // Adaptive threshold: increase when GPS accuracy is poor to avoid false off-course alarms
+    const adaptiveThreshold = (gpsAccuracy != null && gpsAccuracy > 20)
+      ? OFF_COURSE_THRESHOLD + (gpsAccuracy - 20)
+      : OFF_COURSE_THRESHOLD;
+    const isOffCourse = deviationMeters > adaptiveThreshold;
 
     // Remaining distance — O(1) via pre-computed cumulative distances
     const totalDistance = cumulativeDistances.length > 0
@@ -263,5 +269,5 @@ export function useCourseNavigation(
     };
     lastResultRef.current = result;
     return result;
-  }, [courseRoute, currentLocation, currentBearing, turnPoints, cumulativeDistances]);
+  }, [courseRoute, currentLocation, currentBearing, turnPoints, cumulativeDistances, gpsAccuracy]);
 }
