@@ -30,6 +30,11 @@ struct RunCrewWatchApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // Request HealthKit authorization immediately on app launch.
+        // This triggers the system consent dialog so heart rate, workout,
+        // and energy data permissions are granted before the first run.
+        Self.requestHealthKitAuthorization()
+
         // Register to receive mirrored workout sessions from iPhone.
         if #available(watchOS 10, *) {
             HKHealthStore().workoutSessionMirroringStartHandler = { mirroredSession in
@@ -37,6 +42,33 @@ struct RunCrewWatchApp: App {
                     WorkoutMirroringManager.shared.handleMirroredSession(mirroredSession)
                 }
             }
+        }
+    }
+
+    /// Request all HealthKit permissions needed for running.
+    /// Called once on app launch — system only shows the dialog if not yet determined.
+    private static func requestHealthKitAuthorization() {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let store = HKHealthStore()
+
+        var toShare: Set<HKSampleType> = [HKObjectType.workoutType()]
+        if let dist = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
+            toShare.insert(dist)
+        }
+        if let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+            toShare.insert(energy)
+        }
+
+        var toRead: Set<HKObjectType> = []
+        if let hr = HKQuantityType.quantityType(forIdentifier: .heartRate) {
+            toRead.insert(hr)
+        }
+        if let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+            toRead.insert(energy)
+        }
+
+        store.requestAuthorization(toShare: toShare, read: toRead) { success, error in
+            print("[RunCrewWatchApp] HealthKit auth: \(success), error: \(error?.localizedDescription ?? "none")")
         }
     }
 

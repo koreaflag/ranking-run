@@ -181,6 +181,7 @@ class StandaloneRunManager {
             state.isAutoPaused = true
         })
         standalonePauseStart = Date()
+        timerManager?.stopDurationTimer()
         HapticManager.shared.paused()
         print("[StandaloneRunManager] Auto-paused (speed below threshold)")
 
@@ -204,6 +205,7 @@ class StandaloneRunManager {
         }
         standalonePauseStart = nil
         timerManager?.stopAutoPauseTimer()
+        setupStandaloneDurationTimer()
         HapticManager.shared.resumed()
         print("[StandaloneRunManager] Auto-resumed (speed above threshold)")
     }
@@ -326,6 +328,7 @@ class StandaloneRunManager {
             state.phase = "paused"
         })
         standalonePauseStart = Date()
+        timerManager?.stopDurationTimer()
 
         if standaloneIsIndoor {
             WatchPedometerManager.shared.pauseTracking()
@@ -459,8 +462,14 @@ class StandaloneRunManager {
         timerManager.onStandaloneDurationTick = { [weak self] in
             guard let self = self else { return }
             guard let state = self.getState?(), state.phase == "running",
+                  !self.isAutoPaused, !state.isAutoPaused,
                   let start = self.standaloneStartTime else { return }
-            let elapsed = Date().timeIntervalSince(start) - self.standalonePausedDuration
+            // Account for any ongoing pause period in the elapsed calculation
+            var pausedTotal = self.standalonePausedDuration
+            if let pauseStart = self.standalonePauseStart {
+                pausedTotal += Date().timeIntervalSince(pauseStart)
+            }
+            let elapsed = Date().timeIntervalSince(start) - pausedTotal
             let duration = max(0, Int(elapsed))
 
             self.updateState?({ state in
