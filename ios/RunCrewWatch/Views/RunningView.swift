@@ -2,6 +2,8 @@ import SwiftUI
 
 // App key color — Signature Orange (#FF7A33)
 private let appOrange = Color(red: 1.0, green: 0.478, blue: 0.2)
+// Pause indicator yellow (#FFD60A) — matches phone app + Dynamic Island
+private let pauseYellow = Color(red: 1.0, green: 0.839, blue: 0.039)
 
 struct RunningView: View {
     @EnvironmentObject var viewModel: RunSessionViewModel
@@ -13,7 +15,7 @@ struct RunningView: View {
                 Text(viewModel.formattedDuration())
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .monospacedDigit()
-                    .foregroundColor(viewModel.state.isAutoPaused ? appOrange : .white)
+                    .foregroundColor(viewModel.state.isAutoPaused ? pauseYellow : .white)
                     .accessibilityLabel("시간 \(viewModel.formattedDuration())")
 
                 if viewModel.state.isAutoPaused {
@@ -21,7 +23,7 @@ struct RunningView: View {
                         Spacer()
                         Image(systemName: "pause.circle.fill")
                             .font(.system(size: 12))
-                            .foregroundColor(appOrange.opacity(0.8))
+                            .foregroundColor(pauseYellow.opacity(0.8))
                     }
                 }
             }
