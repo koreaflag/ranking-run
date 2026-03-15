@@ -160,16 +160,23 @@ class CompanionRunManager {
             }
         }
 
-        // Duration: server-anchored
+        // Duration: server-anchored.
+        // Only set duration directly when server value >= local to prevent
+        // backward jumps (14→13→14 jitter). The local timer tick handles
+        // smooth forward progression between server updates.
         if let duration = message[WatchMessageKeys.durationSeconds] as? Int {
             if isStandaloneMode?() != true {
                 timerManager?.updateAnchorDuration(duration)
-                currentState.duration = duration
+                if duration >= currentState.duration {
+                    currentState.duration = duration
+                }
             }
         } else if let duration = message[WatchMessageKeys.durationSeconds] as? Double {
             if isStandaloneMode?() != true {
                 timerManager?.updateAnchorDuration(Int(duration))
-                currentState.duration = Int(duration)
+                if Int(duration) >= currentState.duration {
+                    currentState.duration = Int(duration)
+                }
             }
         }
 

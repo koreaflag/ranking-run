@@ -7,16 +7,20 @@ struct PausedView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            // Paused indicator
-            Text("일시정지")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(.yellow)
+            // Paused indicator — yellow capsule matching phone app style
+            Text("PAUSED")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundColor(.black)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .background(Color(red: 1.0, green: 0.839, blue: 0.039)) // #FFD60A
+                .clipShape(Capsule())
                 .padding(.top, 4)
 
-            // Duration
+            // Duration — yellow to indicate paused state
             Text(viewModel.formattedDuration())
                 .font(.system(size: 22, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
+                .foregroundColor(Color(red: 1.0, green: 0.839, blue: 0.039))
                 .accessibilityLabel("시간 \(viewModel.formattedDuration())")
 
             // Distance
