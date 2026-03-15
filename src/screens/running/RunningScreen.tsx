@@ -139,7 +139,6 @@ export default function RunningScreen() {
   }, [phase, runGoal?.type, runGoal?.cadenceBPM, metronomeMuted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [countdown, setCountdown] = useState<number | null>(null);
-  const [resumeCountdown, setResumeCountdown] = useState<number | null>(null);
   const [loopHapticFired, setLoopHapticFired] = useState(false);
   const [splitPanelExpanded, setSplitPanelExpanded] = useState(false);
 
@@ -372,21 +371,10 @@ export default function RunningScreen() {
   }, [pause, pauseTracking, hapticFeedback]);
 
   const handleResume = useCallback(async () => {
-    // Nike Run Club style: 3-2-1 countdown before resuming
-    const resumeSec = 3;
-    for (let i = resumeSec; i > 0; i--) {
-      setResumeCountdown(i);
-      if (hapticFeedback) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-    setResumeCountdown(null);
-
     resume();
     await resumeTracking();
     if (hapticFeedback) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
   }, [resume, resumeTracking, hapticFeedback]);
 
@@ -814,29 +802,20 @@ export default function RunningScreen() {
         <View style={styles.controls}>
           {phase === 'paused' ? (
             <>
-              {resumeCountdown !== null && (
-                <View style={styles.resumeCountdownOverlay}>
-                  <Text style={styles.resumeCountdownNumber}>{resumeCountdown}</Text>
-                </View>
-              )}
               <TouchableOpacity
-                style={[styles.resumeButton, resumeCountdown !== null && styles.buttonDisabled]}
+                style={styles.resumeButton}
                 onPress={handleResume}
                 activeOpacity={0.7}
-                disabled={resumeCountdown !== null}
                 accessibilityRole="button"
                 accessibilityLabel={t('running.controls.resume')}
               >
                 <Ionicons name="play" size={28} color={colors.white} />
-                <Text style={styles.resumeLabel}>
-                  {resumeCountdown !== null ? `${resumeCountdown}` : t('running.controls.resume')}
-                </Text>
+                <Text style={styles.resumeLabel}>{t('running.controls.resume')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.stopButton, resumeCountdown !== null && styles.buttonDisabled]}
+                style={styles.stopButton}
                 onPress={handleStop}
                 activeOpacity={0.7}
-                disabled={resumeCountdown !== null}
                 accessibilityRole="button"
                 accessibilityLabel={t('running.controls.stop')}
               >
@@ -1372,22 +1351,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.white,
     fontWeight: '700',
   },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
-  resumeCountdownOverlay: {
-    position: 'absolute',
-    top: -120,
-    alignSelf: 'center',
-    zIndex: 10,
-  },
-  resumeCountdownNumber: {
-    fontSize: 72,
-    fontWeight: '900',
-    color: '#FFD60A',
-    textAlign: 'center',
-  },
-
   // Stop button
   stopButton: {
     width: 84,

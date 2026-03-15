@@ -251,7 +251,6 @@ export default function WorldScreen() {
   const [hudRankings, setHudRankings] = useState<RankingEntry[]>([]);
   const [hudRankingVisible, setHudRankingVisible] = useState(true);
   const [distanceToMarkerM, setDistanceToMarkerM] = useState<number | null>(null);
-  const [resumeCountdown, setResumeCountdown] = useState<number | null>(null);
   const rankingAnim = useRef(new Animated.Value(1)).current;
 
   // Run start controls
@@ -1011,17 +1010,6 @@ export default function WorldScreen() {
   }, [storePause, pauseTracking, hapticFeedback]);
 
   const handleResume = useCallback(async () => {
-    // Nike Run Club style: 3-2-1 countdown before resuming
-    const resumeSec = 3;
-    for (let i = resumeSec; i > 0; i--) {
-      setResumeCountdown(i);
-      if (hapticFeedback) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-    setResumeCountdown(null);
-
     storeResume();
     await resumeTracking();
     if (hapticFeedback) {
@@ -2068,27 +2056,18 @@ export default function WorldScreen() {
               <View style={styles.runControls}>
                 {phase === 'paused' ? (
                   <>
-                    {resumeCountdown !== null && (
-                      <View style={styles.resumeCountdownOverlay}>
-                        <Text style={styles.resumeCountdownNumber}>{resumeCountdown}</Text>
-                      </View>
-                    )}
                     <TouchableOpacity
-                      style={[styles.runResumeBtn, resumeCountdown !== null && { opacity: 0.4 }]}
+                      style={styles.runResumeBtn}
                       onPress={handleResume}
                       activeOpacity={0.7}
-                      disabled={resumeCountdown !== null}
                     >
                       <Ionicons name="play" size={28} color={colors.white} />
-                      <Text style={styles.runResumeBtnLabel}>
-                        {resumeCountdown !== null ? `${resumeCountdown}` : '재개'}
-                      </Text>
+                      <Text style={styles.runResumeBtnLabel}>재개</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.runStopBtn, resumeCountdown !== null && { opacity: 0.4 }]}
+                      style={styles.runStopBtn}
                       onPress={handleStop}
                       activeOpacity={0.7}
-                      disabled={resumeCountdown !== null}
                     >
                       <Ionicons name="stop" size={28} color={colors.white} />
                       <Text style={styles.runStopBtnLabel}>종료</Text>
@@ -3022,18 +3001,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: FONT_SIZES.xs,
     color: c.white,
     fontWeight: '700',
-  },
-  resumeCountdownOverlay: {
-    position: 'absolute',
-    top: -100,
-    alignSelf: 'center',
-    zIndex: 10,
-  },
-  resumeCountdownNumber: {
-    fontSize: 72,
-    fontWeight: '900',
-    color: '#FFD60A',
-    textAlign: 'center',
   },
   runStopBtn: {
     width: 72,
