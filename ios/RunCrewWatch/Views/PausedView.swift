@@ -1,60 +1,100 @@
 import SwiftUI
+import WatchKit
 
 private let appOrange = Color(red: 1.0, green: 0.478, blue: 0.2)
+private let pauseYellow = Color(red: 1.0, green: 0.839, blue: 0.039) // #FFD60A
 
 struct PausedView: View {
     @EnvironmentObject var viewModel: RunSessionViewModel
+    @State private var resumeCountdown: Int? = nil
+    @State private var countdownTimer: Timer?
 
     var body: some View {
-        VStack(spacing: 6) {
-            // Paused indicator — yellow capsule matching phone app style
-            Text("PAUSED")
-                .font(.system(size: 11, weight: .heavy))
-                .foregroundColor(.black)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 3)
-                .background(Color(red: 1.0, green: 0.839, blue: 0.039)) // #FFD60A
-                .clipShape(Capsule())
-                .padding(.top, 4)
+        ZStack {
+            VStack(spacing: 6) {
+                // Paused indicator — yellow capsule matching phone app style
+                Text("PAUSED")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(pauseYellow)
+                    .clipShape(Capsule())
+                    .padding(.top, 4)
 
-            // Duration — yellow to indicate paused state
-            Text(viewModel.formattedDuration())
-                .font(.system(size: 22, weight: .bold, design: .monospaced))
-                .foregroundColor(Color(red: 1.0, green: 0.839, blue: 0.039))
-                .accessibilityLabel("시간 \(viewModel.formattedDuration())")
+                // Duration — yellow to indicate paused state
+                Text(viewModel.formattedDuration())
+                    .font(.system(size: 22, weight: .bold, design: .monospaced))
+                    .foregroundColor(pauseYellow)
+                    .accessibilityLabel("시간 \(viewModel.formattedDuration())")
 
-            // Distance
-            HStack(alignment: .lastTextBaseline, spacing: 2) {
-                Text(viewModel.formattedDistance())
-                    .font(.system(size: 18, weight: .heavy, design: .monospaced))
-                    .foregroundColor(appOrange)
-                Text("km")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.gray)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("거리 \(viewModel.formattedDistance()) 킬로미터")
-
-            Spacer()
-
-            // Control buttons
-            HStack(spacing: 20) {
-                // Resume button — large green circle
-                Button(action: { viewModel.sendResumeCommand() }) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 22))
-                        .foregroundColor(.black)
-                        .frame(width: 56, height: 56)
-                        .background(appOrange)
-                        .clipShape(Circle())
+                // Distance
+                HStack(alignment: .lastTextBaseline, spacing: 2) {
+                    Text(viewModel.formattedDistance())
+                        .font(.system(size: 18, weight: .heavy, design: .monospaced))
+                        .foregroundColor(appOrange)
+                    Text("km")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.gray)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("다시 시작")
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("거리 \(viewModel.formattedDistance()) 킬로미터")
 
-                // Stop button — long press 3 seconds
-                LongPressStopButton()
+                Spacer()
+
+                // Control buttons
+                HStack(spacing: 20) {
+                    // Resume button
+                    Button(action: { startResumeCountdown() }) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(.black)
+                            .frame(width: 56, height: 56)
+                            .background(appOrange)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(resumeCountdown != nil)
+                    .opacity(resumeCountdown != nil ? 0.4 : 1.0)
+                    .accessibilityLabel("다시 시작")
+
+                    // Stop button — long press
+                    LongPressStopButton()
+                        .disabled(resumeCountdown != nil)
+                        .opacity(resumeCountdown != nil ? 0.4 : 1.0)
+                }
+                .padding(.bottom, 8)
             }
-            .padding(.bottom, 8)
+
+            // Resume countdown overlay
+            if let count = resumeCountdown {
+                Text("\(count)")
+                    .font(.system(size: 60, weight: .heavy, design: .rounded))
+                    .foregroundColor(pauseYellow)
+                    .transition(.scale)
+            }
+        }
+        .onDisappear {
+            countdownTimer?.invalidate()
+            countdownTimer = nil
+        }
+    }
+
+    private func startResumeCountdown() {
+        guard resumeCountdown == nil else { return }
+        resumeCountdown = 3
+        WKInterfaceDevice.current().play(.click)
+
+        countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+            guard let current = resumeCountdown, current > 1 else {
+                timer.invalidate()
+                countdownTimer = nil
+                resumeCountdown = nil
+                viewModel.sendResumeCommand()
+                return
+            }
+            resumeCountdown = current - 1
+            WKInterfaceDevice.current().play(.click)
         }
     }
 }
@@ -121,7 +161,6 @@ struct LongPressStopButton: View {
                 t.invalidate()
                 timer = nil
                 didComplete = true
-                // Keep isPressed true — prevents DragGesture.onChanged from re-triggering
                 viewModel.sendStopCommand()
             }
         }
