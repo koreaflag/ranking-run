@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   RefreshControl,
   Image,
@@ -13,23 +12,28 @@ import {
   Platform,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import RegionPickerModal from '../../components/crew/RegionPickerModal';
+import RunningAvatarIndicator from '../../components/common/RunningAvatarIndicator';
 import { shortProvinceName } from '../../data/koreaRegions';
 import type { CommunityStackParamList } from '../../types/navigation';
-import type { CrewItem, WeeklyRunnerEntry } from '../../types/api';
+import type { CrewItem, WeeklyRunnerEntry, FriendRunning } from '../../types/api';
 import { crewService } from '../../services/crewService';
 import { rankingService } from '../../services/rankingService';
+import { userService } from '../../services/userService';
+import { friendService } from '../../services/friendService';
 import { formatDistance } from '../../utils/format';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import CrewLevelBadge from '../../components/crew/CrewLevelBadge';
 import { ListEndIndicator } from '../../components/common/Skeleton';
+import { useAuthStore } from '../../stores/authStore';
 
 type Nav = NativeStackNavigationProp<CommunityStackParamList, 'CommunityFeed'>;
 
@@ -164,7 +168,7 @@ const ExploreCard = memo(function ExploreCard({ item: crew, onPress, styles, col
               ]}
             >
               {joinStatus === 'member'
-                ? t('crew.joined')
+                ? t('crew.joinedStatus')
                 : joinStatus === 'pending'
                   ? t('crew.pending')
                   : joinStatus === 'request'
@@ -245,14 +249,25 @@ interface RunnerRowProps {
   styles: ReturnType<typeof createStyles>;
   colors: ThemeColors;
   t: (key: string, opts?: Record<string, unknown>) => string;
+  highlight?: boolean;
 }
 
-const RunnerRow = memo(function RunnerRow({ item, onPress, styles, colors, t }: RunnerRowProps) {
+const RunnerRow = memo(function RunnerRow({ item, onPress, styles, colors, t, highlight }: RunnerRowProps) {
   const isMedal = item.rank <= 3;
   const medalColor = isMedal ? MEDAL_COLORS[item.rank - 1] : undefined;
 
   return (
-    <TouchableOpacity style={styles.rrRow} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={[
+        styles.rrRow,
+        highlight && {
+          borderColor: colors.primary,
+          backgroundColor: colors.primary + '10',
+        },
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
       {/* Rank */}
       <View style={[styles.rrRankBadge, medalColor ? { backgroundColor: medalColor } : { backgroundColor: colors.surface }]}>
         <Text style={[styles.rrRankText, medalColor ? { color: '#FFF' } : { color: colors.textSecondary }]}>
@@ -298,7 +313,11 @@ export default function CommunityFeedScreen() {
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const [activeTab, setActiveTab] = useState<'explore' | 'myCrews' | 'ranking'>('ranking');
+  const [activeTab, setActiveTab] = useState<'explore' | 'friends' | 'ranking'>('ranking');
+  const currentUserId = useAuthStore((s) => s.user?.id);
+
+  // Explore "내 크루" filter
+  const [myCrewsOnly, setMyCrewsOnly] = useState(false);
 
   // Region filter
   const [regionFilter, setRegionFilter] = useState<string | null>(null);
@@ -317,11 +336,19 @@ export default function CommunityFeedScreen() {
   const [myRanking, setMyRanking] = useState<WeeklyRunnerEntry | null>(null);
   const [rankingLoading, setRankingLoading] = useState(false);
   const [rankingRefreshing, setRankingRefreshing] = useState(false);
+  const [showMyRanking, setShowMyRanking] = useState(false);
+  const rankingListRef = useRef<FlatList>(null);
 
   // My crews tab state (initialized from module cache)
   const [myCrews, setMyCrews] = useState<CrewItem[]>(_cachedMyCrews);
   const [myCrewsLoading, setMyCrewsLoading] = useState(_cachedMyCrews.length === 0);
   const [myCrewsRefreshing, setMyCrewsRefreshing] = useState(false);
+
+  // Friends tab state
+  const [friends, setFriends] = useState<Array<{id: string; nickname: string; avatar_url: string | null}>>([]);
+  const [friendsRunning, setFriendsRunning] = useState<FriendRunning[]>([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
+
 
   const loadExplore = useCallback(async (page: number, refresh = false, region?: string | null) => {
     if (page === 0) {
@@ -378,6 +405,36 @@ export default function CommunityFeedScreen() {
     }
   }, []);
 
+  const loadFriends = useCallback(async () => {
+    setFriendsLoading(true);
+    // Load friends and running status separately
+    try {
+      const friendsRes = await friendService.getFriends(0, 100);
+      setFriends(
+        (friendsRes.data ?? []).map((f) => ({
+          id: f.user.id,
+          nickname: f.user.nickname ?? '',
+          avatar_url: f.user.avatar_url,
+        })),
+      );
+    } catch {
+      // silent
+    }
+    try {
+      const runningRes = await userService.getFriendsRunning();
+      setFriendsRunning(runningRes);
+    } catch {
+      // running status is non-critical
+    }
+    setFriendsLoading(false);
+  }, []);
+
+  // Filtered explore crews for "내 크루" chip
+  const filteredExploreCrews = useMemo(() => {
+    if (!myCrewsOnly) return exploreCrews;
+    return exploreCrews.filter((c) => c.is_member);
+  }, [exploreCrews, myCrewsOnly]);
+
   useEffect(() => {
     loadExplore(0, false, regionFilter);
     loadWeeklyRunners(regionFilter);
@@ -424,6 +481,42 @@ export default function CommunityFeedScreen() {
 
   const exploreKeyExtractor = useCallback((item: CrewItem) => item.id, []);
   const myCrewKeyExtractor = useCallback((item: CrewItem) => item.id, []);
+  const friendKeyExtractor = useCallback((item: {id: string}) => item.id, []);
+
+  const renderFriendRow = useCallback(
+    ({ item }: { item: {id: string; nickname: string; avatar_url: string | null} }) => {
+      const running = friendsRunning.find((f) => f.user_id === item.id);
+      return (
+        <TouchableOpacity
+          style={styles.friendRow}
+          onPress={() => navigation.navigate('UserProfile', { userId: item.id })}
+          activeOpacity={0.7}
+        >
+          <RunningAvatarIndicator
+            avatarUrl={item.avatar_url}
+            nickname={item.nickname}
+            size={44}
+            isRunning={!!running}
+          />
+          <View style={styles.friendInfo}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.friendName} numberOfLines={1}>{item.nickname}</Text>
+              {running && (
+                <View style={styles.friendRunningBadge}>
+                  <Text style={styles.friendRunningBadgeText}>{t('social.running')}</Text>
+                </View>
+              )}
+            </View>
+            {running?.course_title && (
+              <Text style={styles.friendCourse} numberOfLines={1}>{running.course_title}</Text>
+            )}
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+        </TouchableOpacity>
+      );
+    },
+    [colors, friendsRunning, navigation, styles, t],
+  );
 
   // ---- Header navigation handlers ----
 
@@ -451,13 +544,18 @@ export default function CommunityFeedScreen() {
     loadMyCrews(true);
   }, [loadMyCrews]);
 
+  const handleFriendsRefresh = useCallback(() => {
+    loadFriends();
+  }, [loadFriends]);
+
   const handleSetExploreTab = useCallback(() => {
     setActiveTab('explore');
   }, []);
 
-  const handleSetMyCrewsTab = useCallback(() => {
-    setActiveTab('myCrews');
-  }, []);
+  const handleSetFriendsTab = useCallback(() => {
+    setActiveTab('friends');
+    loadFriends();
+  }, [loadFriends]);
 
   const handleSetRankingTab = useCallback(() => {
     setActiveTab('ranking');
@@ -480,46 +578,42 @@ export default function CommunityFeedScreen() {
 
   const runnerKeyExtractor = useCallback((item: WeeklyRunnerEntry) => item.user.id, []);
 
-  // ---- My Ranking Header ----
+  // ---- My Ranking scroll-to ----
 
-  const MyRankingHeader = useMemo(() => {
-    if (!myRanking) return null;
-    const isMedal = myRanking.rank <= 3;
-    const medalColor = isMedal ? MEDAL_COLORS[myRanking.rank - 1] : undefined;
-    return (
-      <View style={styles.myRankingCard}>
-        <Text style={styles.myRankingLabel}>{t('ranking.myRanking')}</Text>
-        <TouchableOpacity
-          style={styles.rrRow}
-          onPress={() => navigation.navigate('UserProfile', { userId: myRanking.user.id })}
-          activeOpacity={0.7}
-        >
-          <View style={[styles.rrRankBadge, medalColor ? { backgroundColor: medalColor } : { backgroundColor: colors.surface }]}>
-            <Text style={[styles.rrRankText, medalColor ? { color: '#FFF' } : { color: colors.textSecondary }]}>
-              {myRanking.rank}
-            </Text>
-          </View>
-          {myRanking.user.avatar_url ? (
-            <Image source={{ uri: myRanking.user.avatar_url }} style={styles.rrAvatar} />
-          ) : (
-            <View style={[styles.rrAvatar, { backgroundColor: colors.surface }]}>
-              <Ionicons name="person" size={16} color={colors.textTertiary} />
-            </View>
-          )}
-          <View style={styles.rrInfo}>
-            <Text style={styles.rrName} numberOfLines={1}>{myRanking.user.nickname ?? '?'}</Text>
-            {myRanking.user.crew_name ? (
-              <Text style={styles.rrCrew} numberOfLines={1}>{myRanking.user.crew_name}</Text>
-            ) : null}
-          </View>
-          <View style={styles.rrStats}>
-            <Text style={styles.rrDistance}>{t('ranking.runs', { count: myRanking.run_count })}</Text>
-            <Text style={styles.rrMeta}>{formatDistance(myRanking.total_distance_meters)}</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
-  }, [myRanking, styles, colors, t, navigation]);
+  const handleToggleMyRanking = useCallback(() => {
+    if (!myRanking) return;
+    setShowMyRanking((prev) => {
+      const next = !prev;
+      if (next) {
+        // Find index of my ranking in the list and scroll to it
+        const idx = weeklyRunners.findIndex((r) => r.user.id === myRanking.user.id);
+        if (idx >= 0) {
+          setTimeout(() => {
+            rankingListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
+          }, 100);
+        }
+      }
+      return next;
+    });
+  }, [myRanking, weeklyRunners]);
+
+  // Highlight my entry in the list
+  const renderRunnerRowWithHighlight = useCallback(
+    ({ item }: { item: WeeklyRunnerEntry }) => {
+      const isMe = showMyRanking && myRanking && item.user.id === myRanking.user.id;
+      return (
+        <RunnerRow
+          item={item}
+          onPress={() => navigation.navigate('UserProfile', { userId: item.user.id })}
+          styles={styles}
+          colors={colors}
+          t={t}
+          highlight={!!isMe}
+        />
+      );
+    },
+    [colors, navigation, styles, t, showMyRanking, myRanking],
+  );
 
   // ---- Empty states ----
 
@@ -556,18 +650,11 @@ export default function CommunityFeedScreen() {
 
   return (
     <BlurredBackground>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>{t('social.title')}</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.headerBtn}
-              onPress={handleNavigateToFriends}
-              activeOpacity={0.6}
-            >
-              <Ionicons name="people-outline" size={20} color={colors.text} />
-            </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerBtn}
               onPress={handleNavigateToSearch}
@@ -606,12 +693,12 @@ export default function CommunityFeedScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'myCrews' && styles.tabActive]}
-            onPress={handleSetMyCrewsTab}
+            style={[styles.tab, activeTab === 'friends' && styles.tabActive]}
+            onPress={handleSetFriendsTab}
             activeOpacity={0.7}
           >
-            <Text style={[styles.tabText, activeTab === 'myCrews' && styles.tabTextActive]}>
-              {t('crew.myCrews')}
+            <Text style={[styles.tabText, activeTab === 'friends' && styles.tabTextActive]}>
+              {t('social.friends')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -619,6 +706,36 @@ export default function CommunityFeedScreen() {
         {/* Region Filter (Explore & Ranking tabs) */}
         {(activeTab === 'explore' || activeTab === 'ranking') && (
           <View style={styles.filterRow}>
+            {activeTab === 'explore' && (
+              <TouchableOpacity
+                style={[styles.myCrewChip, myCrewsOnly && styles.myCrewChipActive]}
+                onPress={() => setMyCrewsOnly((v) => !v)}
+                activeOpacity={0.6}
+              >
+                {myCrewsOnly && (
+                  <Ionicons name="checkmark" size={14} color="#FFF" />
+                )}
+                <Text style={[styles.filterChipText, myCrewsOnly ? styles.filterChipTextActive : null]}>
+                  {t('crew.myCrews')}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {activeTab === 'ranking' && myRanking && (
+              <TouchableOpacity
+                style={[styles.filterChip, showMyRanking && styles.filterChipActive]}
+                onPress={handleToggleMyRanking}
+                activeOpacity={0.6}
+              >
+                <Ionicons
+                  name="person-outline"
+                  size={14}
+                  color={showMyRanking ? '#FFF' : colors.textSecondary}
+                />
+                <Text style={[styles.filterChipText, showMyRanking ? styles.filterChipTextActive : null]}>
+                  {t('ranking.myRanking')}
+                </Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={[styles.filterChip, regionFilter ? styles.filterChipActive : null]}
               onPress={() => setRegionPickerVisible(true)}
@@ -662,7 +779,7 @@ export default function CommunityFeedScreen() {
               </View>
             ) : (
               <FlatList
-                data={exploreCrews}
+                data={filteredExploreCrews}
                 renderItem={renderExploreCard}
                 keyExtractor={exploreKeyExtractor}
                 contentContainerStyle={styles.listContent}
@@ -693,27 +810,40 @@ export default function CommunityFeedScreen() {
             )
         )}
 
-        {/* My Crews Tab */}
-        {activeTab === 'myCrews' && (
-          myCrewsLoading ? (
+        {/* Friends Tab */}
+        {activeTab === 'friends' && (
+          friendsLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.primary} />
             </View>
           ) : (
             <FlatList
-              data={myCrews}
-              renderItem={renderMyCrewCard}
-              keyExtractor={myCrewKeyExtractor}
+              data={friends}
+              renderItem={renderFriendRow}
+              keyExtractor={friendKeyExtractor}
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
               removeClippedSubviews={true}
               maxToRenderPerBatch={10}
               windowSize={7}
-              ListEmptyComponent={MyCrewsEmpty}
+              ListEmptyComponent={
+                <View style={styles.friendsEmptyContainer}>
+                  <Ionicons name="people-outline" size={36} color={colors.textTertiary} />
+                  <Text style={styles.emptyTitle}>{t('social.noFriends')}</Text>
+                  <TouchableOpacity
+                    style={styles.emptyBtn}
+                    onPress={() => navigation.navigate('Friends')}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="search" size={16} color="#FFF" />
+                    <Text style={styles.emptyBtnText}>{t('social.findFriends')}</Text>
+                  </TouchableOpacity>
+                </View>
+              }
               refreshControl={
                 <RefreshControl
-                  refreshing={myCrewsRefreshing}
-                  onRefresh={handleMyCrewsRefresh}
+                  refreshing={false}
+                  onRefresh={handleFriendsRefresh}
                   tintColor={colors.primary}
                 />
               }
@@ -729,13 +859,13 @@ export default function CommunityFeedScreen() {
             </View>
           ) : (
             <FlatList
+              ref={rankingListRef}
               data={weeklyRunners}
-              renderItem={renderRunnerRow}
+              renderItem={renderRunnerRowWithHighlight}
               keyExtractor={runnerKeyExtractor}
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
               removeClippedSubviews={true}
-              ListHeaderComponent={MyRankingHeader}
               ListEmptyComponent={
                 <View style={styles.emptyState}>
                   <Ionicons name="trophy-outline" size={36} color={colors.textTertiary} />
@@ -763,7 +893,6 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     container: {
       flex: 1,
-      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
     },
 
     loadingContainer: {
@@ -1057,21 +1186,6 @@ const createStyles = (c: ThemeColors) =>
       color: '#FFF',
     },
 
-    // ═══ MY RANKING ═══
-    myRankingCard: {
-      backgroundColor: c.primary + '08',
-      borderRadius: BORDER_RADIUS.lg,
-      padding: SPACING.md,
-      marginBottom: SPACING.md,
-    },
-    myRankingLabel: {
-      fontSize: FONT_SIZES.xs,
-      fontWeight: '700',
-      color: c.primary,
-      marginBottom: SPACING.xs,
-      marginLeft: SPACING.xs,
-    },
-
     // ═══ RUNNER ROW ═══
     rrRow: {
       flexDirection: 'row',
@@ -1166,5 +1280,76 @@ const createStyles = (c: ThemeColors) =>
     footerLoading: {
       paddingVertical: SPACING.xl,
       alignItems: 'center',
+    },
+
+    // ═══ FRIENDS TAB ═══
+    friendRow: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: SPACING.md,
+      marginBottom: SPACING.sm,
+      gap: SPACING.md,
+    },
+    friendInfo: {
+      flex: 1,
+      marginLeft: SPACING.xs,
+      gap: 2,
+    },
+    friendName: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '700' as const,
+      color: c.text,
+      flexShrink: 1,
+    },
+    friendRunningBadge: {
+      backgroundColor: '#34C759',
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: BORDER_RADIUS.full,
+    },
+    friendRunningBadgeText: {
+      fontSize: 11,
+      fontWeight: '700' as const,
+      color: '#FFF',
+    },
+    friendCourse: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '500' as const,
+      color: c.textTertiary,
+    },
+    friendsHeader: {
+      paddingVertical: SPACING.sm,
+      marginBottom: SPACING.xs,
+    },
+    friendsHeaderText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700' as const,
+      color: c.textSecondary,
+    },
+    friendsEmptyContainer: {
+      alignItems: 'center' as const,
+      paddingVertical: SPACING.xxxl * 2,
+      gap: SPACING.sm,
+    },
+
+    // My crew filter chip (explore tab)
+    myCrewChip: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      gap: 5,
+      backgroundColor: c.surface,
+      borderRadius: BORDER_RADIUS.full,
+      paddingVertical: SPACING.xs + 2,
+      paddingHorizontal: SPACING.md,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    myCrewChipActive: {
+      backgroundColor: c.primary,
+      borderColor: c.primary,
     },
   });

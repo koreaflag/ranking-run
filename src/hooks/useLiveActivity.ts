@@ -70,7 +70,7 @@ export function useLiveActivity() {
     };
 
     pushUpdate();
-    updateTimerRef.current = setInterval(pushUpdate, 3000);
+    updateTimerRef.current = setInterval(pushUpdate, 1000);
 
     return () => {
       if (updateTimerRef.current) {

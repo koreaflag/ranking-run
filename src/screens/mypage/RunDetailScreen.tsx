@@ -4,11 +4,13 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   TouchableOpacity,
   Dimensions,
+  Platform,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '../../lib/icons';
@@ -79,6 +81,40 @@ export default function RunDetailScreen() {
       longitude: lng,
     }));
   }, [detail]);
+
+  // Compute split km markers along the route for map visualization
+  const splitMapMarkers = useMemo(() => {
+    const splits = detail?.splits;
+    if (!routePoints.length || !splits?.length) return [];
+    const markers: Array<{ km: number; latitude: number; longitude: number; pace?: string }> = [];
+    let cumulDist = 0;
+    let nextKm = 1;
+    const splitMap = new Map(splits.map((s: Split) => [s.split_number, s]));
+
+    for (let i = 1; i < routePoints.length && nextKm <= splits.length; i++) {
+      const prev = routePoints[i - 1];
+      const curr = routePoints[i];
+      const dLat = (curr.latitude - prev.latitude) * Math.PI / 180;
+      const dLng = (curr.longitude - prev.longitude) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(prev.latitude * Math.PI / 180) * Math.cos(curr.latitude * Math.PI / 180) *
+        Math.sin(dLng / 2) ** 2;
+      const segDist = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const prevCumul = cumulDist;
+      cumulDist += segDist;
+
+      while (nextKm * 1000 <= cumulDist && nextKm <= splits.length) {
+        const ratio = (nextKm * 1000 - prevCumul) / segDist;
+        const lat = prev.latitude + ratio * (curr.latitude - prev.latitude);
+        const lng = prev.longitude + ratio * (curr.longitude - prev.longitude);
+        const split = splitMap.get(nextKm);
+        const pace = split ? formatPace(split.pace_seconds_per_km) : undefined;
+        markers.push({ km: nextKm, latitude: lat, longitude: lng, pace });
+        nextKm++;
+      }
+    }
+    return markers;
+  }, [routePoints, detail]);
 
   const headerLabel = useMemo(() => {
     if (!detail) return '';
@@ -231,10 +267,33 @@ export default function RunDetailScreen() {
               <RouteMapView
                 ref={mapRef}
                 routePoints={routePoints}
+                splitMarkers={splitMapMarkers.length > 0 ? splitMapMarkers : undefined}
                 interactive={false}
                 style={styles.mapPreview}
               />
             </View>
+          )}
+
+          {/* Route Correction for existing course */}
+          {detail.course && routePoints.length >= 2 && (
+            <TouchableOpacity
+              style={styles.routeCorrectBtn}
+              activeOpacity={0.7}
+              onPress={() => {
+                navigation.dispatch(
+                  CommonActions.navigate({
+                    name: 'CourseTab',
+                    params: {
+                      screen: 'CourseRouteCorrect',
+                      params: { courseId: detail.course!.id },
+                    },
+                  }),
+                );
+              }}
+            >
+              <Ionicons name="map-outline" size={18} color={colors.primary} />
+              <Text style={styles.routeCorrectBtnText}>{t('course.detail.routeCorrection')}</Text>
+            </TouchableOpacity>
           )}
 
           {/* Save as Course */}
@@ -532,6 +591,26 @@ const createStyles = (c: ThemeColors) =>
     mapPreview: {
       height: SCREEN_WIDTH - SPACING.xxl * 2,
       width: '100%',
+    },
+
+    // Route Correction
+    routeCorrectBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: SPACING.sm,
+      marginHorizontal: SPACING.xxl,
+      marginBottom: SPACING.lg,
+      paddingVertical: SPACING.md,
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    routeCorrectBtnText: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '700',
+      color: c.primary,
     },
 
     // Save as Course

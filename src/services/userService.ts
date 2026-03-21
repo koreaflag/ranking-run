@@ -131,7 +131,8 @@ export const userService = {
    * Fetch friends who are currently running.
    */
   async getFriendsRunning(): Promise<FriendRunning[]> {
-    return api.get<FriendRunning[]>('/follows/friends-running');
+    const resp = await api.get<{ data: FriendRunning[] }>('/follows/friends-running');
+    return resp.data ?? [];
   },
 
   /**

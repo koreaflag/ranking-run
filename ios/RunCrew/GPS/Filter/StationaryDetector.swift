@@ -32,13 +32,14 @@ class StationaryDetector {
     private let movingSpeedThreshold: Double = 0.35
 
     /// Accelerometer magnitude threshold to detect movement (g-force).
-    /// Walking typically generates 0.08–0.15g; 0.12g catches most walking motion.
-    /// Lowered from 0.15g to avoid missing slow walkers.
-    private let stationaryAccelThreshold: Double = 0.12
+    /// Walking generates 0.15–0.3g sustained; phone shaking can spike higher but briefly.
+    /// Set to 0.2g to ignore phone shaking while still catching genuine walking.
+    private let stationaryAccelThreshold: Double = 0.2
 
     /// Minimum time the user must be stationary before state transitions (seconds).
     /// Prevents brief pauses (e.g., at crosswalks) from triggering stationary state.
-    private let minStationaryDuration: TimeInterval = 3.0
+    /// Unified at 2.0s across iOS/Android for consistent behavior.
+    private let minStationaryDuration: TimeInterval = 2.0
 
     private var consecutiveStationaryCount = 0
     private var consecutiveMovingCount = 0
@@ -105,14 +106,15 @@ class StationaryDetector {
     }
 
     /// Update with Core Motion acceleration magnitude (optional, improves accuracy).
-    /// When isLowAccuracyMode is true (battery optimizer downgraded GPS), accelerometer
-    /// becomes the primary resume signal — 1 reading is sufficient.
+    /// Requires 3 consecutive readings above threshold to resume — prevents phone shaking
+    /// from falsely triggering resume while still catching genuine walking/running.
+    private let requiredAccelMovingCount = 3
+
     func updateWithAcceleration(_ magnitude: Double, isLowAccuracyMode: Bool = false) {
         if state == .stationary && magnitude > stationaryAccelThreshold {
             consecutiveMovingCount += 1
-            // Always use requiredMovingCount (1) — accelerometer is a reliable motion signal
-            // and we want to exit stationary as fast as possible to avoid missing distance.
-            if consecutiveMovingCount >= requiredMovingCount {
+            let threshold = isLowAccuracyMode ? requiredMovingCount : requiredAccelMovingCount
+            if consecutiveMovingCount >= threshold {
                 transitionTo(.moving)
             }
         }

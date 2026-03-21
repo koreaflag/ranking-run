@@ -47,6 +47,19 @@ export interface WatchRunState {
   calories: number;
 }
 
+// ---- Watch Standalone Status ----
+
+export interface WatchStandaloneStatus {
+  type: 'standaloneStatus';
+  phase: string;
+  distanceMeters?: number;
+  durationSeconds?: number;
+  currentPace?: number;
+  avgPace?: number;
+  heartRate?: number;
+  timestamp: number;
+}
+
 // ---- Event Names ----
 
 export const WATCH_EVENTS = {
@@ -54,5 +67,6 @@ export const WATCH_EVENTS = {
   HEART_RATE: 'Watch_onHeartRate',
   REACHABILITY_CHANGE: 'Watch_onReachabilityChange',
   STANDALONE_RUN: 'Watch_onStandaloneRun',
+  STANDALONE_STATUS: 'Watch_onStandaloneStatus',
   WEEKLY_GOAL_UPDATE: 'Watch_onWeeklyGoalUpdate',
 } as const;

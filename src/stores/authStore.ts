@@ -22,7 +22,7 @@ interface AuthState {
   loadStoredAuth: () => Promise<void>;
   setUser: (user: UserProfile) => void;
   clearError: () => void;
-  completeOnboarding: (nickname: string, avatarUrl?: string) => Promise<void>;
+  completeOnboarding: (nickname: string, avatarUrl?: string, country?: string) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -258,12 +258,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ error: null });
   },
 
-  completeOnboarding: async (nickname, avatarUrl) => {
+  completeOnboarding: async (nickname, avatarUrl, country) => {
     set({ error: null });
     try {
       const profile = await authService.setupProfile({
         nickname,
         avatar_url: avatarUrl,
+        country,
       });
       set({
         user: {
@@ -277,7 +278,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           weight_kg: null,
           bio: null,
           instagram_username: null,
-          country: null,
+          country: country ?? null,
           total_distance_meters: profile.total_distance_meters,
           total_runs: profile.total_runs,
           total_points: profile.total_points ?? 0,

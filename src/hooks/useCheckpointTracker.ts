@@ -34,6 +34,8 @@ interface CheckpointTrackerResult {
 
 const PASS_RADIUS_METERS = 30;
 const FINISH_RADIUS_METERS = 50;
+/** Minimum distance (meters) the runner must have traveled before the finish checkpoint can trigger */
+const MIN_DISTANCE_FOR_FINISH = 200;
 
 /** Haversine distance in meters between two lat/lng points */
 function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -68,10 +70,23 @@ export function useCheckpointTracker(
   const [finishReached, setFinishReached] = useState(false);
   const nextIndexRef = useRef(0);
   const justPassedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const totalDistanceTraveled = useRef(0);
+  const prevLocationRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const updateLocation = useCallback(
     (lat: number, lng: number) => {
       if (total === 0) return;
+
+      // Accumulate total distance traveled
+      if (prevLocationRef.current) {
+        const step = haversine(prevLocationRef.current.lat, prevLocationRef.current.lng, lat, lng);
+        // Filter out GPS jumps (>100m in a single update is noise)
+        if (step < 100) {
+          totalDistanceTraveled.current += step;
+        }
+      }
+      prevLocationRef.current = { lat, lng };
+
       const idx = nextIndexRef.current;
       if (idx >= total) return;
 
@@ -83,13 +98,20 @@ export function useCheckpointTracker(
       // Check if current checkpoint is within radius
       let passedCurrent = dist <= radius;
 
+      // Guard: finish checkpoint requires minimum distance traveled to prevent
+      // immediate completion on round-trip courses (start === finish)
+      if (passedCurrent && isFinish && totalDistanceTraveled.current < MIN_DISTANCE_FOR_FINISH) {
+        passedCurrent = false;
+      }
+
       // Skip tolerance: if next checkpoint is within radius AND skipped CP is nearby (GPS drift only)
       if (!passedCurrent && idx + 1 < total && dist <= PASS_RADIUS_METERS * 3) {
         const nextCp = sorted[idx + 1];
         const nextIsFinish = idx + 1 === total - 1;
         const nextRadius = nextIsFinish ? FINISH_RADIUS_METERS : PASS_RADIUS_METERS;
         const nextDist = haversine(lat, lng, nextCp.lat, nextCp.lng);
-        if (nextDist <= nextRadius) {
+        // Block skip-pass to finish if minimum distance not met
+        if (nextDist <= nextRadius && !(nextIsFinish && totalDistanceTraveled.current < MIN_DISTANCE_FOR_FINISH)) {
           // Force-pass current checkpoint, then pass next
           const now = Date.now() / 1000;
           setPassedSet((prev) => {
@@ -154,6 +176,8 @@ export function useCheckpointTracker(
     setCompetitionStartTime(null);
     setFinishReached(false);
     nextIndexRef.current = 0;
+    totalDistanceTraveled.current = 0;
+    prevLocationRef.current = null;
     if (justPassedTimerRef.current) clearTimeout(justPassedTimerRef.current);
     justPassedTimerRef.current = null;
   }, []);

@@ -78,6 +78,7 @@ export interface UserProfile {
 export interface ProfileSetupRequest {
   nickname: string;
   avatar_url?: string;
+  country?: string;
 }
 
 export interface ProfileUpdateRequest {
@@ -848,7 +849,7 @@ export interface FriendRunning {
   user_id: string;
   nickname: string;
   avatar_url: string | null;
-  session_start: string;
+  started_at: string;
   course_title: string | null;
   course_id: string | null;
 }

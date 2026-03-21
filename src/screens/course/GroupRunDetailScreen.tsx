@@ -5,13 +5,15 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  SafeAreaView,
   TouchableOpacity,
   Alert,
   Image,
   Modal,
   TextInput,
+  Platform,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';

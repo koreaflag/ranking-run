@@ -92,11 +92,17 @@ class LiveActivityModule: NSObject {
                     return
                 }
                 self.activityId = fallback.id
-                await fallback.update(.init(state: state, staleDate: nil))
+                await fallback.update(
+                    .init(state: state, staleDate: nil),
+                    alertConfiguration: nil
+                )
                 resolve(true)
                 return
             }
-            await activity.update(.init(state: state, staleDate: nil))
+            await activity.update(
+                .init(state: state, staleDate: nil),
+                alertConfiguration: nil
+            )
             resolve(true)
         }
     }
@@ -126,7 +132,7 @@ class LiveActivityModule: NSObject {
             avgPace: avgPace,
             calories: calories,
             heartRate: heartRate,
-            isPaused: false,
+            isPaused: true,
             timerStartDate: Date().addingTimeInterval(-Double(durationSeconds))
         )
 
@@ -134,7 +140,7 @@ class LiveActivityModule: NSObject {
             for activity in Activity<RunningActivityAttributes>.activities {
                 await activity.end(
                     .init(state: finalState, staleDate: nil),
-                    dismissalPolicy: .after(.now + 30)
+                    dismissalPolicy: .immediate
                 )
             }
             activityId = nil

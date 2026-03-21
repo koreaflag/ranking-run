@@ -5,7 +5,6 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   ActionSheetIOS,
@@ -14,7 +13,9 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Image,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '../../lib/icons';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';

@@ -57,6 +57,7 @@ class FriendRunningInfo(BaseModel):
     session_id: str
     started_at: datetime
     course_id: str | None
+    course_title: str | None = None
 
 
 class FriendsRunningResponse(BaseModel):

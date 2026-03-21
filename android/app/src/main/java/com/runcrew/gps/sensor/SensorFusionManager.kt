@@ -82,8 +82,11 @@ class SensorFusionManager(
         stepDetector.updateSpeed(filteredSpeed)
         stationaryDetector.updateGpsSpeed(filteredSpeed)
 
-        // Feed accelerometer variance to Kalman filter Q-matrix tuning
-        kalmanFilter.accelerometerVariance = stationaryDetector.currentAccelVariance.coerceAtLeast(0.1)
+        // Feed accelerometer variance to Kalman filter Q-matrix tuning (matched with iOS)
+        // iOS uses acceleration variance in g^2 domain, scaled by *50 + 0.5.
+        // StationaryDetector tracks variance in (m/s^2)^2 — convert to g^2 by dividing by 9.81^2.
+        val accelVarianceG2 = (stationaryDetector.currentAccelVariance / (9.81 * 9.81)).coerceAtLeast(0.001)
+        kalmanFilter.updateProcessNoise(accelVarianceG2)
 
         // If GPS altitude is available, set barometer base on first fix
         if (point.altitude != 0.0 && !barometerTracker.isAvailable) {

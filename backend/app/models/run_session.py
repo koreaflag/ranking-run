@@ -21,7 +21,7 @@ class RunSession(Base, UUIDPrimaryKeyMixin):
     )
     course_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("courses.id"),
+        ForeignKey("courses.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

@@ -5,7 +5,8 @@ import { userService } from '../services/userService';
 import { useRunningStore } from '../stores/runningStore';
 import { formatDistance, formatDuration } from '../utils/format';
 import { WATCH_EVENTS } from '../types/watch';
-import type { WatchWeeklyGoalEvent } from '../types/watch';
+import type { WatchWeeklyGoalEvent, WatchStandaloneStatus } from '../types/watch';
+import { useWatchStandaloneStore } from '../stores/watchStandaloneStore';
 import i18n from '../i18n';
 
 const { WatchBridgeModule } = NativeModules;
@@ -251,9 +252,18 @@ export function useWatchRunSync() {
       },
     );
 
+    // Listen for watch standalone run status updates (live during run)
+    const statusSub = emitter.addListener(
+      WATCH_EVENTS.STANDALONE_STATUS,
+      (data: WatchStandaloneStatus) => {
+        useWatchStandaloneStore.getState().updateStatus(data);
+      },
+    );
+
     return () => {
       subscription.remove();
       goalSub.remove();
+      statusSub.remove();
     };
   }, []);
 }

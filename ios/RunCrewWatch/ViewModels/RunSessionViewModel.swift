@@ -163,8 +163,20 @@ class RunSessionViewModel: ObservableObject {
     private func wireTimerManager() {
         timerManager.onDurationTick = { [weak self] in
             guard let self = self, self.state.phase == "running", !self.state.isAutoPaused else { return }
-            let elapsed = Int(Date().timeIntervalSince(self.timerManager.anchorTime))
-            self.state.duration = self.timerManager.anchorDuration + elapsed
+            // startTime-based: compute duration purely from phone's startTime + elapsedBeforePause.
+            // This eliminates jitter from anchor resets when WCSession messages arrive with delay.
+            if self.state.runStartTime > 0 {
+                let nowMs = Date().timeIntervalSince1970 * 1000
+                let elapsedMs = nowMs - self.state.runStartTime
+                let total = Int(elapsedMs / 1000) + Int(self.state.elapsedBeforePause)
+                if total >= self.state.duration {
+                    self.state.duration = total
+                }
+            } else {
+                // Fallback: anchor-based (for backward compatibility if startTime not received)
+                let elapsed = Int(Date().timeIntervalSince(self.timerManager.anchorTime))
+                self.state.duration = self.timerManager.anchorDuration + elapsed
+            }
         }
 
         timerManager.onReachabilityTick = { [weak self] in
@@ -315,9 +327,18 @@ class RunSessionViewModel: ObservableObject {
             state.metronomeBPM = 0
             // Reset companion manager internal state (haptic tracking, session tracking)
             companionManager.resetForNewRun()
-            // Reset WorkoutMirroringManager accumulated distance from previous run
+            // Clean up previous run's mirroring session (e.g., completed → countdown
+            // without going through idle — user starts new run while result screen is showing)
             if #available(watchOS 10, *) {
-                WorkoutMirroringManager.shared.resetAccumulatedDistance()
+                let mgr = WorkoutMirroringManager.shared
+                if mgr.session != nil {
+                    mgr.cleanup()
+                }
+                mgr.resetAccumulatedDistance()
+            }
+            // Cancel any lingering foreground session from previous run
+            if WatchSessionService.shared.hasForegroundSession {
+                WatchSessionService.shared.cancelForegroundSession()
             }
             scheduleCountdownAutoTransition()
 
@@ -376,9 +397,24 @@ class RunSessionViewModel: ObservableObject {
         case "idle":
             timerManager.cancelCountdownAutoTransition()
             timerManager.stopDurationTimer()
+            timerManager.stopAutoPauseTimer()
             stopHeartRateMonitoring()
             timerManager.stopStatePollTimer()
             WatchSessionService.shared.cancelForegroundSession()
+            // Force-stop any running standalone tracking
+            WatchLocationManager.shared.stopTracking()
+            WatchPedometerManager.shared.stopTracking()
+            // IMPORTANT: cleanup and reset companion BEFORE state reset.
+            // This blocks stale callbacks from the old session writing data
+            // into the reset state. Order matters:
+            // 1. Reset companion (clears session ID → rejects stale location updates)
+            // 2. Cleanup mirroring (nils delegate → blocks stale phase callbacks)
+            // 3. Reset state (fresh WatchRunState)
+            companionManager.resetForNewRun()
+            if #available(watchOS 10, *) {
+                let mgr = WorkoutMirroringManager.shared
+                mgr.cleanup()
+            }
             state = WatchRunState()
             isStandaloneMode = false
             timerManager.resetAnchors()
@@ -426,8 +462,10 @@ class RunSessionViewModel: ObservableObject {
     // MARK: - Heart Rate
 
     private func startHeartRateMonitoring() {
-        heartRateManager.requestAuthorization { [weak self] granted in
-            guard granted, let self = self else { return }
+        heartRateManager.requestAuthorization { [weak self] _ in
+            guard let self = self else { return }
+            // Always attempt to start — requestAuthorization returns true for read types
+            // regardless of actual permission. If denied, builder simply won't deliver data.
             self.attachHeartRateToBuilderOrStartSession(retryCount: 0)
         }
     }

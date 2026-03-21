@@ -4,6 +4,7 @@
 
 export type RootStackParamList = {
   Auth: undefined;
+  Onboarding: undefined;
   Main: undefined;
 };
 
@@ -30,6 +31,8 @@ export type WorldStackParamList = {
   UserProfile: { userId: string };
   RunningMain: { courseId?: string } | undefined;
   RunResult: { sessionId: string; alreadyCompleted?: boolean };
+  HeartRateSettings: undefined;
+  WatchSettings: undefined;
 };
 
 export type HomeStackParamList = {
@@ -55,6 +58,7 @@ export type HomeStackParamList = {
   CourseList: undefined;
   FollowList: { userId: string; type: 'followers' | 'following' };
   Friends: undefined;
+  CrewMemberSettings: { crewId: string; crewName: string };
 };
 
 export type CourseStackParamList = {
@@ -71,6 +75,7 @@ export type CourseStackParamList = {
     elevationGainMeters: number;
     isLoop?: boolean;
   };
+  CourseRouteCorrect: { courseId: string };
   UserProfile: { userId: string };
 };
 
@@ -98,6 +103,7 @@ export type CommunityStackParamList = {
   FollowList: { userId: string; type: 'followers' | 'following' };
   Friends: undefined;
   UnifiedSearch: undefined;
+  CrewMemberSettings: { crewId: string; crewName: string };
 };
 
 export type MyPageStackParamList = {

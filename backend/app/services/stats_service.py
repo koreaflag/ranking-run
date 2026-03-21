@@ -261,7 +261,7 @@ class StatsService:
         week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
         week_end = week_start + timedelta(days=7)
 
-        # Base subquery: aggregate course runs per user this week
+        # Base subquery: aggregate all runs per user this week
         agg = (
             select(
                 RunRecord.user_id,
@@ -272,7 +272,7 @@ class StatsService:
             .where(
                 RunRecord.finished_at >= week_start,
                 RunRecord.finished_at < week_end,
-                RunRecord.course_id.isnot(None),
+                RunRecord.is_flagged == False,
             )
             .group_by(RunRecord.user_id)
             .subquery()
@@ -346,8 +346,8 @@ class StatsService:
         week_end: datetime,
         region: str | None = None,
     ) -> dict | None:
-        """Get the requesting user's weekly ranking entry (course runs only)."""
-        # My course-run stats this week
+        """Get the requesting user's weekly ranking entry."""
+        # My run stats this week
         my_result = await db.execute(
             select(
                 func.sum(RunRecord.distance_meters).label("total_distance"),
@@ -357,7 +357,7 @@ class StatsService:
                 RunRecord.user_id == user_id,
                 RunRecord.finished_at >= week_start,
                 RunRecord.finished_at < week_end,
-                RunRecord.course_id.isnot(None),
+                RunRecord.is_flagged == False,
             )
         )
         my_row = my_result.one()
@@ -378,7 +378,7 @@ class StatsService:
             .where(
                 RunRecord.finished_at >= week_start,
                 RunRecord.finished_at < week_end,
-                RunRecord.course_id.isnot(None),
+                RunRecord.is_flagged == False,
             )
             .group_by(RunRecord.user_id)
             .subquery()

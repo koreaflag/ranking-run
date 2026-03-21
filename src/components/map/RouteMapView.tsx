@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo, useState } from 'react';
-import { StyleSheet, View, Text } from 'react-native';
+import { StyleSheet, View, Text, Platform } from 'react-native';
 import Mapbox, { UserTrackingMode } from '@rnmapbox/maps';
 import { Ionicons } from '../../lib/icons';
 import { COLORS, DIFFICULTY_COLORS, type DifficultyLevel } from '../../utils/constants';
@@ -89,7 +89,7 @@ interface RouteMapViewProps {
   onMarkerPress?: (courseId: string) => void;
   onEventMarkerPress?: (eventId: string) => void;
   onRegionChange?: (region: Region) => void;
-  onMapPress?: () => void;
+  onMapPress?: (event?: any) => void;
   /** Called when user manually pans/zooms the map (user gesture, not programmatic) */
   onUserMapInteraction?: () => void;
   showUserLocation?: boolean;
@@ -118,6 +118,8 @@ interface RouteMapViewProps {
   deviationSegments?: Array<[number, number]>;
   /** Signal gap segments to render as dashed gray: [startIdx, endIdx] pairs */
   signalGapSegments?: Array<[number, number]>;
+  /** Split km markers along the route (e.g. 1km, 2km, ...) */
+  splitMarkers?: Array<{ km: number; latitude: number; longitude: number; pace?: string }>;
 }
 
 export interface Camera {
@@ -135,8 +137,8 @@ export interface RouteMapViewHandle {
     edgePadding?: { top: number; right: number; bottom: number; left: number },
     animated?: boolean,
   ) => void;
-  /** Toggle follow off→on to force Camera re-engage follow mode (centers on user) */
-  recenterOnUser: () => void;
+  /** Move camera to given location (or just re-engage follow mode) and re-enable follow */
+  recenterOnUser: (location?: { latitude: number; longitude: number }) => void;
 }
 
 // ---- Helpers ----
@@ -228,6 +230,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   followPitch: followPitchProp,
   deviationSegments,
   signalGapSegments,
+  splitMarkers,
 }, ref) {
   const cameraRef = useRef<Mapbox.Camera>(null);
   const colors = useTheme();
@@ -245,6 +248,13 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   // of using Mapbox's native followUserLocation (which tracks raw GPS and
   // can diverge from the Kalman-filtered orange dot).
   const useCustomFollow = internalFollow && customUserLocation != null;
+  // On Android, Mapbox native follow uses FusedLocationProvider's cached position
+  // which is often a completely different neighborhood (stale cell-tower fix).
+  // Disable native follow entirely on Android — use only custom follow + one-shot.
+  // Camera stays put until real GPS arrives, which is better than jumping to wrong place.
+  const nativeFollowEnabled = Platform.OS === 'android'
+    ? false
+    : (internalFollow && !useCustomFollow);
 
   // Sync external prop → internal state
   useEffect(() => {
@@ -289,6 +299,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
           zoomLevel: deltaToZoom(region.latitudeDelta),
           animationDuration: duration,
           animationMode: 'easeTo',
+          padding: { paddingTop: 0, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 },
         });
       });
     },
@@ -301,6 +312,8 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         if (camera.pitch != null) config.pitch = camera.pitch;
         if (camera.heading != null) config.heading = camera.heading;
         if (camera.zoom != null) config.zoomLevel = camera.zoom;
+        // Always reset padding to prevent stale padding from previous state
+        config.padding = { paddingTop: 0, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 };
         cameraRef.current?.setCamera(config);
       });
     },
@@ -320,14 +333,27 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         );
       });
     },
-    recenterOnUser: () => {
-      // Toggle follow off→on to force Camera re-engage follow mode
-      setInternalFollow(false);
-      requestAnimationFrame(() => setInternalFollow(true));
+    recenterOnUser: (location?: { latitude: number; longitude: number }) => {
+      // Directly move camera to given location, then re-enable follow.
+      // On Android, native follow is disabled so we must always setCamera explicitly.
+      if (location) {
+        cameraRef.current?.setCamera({
+          centerCoordinate: [location.longitude, location.latitude],
+          zoomLevel: followZoomLevel ?? 16,
+          animationDuration: 500,
+          animationMode: 'flyTo',
+          padding: { paddingTop: 0, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 },
+        });
+      }
+      // Re-enable follow (custom follow will keep centering on updates)
+      setInternalFollow(true);
     },
-  }), [runCameraAction]);
+  }), [runCameraAction, followZoomLevel]);
 
   // Initial camera config (skip route bounds when following user — Camera centers on user automatically)
+  // Camera defaultSettings: the ONLY reliable way to set initial position.
+  // setCamera() calls are ignored if Camera hasn't mounted yet.
+  // lastKnownLocation comes from zustand persist (synchronously available).
   const cameraDefaults = useMemo(() => {
     if (isRouteMode && routePoints.length >= 2 && !followsUserLocation) {
       const { ne, sw } = computeBounds(routePoints);
@@ -337,11 +363,17 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         zoomLevel: deltaToZoom(latDelta),
       };
     }
+    // Use persisted user location instead of SEOUL_CENTER
+    const center: [number, number] = lastKnownLocation
+      ? [lastKnownLocation.longitude, lastKnownLocation.latitude]
+      : SEOUL_CENTER;
     return {
-      centerCoordinate: SEOUL_CENTER as [number, number],
+      centerCoordinate: center,
       zoomLevel: followsUserLocation ? 16 : DEFAULT_ZOOM,
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // lastKnownLocation is read once at mount — it's from zustand persist so it's
+  // synchronously available. Empty deps is intentional to avoid camera resets.
 
   // Fit map to route bounds after map loads (skip when following user — Camera handles centering)
   const handleDidFinishLoadingMap = useCallback(() => {
@@ -369,23 +401,36 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   // Custom follow: center camera on customUserLocation (Kalman-filtered)
   // instead of relying on Mapbox's native follow which tracks raw GPS.
   // Also rotates the map to face the user's heading direction.
+  // Applies followPadding so the GPS dot centers in the visible map area
+  // (accounting for overlapping inline UI panels).
   useEffect(() => {
     if (useCustomFollow && customUserLocation) {
-      // Offset center slightly south so the user dot appears in the upper 40% of the map,
-      // giving more visibility to the route ahead.
       const zoomLevel = followZoomLevel ?? 16;
-      const offsetLat = 0.0004; // ~40m south offset at zoom 16
       const headingToUse = customUserHeading ?? 0;
-      cameraRef.current?.setCamera({
-        centerCoordinate: [customUserLocation.longitude, customUserLocation.latitude - offsetLat],
+      const cameraConfig: any = {
+        centerCoordinate: [customUserLocation.longitude, customUserLocation.latitude],
         zoomLevel,
         heading: headingToUse,
         pitch: followPitchProp ?? 0,
         animationDuration: 150,
         animationMode: 'easeTo',
-      });
+      };
+      // Apply padding so the camera centers the user in the visible area.
+      // IMPORTANT: Always set padding explicitly — Mapbox retains previous
+      // padding if omitted, so we must zero it out when no padding is needed.
+      if (followPadding) {
+        cameraConfig.padding = {
+          paddingTop: followPadding.paddingTop ?? 0,
+          paddingBottom: followPadding.paddingBottom ?? 0,
+          paddingLeft: followPadding.paddingLeft ?? 0,
+          paddingRight: followPadding.paddingRight ?? 0,
+        };
+      } else {
+        cameraConfig.padding = { paddingTop: 0, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 };
+      }
+      cameraRef.current?.setCamera(cameraConfig);
     }
-  }, [useCustomFollow, customUserLocation?.latitude, customUserLocation?.longitude, followZoomLevel, customUserHeading, followPitchProp]);
+  }, [useCustomFollow, customUserLocation?.latitude, customUserLocation?.longitude, followZoomLevel, customUserHeading, followPitchProp, followPadding]);
 
   // Region change callback
   const handleRegionDidChange = useCallback(
@@ -523,33 +568,31 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         zoomEnabled={isInteractive}
         rotateEnabled={!!pitchEnabledProp || followUserModeProp === 'course'}
         pitchEnabled={!!pitchEnabledProp || followPitchProp != null}
-        onPress={onMapPress ? () => onMapPress() : undefined}
+        onPress={onMapPress ? (feature: any) => onMapPress(feature) : undefined}
         onDidFinishLoadingMap={handleDidFinishLoadingMap}
-        onRegionDidChange={isMarkersMode || useCustomFollow ? handleRegionDidChange : undefined}
+        onRegionDidChange={isMarkersMode || useCustomFollow || customUserLocation ? handleRegionDidChange : undefined}
         style={styles.map}
       >
         {/* Camera */}
         <Mapbox.Camera
           ref={cameraRef}
-          key={followPadding ? `pad-${followPadding.paddingBottom ?? 0}` : 'default'}
           defaultSettings={cameraDefaults}
-          followUserLocation={internalFollow && !useCustomFollow}
-          followUserMode={internalFollow && !useCustomFollow
+          followUserLocation={nativeFollowEnabled}
+          followUserMode={nativeFollowEnabled
             ? (followUserModeProp === 'course'
               ? UserTrackingMode.FollowWithCourse
               : followUserModeProp === 'compass'
                 ? UserTrackingMode.FollowWithHeading
                 : UserTrackingMode.Follow)
             : undefined}
-          followZoomLevel={internalFollow && !useCustomFollow ? (followZoomLevel ?? 15) : undefined}
+          followZoomLevel={nativeFollowEnabled ? (followZoomLevel ?? 15) : undefined}
           followPitch={internalFollow && followPitchProp != null ? followPitchProp : undefined}
-          followPadding={followPadding}
-          padding={followPadding ? {
-            paddingTop: followPadding.paddingTop ?? 0,
-            paddingBottom: followPadding.paddingBottom ?? 0,
-            paddingLeft: followPadding.paddingLeft ?? 0,
-            paddingRight: followPadding.paddingRight ?? 0,
-          } : undefined}
+          padding={{
+            paddingTop: followPadding?.paddingTop ?? 0,
+            paddingBottom: followPadding?.paddingBottom ?? 0,
+            paddingLeft: followPadding?.paddingLeft ?? 0,
+            paddingRight: followPadding?.paddingRight ?? 0,
+          }}
           animationMode="flyTo"
           animationDuration={0}
         />
@@ -654,6 +697,25 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             );
           })}
 
+        {/* ---- Split km markers along the route ---- */}
+        {splitMarkers && splitMarkers.length > 0 && splitMarkers.map((sm) => (
+          <Mapbox.MarkerView
+            key={`split-${sm.km}`}
+            coordinate={[sm.longitude, sm.latitude]}
+            anchor={{ x: 0.5, y: 0.5 }}
+            allowOverlap={true}
+          >
+            <View style={styles.splitMarkerWrapper}>
+              <View style={styles.splitMarkerBadge}>
+                <Text style={styles.splitMarkerKm}>{sm.km}</Text>
+              </View>
+              {sm.pace && (
+                <Text style={styles.splitMarkerPace}>{sm.pace}</Text>
+              )}
+            </View>
+          </Mapbox.MarkerView>
+        ))}
+
         {/* ---- Open-world course markers (racing badge style) ---- */}
         {isMarkersMode && markers
           ?.filter((m) => m.start_lat != null && m.start_lng != null)
@@ -702,9 +764,14 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             <View
               style={[
                 styles.userLocationWrapper,
-                customUserHeading != null
-                  ? { transform: [{ rotate: `${((customUserHeading - mapBearingRef.current) % 360 + 360) % 360}deg` }] }
-                  : undefined,
+                {
+                  transform: [
+                    ...(customUserHeading != null
+                      ? [{ rotate: `${((customUserHeading - mapBearingRef.current) % 360 + 360) % 360}deg` }]
+                      : []),
+                    { scale: currentZoom >= 14 ? 1 : Math.min(2.2, 1 + (14 - currentZoom) * 0.15) },
+                  ],
+                },
               ]}
             >
               {customUserHeading != null && (
@@ -959,16 +1026,17 @@ const styles = StyleSheet.create({
     top: 0,
   },
   userLocationInner: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: '#FF5F00',
     borderWidth: 3,
     borderColor: COLORS.white,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 10,
   },
   userLocationDot: {
     alignItems: 'center',
@@ -991,6 +1059,35 @@ const styles = StyleSheet.create({
   checkpointText: {
     fontSize: 10,
     fontWeight: '800',
+  },
+
+  // ---- Split km markers ----
+  splitMarkerWrapper: {
+    alignItems: 'center',
+  },
+  splitMarkerBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splitMarkerKm: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  splitMarkerPace: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginTop: 1,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
 
   // ---- Racing badge course markers ----

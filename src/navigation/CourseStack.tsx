@@ -5,6 +5,7 @@ import CourseListScreen from '../screens/course/CourseListScreen';
 import CourseSearchScreen from '../screens/course/CourseSearchScreen';
 import CourseDetailScreen from '../screens/course/CourseDetailScreen';
 import CourseCreateScreen from '../screens/course/CourseCreateScreen';
+import CourseRouteCorrectScreen from '../screens/course/CourseRouteCorrectScreen';
 import CrewDetailScreen from '../screens/crew/CrewDetailScreen';
 import UserProfileScreen from '../screens/profile/UserProfileScreen';
 import { useTheme } from '../hooks/useTheme';
@@ -25,6 +26,7 @@ export default function CourseStack() {
       <Stack.Screen name="CourseSearch" component={CourseSearchScreen} />
       <Stack.Screen name="CourseDetail" component={CourseDetailScreen} />
       <Stack.Screen name="CourseCreate" component={CourseCreateScreen} />
+      <Stack.Screen name="CourseRouteCorrect" component={CourseRouteCorrectScreen} />
       <Stack.Screen name="CrewDetail" component={CrewDetailScreen} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
     </Stack.Navigator>

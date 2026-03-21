@@ -48,7 +48,7 @@ data class GPSPoint(
                 latitude = location.latitude,
                 longitude = location.longitude,
                 altitude = if (location.hasAltitude()) location.altitude else 0.0,
-                speed = if (location.hasSpeed()) location.speed else 0f,
+                speed = if (location.hasSpeed()) location.speed else -1f,
                 bearing = if (location.hasBearing()) location.bearing else 0f,
                 horizontalAccuracy = if (location.hasAccuracy()) location.accuracy else Float.MAX_VALUE,
                 verticalAccuracy = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && location.hasVerticalAccuracy()) {

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   Image,
   ImageBackground,
   Animated,
@@ -19,14 +18,15 @@ import {
   NativeSyntheticEvent,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import type { HomeStackParamList } from '../../types/navigation';
-import type { WeeklySummary, RecentRun, AnnouncementItem, FavoriteCourseItem, CrewChallengeItem, CrewItem } from '../../types/api';
+import type { WeeklySummary, RecentRun, AnnouncementItem, FavoriteCourseItem, CrewChallengeItem, CrewItem, FriendRunning } from '../../types/api';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCourseListStore } from '../../stores/courseListStore';
@@ -38,6 +38,7 @@ import { notificationService } from '../../services/notificationService';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import HomeSkeleton from '../../components/skeleton/HomeSkeleton';
 import CourseThumbnailMap from '../../components/course/CourseThumbnailMap';
+import RunningAvatarIndicator from '../../components/common/RunningAvatarIndicator';
 import {
   formatDistance,
   formatDuration,
@@ -54,6 +55,8 @@ import type { ThemeColors } from '../../utils/constants';
 import { useTheme } from '../../hooks/useTheme';
 import { useToastStore } from '../../stores/toastStore';
 import CrewLevelBadge from '../../components/crew/CrewLevelBadge';
+import { useWatchStandaloneStore } from '../../stores/watchStandaloneStore';
+import { getCache, setCache } from '../../utils/apiCache';
 
 const heroImage = require('../../assets/home-hero.jpg');
 
@@ -62,6 +65,8 @@ let _cachedWeekly: WeeklySummary | null = null;
 let _cachedRuns: RecentRun[] = [];
 let _cachedAnnouncements: AnnouncementItem[] = [];
 let _cachedRaids: Array<{ crew: CrewItem; raid: CrewChallengeItem }> = [];
+let _cachedFriendsRunning: FriendRunning[] = [];
+let _diskCacheLoaded = false;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ---- Onboarding Guide ----
@@ -124,11 +129,42 @@ export default function HomeScreen() {
   const [recentRuns, setRecentRuns] = useState<RecentRun[]>(_cachedRuns);
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>(_cachedAnnouncements);
   const [myCrewRaids, setMyCrewRaids] = useState<Array<{ crew: CrewItem; raid: CrewChallengeItem }>>(_cachedRaids);
+  const [friendsRunning, setFriendsRunning] = useState<FriendRunning[]>(_cachedFriendsRunning);
   const [loading, setLoading] = useState(!_cachedWeekly && _cachedRuns.length === 0);
   const [refreshing, setRefreshing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const favoriteCourses = useCourseListStore((s) => s.favoriteCourses);
   const fetchFavoriteCourses = useCourseListStore((s) => s.fetchFavoriteCourses);
+  const watchStandalone = useWatchStandaloneStore();
+
+  // Auto-clear stale watch standalone status (no update in 15s → watch disconnected)
+  useEffect(() => {
+    if (!watchStandalone.isActive) return;
+    const interval = setInterval(() => {
+      const { lastUpdateAt, isActive, clear } = useWatchStandaloneStore.getState();
+      if (isActive && Date.now() - lastUpdateAt > 15_000) {
+        clear();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [watchStandalone.isActive]);
+
+  // Restore disk cache on first mount (instant display before API)
+  useEffect(() => {
+    if (_diskCacheLoaded) return;
+    _diskCacheLoaded = true;
+    (async () => {
+      const [cWeekly, cRuns, cAnn] = await Promise.all([
+        getCache<WeeklySummary>('home:weekly'),
+        getCache<RecentRun[]>('home:runs'),
+        getCache<AnnouncementItem[]>('home:announcements'),
+      ]);
+      if (cWeekly && !_cachedWeekly) { _cachedWeekly = cWeekly.data; setWeeklySummary(cWeekly.data); }
+      if (cRuns && _cachedRuns.length === 0) { _cachedRuns = cRuns.data; setRecentRuns(cRuns.data); }
+      if (cAnn && _cachedAnnouncements.length === 0) { _cachedAnnouncements = cAnn.data; setAnnouncements(cAnn.data); }
+      if (cWeekly || cRuns) setLoading(false);
+    })();
+  }, []);
 
   // Primary data: loads immediately (above the fold)
   const loadPrimaryData = useCallback(async () => {
@@ -147,6 +183,9 @@ export default function HomeScreen() {
       ]);
       setWeeklySummary(weekly); _cachedWeekly = weekly;
       setRecentRuns(runs); _cachedRuns = runs;
+      // Persist to disk for next app launch
+      setCache('home:weekly', weekly);
+      setCache('home:runs', runs);
     } catch {
       useToastStore.getState().showToast('error', '홈 데이터를 불러올 수 없습니다');
     } finally {
@@ -157,12 +196,15 @@ export default function HomeScreen() {
   // Secondary data: deferred (below the fold)
   const loadSecondaryData = useCallback(async () => {
     try {
-      const [annRes, crews] = await Promise.all([
+      const [annRes, crews, friendsRes] = await Promise.all([
         announcementService.getAnnouncements(10).catch(() => ({ data: [] })),
         crewService.getMyCrews().catch((): CrewItem[] => []),
+        userService.getFriendsRunning().catch((): FriendRunning[] => []),
       ]);
+      setFriendsRunning(friendsRes); _cachedFriendsRunning = friendsRes;
       const ann = annRes.data ?? [];
       setAnnouncements(ann); _cachedAnnouncements = ann;
+      setCache('home:announcements', ann);
       if (crews.length > 0) {
         const raidResults = await Promise.all(
           crews.map(async (crew: CrewItem) => {
@@ -191,15 +233,59 @@ export default function HomeScreen() {
     });
   }, [loadPrimaryData, loadSecondaryData]);
 
+  // Refetch on initial mount
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Refetch primary data (courses, runs) when tab regains focus
+  useFocusEffect(
+    useCallback(() => {
+      // Skip the initial mount (already handled above)
+      if (loading) return;
+      loadPrimaryData();
+    }, [loading, loadPrimaryData]),
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([loadPrimaryData(), loadSecondaryData()]);
     setRefreshing(false);
   }, [loadPrimaryData, loadSecondaryData]);
+
+  // --- Poll friends running every 30s when there are active runners ---
+  useEffect(() => {
+    if (friendsRunning.length === 0) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await userService.getFriendsRunning();
+        setFriendsRunning(res); _cachedFriendsRunning = res;
+      } catch { /* ignore */ }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [friendsRunning.length]);
+
+  // --- Pulsing dot animation for friends running banner ---
+  const friendsDotOpacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (friendsRunning.length === 0) return;
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(friendsDotOpacity, {
+          toValue: 0.3,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(friendsDotOpacity, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [friendsRunning.length, friendsDotOpacity]);
 
   // --- Location permission ---
   useEffect(() => {
@@ -276,7 +362,7 @@ export default function HomeScreen() {
 
   return (
     <BlurredBackground>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.logoText}>RUNVS</Text>
@@ -316,6 +402,35 @@ export default function HomeScreen() {
               {todayDateLabel}
             </Text>
           </View>
+
+          {/* Watch Standalone Run Banner */}
+          {watchStandalone.isActive && (
+            <View style={styles.watchBanner}>
+              <View style={styles.watchBannerLeft}>
+                <Ionicons name="watch-outline" size={18} color="#FF7A33" />
+                <Text style={styles.watchBannerLabel}>
+                  {t('home.watchRunning')}
+                </Text>
+              </View>
+              <View style={styles.watchBannerStats}>
+                <Text style={styles.watchBannerValue}>
+                  {(watchStandalone.distanceMeters / 1000).toFixed(2)} km
+                </Text>
+                <Text style={styles.watchBannerSep}>·</Text>
+                <Text style={styles.watchBannerValue}>
+                  {formatDuration(watchStandalone.durationSeconds)}
+                </Text>
+                {watchStandalone.avgPace > 0 && watchStandalone.avgPace < 3600 && (
+                  <>
+                    <Text style={styles.watchBannerSep}>·</Text>
+                    <Text style={styles.watchBannerValue}>
+                      {formatPace(watchStandalone.avgPace)}
+                    </Text>
+                  </>
+                )}
+              </View>
+            </View>
+          )}
 
           {/* Weekly Summary Card with background image */}
           <View style={styles.weeklyCardWrapper}>
@@ -622,6 +737,67 @@ export default function HomeScreen() {
             )}
           </View>
 
+          {/* Friends Running Banner */}
+          <View style={styles.friendsRunningCard}>
+            <View style={styles.friendsRunningHeader}>
+              {friendsRunning.length > 0 ? (
+                <Animated.View style={[styles.friendsRunningDot, { opacity: friendsDotOpacity }]} />
+              ) : (
+                <Ionicons name="people" size={14} color={colors.textTertiary} />
+              )}
+              <Text style={styles.friendsRunningTitle}>{t('home.friendsRunning')}</Text>
+            </View>
+            {friendsRunning.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.friendsRunningScroll}
+              >
+                {friendsRunning.map((friend) => (
+                  <TouchableOpacity
+                    key={friend.user_id}
+                    style={styles.friendsRunningChip}
+                    activeOpacity={0.7}
+                    onPress={() => navigation.navigate('UserProfile', { userId: friend.user_id })}
+                  >
+                    <View>
+                      <RunningAvatarIndicator
+                        avatarUrl={friend.avatar_url}
+                        nickname={friend.nickname}
+                        size={36}
+                        isRunning
+                      />
+                      {friend.course_id ? (
+                        <View style={styles.friendsRunningBadge}>
+                          <Ionicons name="map-outline" size={10} color="#FFF" />
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={styles.friendsRunningName} numberOfLines={1}>
+                      {friend.nickname}
+                    </Text>
+                    {friend.course_title ? (
+                      <Text style={styles.friendsRunningCourse} numberOfLines={1}>
+                        {friend.course_title}
+                      </Text>
+                    ) : (
+                      <Text style={styles.friendsRunningFree} numberOfLines={1}>
+                        {t('home.freeRunning', { defaultValue: '자유 러닝' })}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={styles.friendsRunningEmpty}>
+                <Ionicons name="people-outline" size={20} color={colors.textTertiary} />
+                <Text style={styles.friendsRunningEmptyText}>
+                  {t('home.noFriendsRunning', { defaultValue: '지금 달리는 친구가 없어요' })}
+                </Text>
+              </View>
+            )}
+          </View>
+
           <View style={styles.bottomSpacer} />
         </ScrollView>
         )}
@@ -810,7 +986,6 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     container: {
       flex: 1,
-      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
     },
     scrollView: {
       flex: 1,
@@ -861,6 +1036,45 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '500',
       color: c.textSecondary,
       marginTop: 4,
+    },
+
+    // Watch standalone banner
+    watchBanner: {
+      marginHorizontal: SPACING.xxl,
+      marginBottom: SPACING.md,
+      backgroundColor: 'rgba(255,122,51,0.08)',
+      borderRadius: BORDER_RADIUS.md,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.sm,
+      borderWidth: 1,
+      borderColor: 'rgba(255,122,51,0.2)',
+    },
+    watchBannerLeft: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      gap: 6,
+      marginBottom: 4,
+    },
+    watchBannerLabel: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '700',
+      color: COLORS.primary,
+      textTransform: 'uppercase' as const,
+      letterSpacing: 0.5,
+    },
+    watchBannerStats: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      gap: 6,
+    },
+    watchBannerValue: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '800',
+      color: c.text,
+    },
+    watchBannerSep: {
+      fontSize: FONT_SIZES.sm,
+      color: c.textSecondary,
     },
 
     // Card (shared)
@@ -1204,6 +1418,93 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '800',
       color: '#FFFFFF',
       letterSpacing: 0.3,
+    },
+
+    // Friends running banner
+    friendsRunningCard: {
+      marginHorizontal: SPACING.xxl,
+      marginTop: SPACING.lg,
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      paddingVertical: SPACING.md,
+    },
+    friendsRunningHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: SPACING.md,
+      marginBottom: SPACING.sm,
+    },
+    friendsRunningDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: '#34C759',
+    },
+    friendsRunningTitle: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.text,
+    },
+    friendsRunningScroll: {
+      paddingHorizontal: SPACING.md,
+      gap: SPACING.md,
+    },
+    friendsRunningChip: {
+      alignItems: 'center',
+      width: 56,
+    },
+    friendsRunningName: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: c.text,
+      marginTop: 4,
+      textAlign: 'center',
+      width: 56,
+    },
+    friendsRunningCourse: {
+      fontSize: 10,
+      fontWeight: '500',
+      color: COLORS.primary,
+      marginTop: 1,
+      textAlign: 'center',
+      width: 56,
+    },
+    friendsRunningFree: {
+      fontSize: 10,
+      fontWeight: '500',
+      color: c.textTertiary,
+      marginTop: 1,
+      textAlign: 'center',
+      width: 56,
+    },
+    friendsRunningEmpty: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: SPACING.md,
+      paddingHorizontal: SPACING.md,
+    },
+    friendsRunningEmptyText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '500',
+      color: c.textTertiary,
+    },
+    friendsRunningBadge: {
+      position: 'absolute',
+      bottom: -2,
+      left: -2,
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+      backgroundColor: COLORS.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1.5,
+      borderColor: '#FFF',
     },
 
     bottomSpacer: {

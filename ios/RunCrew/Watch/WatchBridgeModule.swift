@@ -31,6 +31,9 @@ class WatchBridgeModule: RCTEventEmitter {
         WatchSessionManager.shared.onWeeklyGoalFromWatch = { [weak self] data in
             self?.sendEventIfListening("Watch_onWeeklyGoalUpdate", body: data)
         }
+        WatchSessionManager.shared.onStandaloneStatusUpdate = { [weak self] data in
+            self?.sendEventIfListening("Watch_onStandaloneStatus", body: data)
+        }
         WatchSessionManager.shared.onStandaloneRunReceived = { [weak self] data in
             guard let self = self else { return }
             NSLog("[WatchBridgeModule] Standalone run received, hasListeners=%d", self.hasListeners ? 1 : 0)
@@ -54,6 +57,7 @@ class WatchBridgeModule: RCTEventEmitter {
             "Watch_onHeartRate",
             "Watch_onReachabilityChange",
             "Watch_onStandaloneRun",
+            "Watch_onStandaloneStatus",
             "Watch_onWeeklyGoalUpdate"
         ]
     }

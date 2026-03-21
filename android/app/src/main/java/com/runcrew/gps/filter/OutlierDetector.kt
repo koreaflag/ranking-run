@@ -80,8 +80,9 @@ class OutlierDetector {
             }
             // Background GPS guard: when update interval is large (>5s),
             // GPS may report stale/cell-tower positions. Cap distance to prevent
-            // straight-line jumps across the map.
-            if (dtSec > 5.0 && dist > 30.0) {
+            // straight-line jumps. Raised from 30m to 50m to avoid rejecting valid
+            // GPS updates after brief signal gaps (matched with iOS).
+            if (dtSec > 5.0 && dist > 50.0) {
                 return OutlierResult.Rejected(
                     "Background jump: %.0fm in %.1fs".format(dist, dtSec)
                 )

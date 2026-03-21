@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  SafeAreaView,
   TouchableOpacity,
   Alert,
   Animated,
@@ -16,7 +15,9 @@ import {
   Switch,
   Image,
   Dimensions,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { Ionicons } from '../../lib/icons';
@@ -25,6 +26,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCourseListStore } from '../../stores/courseListStore';
 import { useCourseDetailStore } from '../../stores/courseDetailStore';
+import { useRunningStore } from '../../stores/runningStore';
 import StatItem from '../../components/common/StatItem';
 import ScreenHeader from '../../components/common/ScreenHeader';
 import RouteMapView from '../../components/map/RouteMapView';
@@ -72,8 +74,12 @@ export default function CourseDetailScreen() {
   const route = useRoute<DetailRoute>();
   const { courseId, openReview } = route.params;
   const scrollViewRef = useRef<ScrollView>(null);
+  const lastScrollY = useRef(0);
+  const bottomCtaTranslateY = useRef(new Animated.Value(0)).current;
+  const bottomCtaVisible = useRef(true);
 
   const colors = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const currentUser = useAuthStore((s) => s.user);
 
@@ -94,9 +100,28 @@ export default function CourseDetailScreen() {
   const selectedCourseIsLiked = useCourseDetailStore(s => s.selectedCourseIsLiked);
   const toggleLike = useCourseDetailStore(s => s.toggleLike);
   const deleteMyCourse = useCourseListStore(s => s.deleteMyCourse);
+  const fetchRankingsWithCountry = useCourseDetailStore(s => s.fetchRankingsWithCountry);
+  const rankingCountry = useCourseDetailStore(s => s.rankingCountry);
 
   // Ranking tab state: 'individual' or 'crew'
   const [rankingTab, setRankingTab] = useState<'individual' | 'crew'>('individual');
+
+  // Country filter options for rankings
+  const COUNTRY_FILTERS = useMemo(() => [
+    { label: t('ranking.allCountries'), value: null },
+    { label: t('ranking.southKorea'), value: '대한민국' },
+    { label: t('ranking.japan'), value: '日本' },
+    { label: t('ranking.usa'), value: 'United States' },
+  ], [t]);
+
+  // Default to user's country on initial load
+  const hasSetDefaultCountry = useRef(false);
+  useEffect(() => {
+    if (!hasSetDefaultCountry.current && currentUser?.country && courseId) {
+      hasSetDefaultCountry.current = true;
+      fetchRankingsWithCountry(courseId, currentUser.country);
+    }
+  }, [currentUser?.country, courseId, fetchRankingsWithCountry]);
 
   const pendingSelectForRaid = useCourseListStore((s) => s.pendingSelectForRaid);
   const [isStartingRaid, setIsStartingRaid] = useState(false);
@@ -124,6 +149,32 @@ export default function CourseDetailScreen() {
     setEditLapCount((selectedCourse as any).lap_count ?? 1);
     setShowEditModal(true);
   }, [selectedCourse]);
+
+  const BOTTOM_CTA_HEIGHT = 200; // approximate height of bottomCta (generous to ensure full hide)
+  const handleScroll = useCallback((e: any) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const dy = y - lastScrollY.current;
+    lastScrollY.current = y;
+
+    // Scrolling down & past initial area → hide
+    if (dy > 8 && y > 100 && bottomCtaVisible.current) {
+      bottomCtaVisible.current = false;
+      Animated.timing(bottomCtaTranslateY, {
+        toValue: BOTTOM_CTA_HEIGHT,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    }
+    // Scrolling up → show
+    else if (dy < -8 && !bottomCtaVisible.current) {
+      bottomCtaVisible.current = true;
+      Animated.timing(bottomCtaTranslateY, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [bottomCtaTranslateY]);
 
   const handleSaveEdit = useCallback(async () => {
     if (!selectedCourse || editTitle.trim().length < 1) {
@@ -230,12 +281,21 @@ export default function CourseDetailScreen() {
   );
 
   const handleRunThisCourse = useCallback(() => {
+    // Block during an active run
+    const { phase } = useRunningStore.getState();
+    if (phase === 'running' || phase === 'paused' || phase === 'countdown') {
+      Alert.alert(
+        t('common.notification'),
+        t('course.detail.cannotViewDuringRun'),
+      );
+      return;
+    }
     // Set pending course so WorldScreen focuses on it with 3D preview
     useCourseListStore.getState().setPendingFocusCourseId(courseId);
     // navigate() automatically traverses up the hierarchy:
     // CourseStack (no 'WorldTab') → Tab navigator (has 'WorldTab') → switches tab
     (navigation as any).navigate('WorldTab', { screen: 'World' });
-  }, [courseId, navigation]);
+  }, [courseId, navigation, t]);
 
   const handleDeleteCourse = useCallback(() => {
     Alert.alert(
@@ -335,6 +395,8 @@ export default function CourseDetailScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
       >
         {/* Large map at top */}
@@ -582,6 +644,32 @@ export default function CourseDetailScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Country Filter (individual tab only) */}
+          {rankingTab === 'individual' && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.countryFilterRow}
+              contentContainerStyle={styles.countryFilterContent}
+            >
+              {COUNTRY_FILTERS.map((option) => {
+                const isActive = rankingCountry === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value ?? 'all'}
+                    style={[styles.countryFilterChip, isActive && styles.countryFilterChipActive]}
+                    onPress={() => fetchRankingsWithCountry(courseId, option.value)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.countryFilterText, isActive && styles.countryFilterTextActive]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+
           {/* Individual Rankings */}
           {rankingTab === 'individual' && (
             selectedCourseRankings.length > 0 ? (
@@ -737,12 +825,29 @@ export default function CourseDetailScreen() {
                 trackColor={{ false: colors.surfaceLight, true: colors.primary }}
               />
             </View>
+
+            {/* Route Correction */}
+            <TouchableOpacity
+              style={styles.routeCorrectBtn}
+              onPress={() => {
+                setShowEditModal(false);
+                navigation.navigate('CourseRouteCorrect' as any, { courseId });
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="map-outline" size={20} color={colors.primary} />
+              <View style={{ flex: 1, marginLeft: SPACING.md }}>
+                <Text style={styles.routeCorrectTitle}>{t('course.detail.routeCorrection')}</Text>
+                <Text style={styles.routeCorrectHint}>{t('course.detail.routeCorrectionHint')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
       </Modal>
 
       {/* Bottom CTA: Raid or Competition challenge */}
-      <View style={styles.bottomCta}>
+      <Animated.View style={[styles.bottomCta, { paddingBottom: Math.max(insets.bottom, 4) + 4, transform: [{ translateY: bottomCtaTranslateY }] }]}>
         {pendingSelectForRaid ? (
           <TouchableOpacity
             style={styles.startRaidBtn}
@@ -803,7 +908,7 @@ export default function CourseDetailScreen() {
             )}
           </>
         )}
-      </View>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -958,7 +1063,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: 120,
+    paddingBottom: Platform.OS === 'android' ? 180 : 120,
     gap: SPACING.xl,
   },
   loadingContainer: {
@@ -1316,6 +1421,35 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '700',
   },
 
+  // -- Country Filter --
+  countryFilterRow: {
+    marginBottom: SPACING.xs,
+  },
+  countryFilterContent: {
+    gap: SPACING.xs,
+  },
+  countryFilterChip: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: c.surfaceLight,
+    borderWidth: 1,
+    borderColor: c.divider,
+  },
+  countryFilterChipActive: {
+    backgroundColor: c.primary + '18',
+    borderColor: c.primary,
+  },
+  countryFilterText: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
+    color: c.textSecondary,
+  },
+  countryFilterTextActive: {
+    color: c.primary,
+    fontWeight: '700',
+  },
+
   // -- Crew Rankings --
   groupRankEmpty: {
     alignItems: 'center',
@@ -1375,8 +1509,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: SPACING.xxl,
-    paddingVertical: SPACING.lg,
-    paddingBottom: SPACING.xxxl,
+    paddingTop: SPACING.lg,
     backgroundColor: c.card,
     borderTopWidth: 1,
     borderTopColor: c.divider,
@@ -1584,6 +1717,24 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     paddingBottom: SPACING.xxl,
   },
   publicHint: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textTertiary,
+    marginTop: 2,
+  },
+  routeCorrectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.lg,
+    marginTop: SPACING.lg,
+    borderTopWidth: 1,
+    borderTopColor: c.divider,
+  },
+  routeCorrectTitle: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: c.text,
+  },
+  routeCorrectHint: {
     fontSize: FONT_SIZES.xs,
     color: c.textTertiary,
     marginTop: 2,

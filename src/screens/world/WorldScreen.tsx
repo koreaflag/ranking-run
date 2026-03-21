@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Alert,
   Platform,
@@ -13,7 +12,10 @@ import {
   LayoutAnimation,
   Image,
   InteractionManager,
+  Dimensions,
+  Easing,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '../../lib/icons';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
@@ -476,24 +478,52 @@ export default function WorldScreen() {
     elevationProfile: courseElevationProfile,
   });
 
+  const lockHapticTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lockListenerId = useRef<string | null>(null);
+  const lockUnlockedRef = useRef(false);
+
+  const cleanupLockTimers = useCallback(() => {
+    if (lockHapticTimer.current) {
+      clearInterval(lockHapticTimer.current);
+      lockHapticTimer.current = null;
+    }
+    if (lockListenerId.current) {
+      lockProgressAnim.removeListener(lockListenerId.current);
+      lockListenerId.current = null;
+    }
+  }, [lockProgressAnim]);
+
   const handleLockPressIn = useCallback(() => {
+    lockUnlockedRef.current = false;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     lockProgressAnim.setValue(0);
-    Animated.timing(lockProgressAnim, {
-      toValue: 1,
-      duration: 800,
-      useNativeDriver: false,
-    }).start(({ finished }) => {
-      if (finished) {
+    // Tick haptic every 400ms while holding (4 ticks across 2s)
+    lockHapticTimer.current = setInterval(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }, 400);
+    // Listen for progress reaching 1 — fires immediately when gauge fills
+    lockListenerId.current = lockProgressAnim.addListener(({ value }) => {
+      if (value >= 0.99 && !lockUnlockedRef.current) {
+        lockUnlockedRef.current = true;
+        cleanupLockTimers();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setScreenLocked(false);
         lockProgressAnim.setValue(0);
       }
     });
-  }, [lockProgressAnim]);
+    Animated.timing(lockProgressAnim, {
+      toValue: 1,
+      duration: 2000,
+      useNativeDriver: false,
+    }).start();
+  }, [lockProgressAnim, cleanupLockTimers]);
 
   const handleLockPressOut = useCallback(() => {
+    if (lockUnlockedRef.current) return; // already unlocked
+    cleanupLockTimers();
     lockProgressAnim.stopAnimation();
     lockProgressAnim.setValue(0);
-  }, [lockProgressAnim]);
+  }, [lockProgressAnim, cleanupLockTimers]);
 
   // Navigate-to-start state (shown when user is far from course start checkpoint)
   const [navigatingToStart, setNavigatingToStart] = useState(false);
@@ -507,6 +537,7 @@ export default function WorldScreen() {
   const [resultUploading, setResultUploading] = useState(false);
   const [resultRunRecordId, setResultRunRecordId] = useState<string | null>(null);
   const [resultSavedLocally, setResultSavedLocally] = useState(false);
+  const [courseRegistrationStarted, setCourseRegistrationStarted] = useState(false);
 
   // Transition animations
   const worldOverlayOpacity = useRef(new Animated.Value(1)).current;
@@ -517,15 +548,25 @@ export default function WorldScreen() {
   useEffect(() => {
     if (phase === 'idle') {
       Animated.parallel([
-        Animated.timing(worldOverlayOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-        Animated.timing(runPanelTranslateY, { toValue: 500, duration: 250, useNativeDriver: true }),
+        Animated.timing(worldOverlayOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(runPanelTranslateY, { toValue: 500, duration: 350, useNativeDriver: true }),
         Animated.timing(countdownOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
       ]).start();
+      // Reset running panel padding so GPS centers properly
+      setPanelHeight(0);
+      // Re-center map on user location when returning to idle (e.g. after RunResult dismiss)
+      const loc = myLocationRef.current ?? useSettingsStore.getState().lastKnownLocation;
+      if (loc) {
+        setTimeout(() => {
+          mapRef.current?.recenterOnUser(loc);
+          setFollowUser(true);
+        }, 500);
+      }
     } else if (phase === 'completed') {
       // Keep panel visible — content morphs to result summary
       Animated.parallel([
         Animated.timing(countdownOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.spring(runPanelTranslateY, { toValue: 0, damping: 22, stiffness: 160, overshootClamping: true, useNativeDriver: true }),
+        Animated.timing(runPanelTranslateY, { toValue: 0, duration: 200, useNativeDriver: true }),
       ]).start();
     } else if (phase === 'countdown') {
       Animated.parallel([
@@ -533,10 +574,15 @@ export default function WorldScreen() {
         Animated.timing(countdownOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
       ]).start();
     } else if (phase === 'running' || phase === 'paused') {
+      // Countdown fades out while panel glides up simultaneously
       Animated.parallel([
-        Animated.timing(worldOverlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.timing(countdownOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-        Animated.spring(runPanelTranslateY, { toValue: 0, damping: 22, stiffness: 160, overshootClamping: true, useNativeDriver: true }),
+        Animated.timing(countdownOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+        Animated.timing(runPanelTranslateY, {
+          toValue: 0,
+          duration: 500,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
       ]).start();
     }
   }, [phase, worldOverlayOpacity, runPanelTranslateY, countdownOpacity]);
@@ -547,6 +593,7 @@ export default function WorldScreen() {
     setResultRunRecordId(null);
     setResultSavedLocally(false);
     setGoalReachedShown(false);
+    setCourseRegistrationStarted(false);
     setCourseRoute(null);
     setCourseCheckpoints(null);
     resetTracker();
@@ -571,14 +618,11 @@ export default function WorldScreen() {
     setFollowUser(false);
     reset();
     // After panel slide-out animation, re-center on full-screen map
+    // Use recenterOnUser which explicitly zeros padding to prevent stale anchor
+    const loc = myLocationRef.current ?? myLocation ?? useSettingsStore.getState().lastKnownLocation;
     setTimeout(() => {
-      if (myLocation) {
-        mapRef.current?.animateToRegion({
-          latitude: myLocation.latitude,
-          longitude: myLocation.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }, 600);
+      if (loc) {
+        mapRef.current?.recenterOnUser(loc);
       }
       // Re-enable follow after camera has moved
       setTimeout(() => setFollowUser(true), 700);
@@ -586,11 +630,23 @@ export default function WorldScreen() {
   }, [reset, myLocation]);
 
 
-  // Request location permission on mount (Android requires explicit runtime request)
+  // Request location permission on mount, then immediately center map on current location
   useEffect(() => {
-    Location.requestForegroundPermissionsAsync().catch((err) => {
-      console.warn('[WorldScreen] 위치 권한 요청 실패:', err);
-    });
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (loc?.coords) {
+          const { latitude, longitude } = loc.coords;
+          setMyLocation({ latitude, longitude });
+          useSettingsStore.getState().setLastKnownLocation({ latitude, longitude });
+          mapRef.current?.recenterOnUser({ latitude, longitude });
+        }
+      } catch (err) {
+        console.warn('[WorldScreen] 초기 위치 가져오기 실패:', err);
+      }
+    })();
   }, []);
 
   // Feed GPS to checkpoint tracker during course running
@@ -634,13 +690,22 @@ export default function WorldScreen() {
   const beginCountdownAndRun = useCallback(async (courseId?: string | null) => {
     // Ensure location permission before starting (critical for Android)
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          t('common.error'),
-          '위치 권한이 필요합니다. 설정에서 위치 권한을 허용해주세요.',
-        );
-        return;
+      const permResult = await Promise.race([
+        Location.getForegroundPermissionsAsync(),
+        new Promise<{ status: 'granted' }>((resolve) => setTimeout(() => resolve({ status: 'granted' }), 2000)),
+      ]);
+      if (permResult.status !== 'granted') {
+        const { status } = await Promise.race([
+          Location.requestForegroundPermissionsAsync(),
+          new Promise<{ status: string }>((resolve) => setTimeout(() => resolve({ status: 'timeout' }), 3000)),
+        ]);
+        if (status !== 'granted' && status !== 'timeout') {
+          Alert.alert(
+            t('common.error'),
+            '위치 권한이 필요합니다. 설정에서 위치 권한을 허용해주세요.',
+          );
+          return;
+        }
       }
     } catch (err) {
       console.warn('[WorldScreen] 위치 권한 확인 실패:', err);
@@ -654,19 +719,22 @@ export default function WorldScreen() {
       setPreviewCheckpoints([]);
     }
 
-    // Center map on current location (non-blocking — don't delay countdown)
-    // Use last known position for instant response, fall back to async fetch
-    Location.getLastKnownPositionAsync().then((loc) => {
-      if (loc) {
-        const center = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-        setMyLocation(center);
-        mapRef.current?.animateToRegion({
-          ...center, latitudeDelta: 0.005, longitudeDelta: 0.005,
-        }, 600);
-      }
-    }).catch((err) => {
-      console.warn('[WorldScreen] 마지막 위치 조회 실패:', err);
-    });
+    // Center map on current location and begin smooth zoom-in during countdown.
+    // Uses persisted location (synchronous, reliable) instead of getLastKnownPositionAsync
+    // which may return stale/wrong position on Android.
+    const persistedLoc = myLocationRef.current ?? useSettingsStore.getState().lastKnownLocation;
+    if (persistedLoc) {
+      // Smooth zoom-in transition: gradually increase zoom and pitch over 1.5s
+      // so the transition from world view → running view feels natural
+      const targetZoom = courseId ? 17 : 16;
+      const targetPitch = courseId ? 45 : 30;
+      mapRef.current?.animateCamera({
+        center: { latitude: persistedLoc.latitude, longitude: persistedLoc.longitude },
+        zoom: targetZoom,
+        pitch: targetPitch,
+        heading: 0,
+      }, 1500);
+    }
 
     setPhase('countdown');
     setCountdown(countdownSeconds);
@@ -1139,12 +1207,17 @@ export default function WorldScreen() {
     if (phase !== 'running' || !runCourseId || !courseNavigation || finishReached) return;
     if (cpTotalCount > 0) return; // checkpoint-based detection takes priority
 
+    // Guard: prevent immediate completion on round-trip courses where
+    // start === finish. Must have actually run (>200m) and been running
+    // for at least 30 seconds.
+    if (distanceMeters < 200 || durationSeconds < 30) return;
+
     if (courseNavigation.progressPercent > 95 && courseNavigation.remainingDistanceMeters < 40) {
       finishReachedRef.current = true;
       finishTriggeredRef.current = true;
       finishRun();
     }
-  }, [phase, runCourseId, courseNavigation, finishReached, cpTotalCount, finishRun]);
+  }, [phase, runCourseId, courseNavigation, finishReached, cpTotalCount, finishRun, distanceMeters, durationSeconds]);
 
   const handleStop = useCallback(() => {
     Alert.alert('러닝 종료', '러닝을 종료하시겠습니까?', [
@@ -1274,6 +1347,9 @@ export default function WorldScreen() {
 
     const focusOnCourse = async () => {
       try {
+        // Disable follow so camera stays on the course, not the user
+        setFollowUser(false);
+
         const [detail, rankings] = await Promise.all([
           courseService.getCourseDetail(targetId),
           rankingService.getCourseRankings(targetId, 10).catch(() => [] as RankingEntry[]),
@@ -1329,17 +1405,20 @@ export default function WorldScreen() {
           });
         await waitForMap();
 
+        // Fit bounds first, then apply 3D pitch/heading after bounds settle.
+        // fitBounds resets pitch to 0, so pitch must come AFTER.
+        const heading = routePoints.length >= 2
+          ? calcBearing(routePoints[0], routePoints[Math.floor(routePoints.length / 2)])
+          : 0;
+
         mapRef.current?.fitToCoordinates(routePoints, {
-          top: 160, right: 40, bottom: 140, left: 40,
+          top: 200, right: 60, bottom: 280, left: 60,
         }, true);
 
         setTimeout(() => {
-          const heading = routePoints.length >= 2
-            ? calcBearing(routePoints[0], routePoints[Math.floor(routePoints.length / 2)])
-            : 0;
-          mapRef.current?.animateCamera({ pitch: 55, heading }, 1000);
+          mapRef.current?.animateCamera({ pitch: 55, heading }, 800);
           animateRouteDraw(routePoints);
-        }, 800);
+        }, 600);
 
         fetchMapMarkers(-90, -180, 90, 180);
       } catch {
@@ -1476,20 +1555,22 @@ export default function WorldScreen() {
   }, [navigation, selectedMarker]);
 
   const handleRecenter = useCallback(async () => {
-    if (!myLocation) {
+    let loc = myLocation;
+    if (!loc) {
       // Try to get current location if we don't have one yet
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          setMyLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          setMyLocation(loc);
         }
       } catch (err) {
         console.warn('[WorldScreen] 위치 재조회 실패:', err);
       }
     }
-    // Force Camera to re-engage follow mode (works even if followUser is already true)
-    mapRef.current?.recenterOnUser();
+    // Move camera to current location and re-engage follow mode
+    mapRef.current?.recenterOnUser(loc ?? undefined);
     setFollowUser(true);
   }, [myLocation]);
 
@@ -1545,19 +1626,26 @@ export default function WorldScreen() {
         onUserMapInteraction={isInRun ? undefined : () => setFollowUser(false)}
         onUserLocationChange={(coord) => {
           setMyLocation({ latitude: coord.latitude, longitude: coord.longitude });
+          // Persist for instant map centering on screen transitions (e.g. RunningScreen)
+          useSettingsStore.getState().setLastKnownLocation({ latitude: coord.latitude, longitude: coord.longitude });
           if (!hasInitializedRef.current) {
             hasInitializedRef.current = true;
             fetchMapMarkers(-90, -180, 90, 180);
-            // followUser is already true — Camera will center on user location
+            // First GPS fix: fly camera to user location immediately
+            mapRef.current?.recenterOnUser({ latitude: coord.latitude, longitude: coord.longitude });
           }
         }}
-        followsUserLocation={followUser}
-        followZoomLevel={isInRun ? (runCourseId ? 17 : 16) : 15}
+        followsUserLocation={followUser && phase !== 'completed'}
+        followZoomLevel={isInRun ? (runCourseId ? 17 : 16) : undefined}
         followUserMode={phase === 'running' ? 'course' : undefined}
         followPitch={phase === 'running' ? (runCourseId ? 45 : 30) : undefined}
-        followPadding={panelHeight > 0 ? { paddingBottom: panelHeight + 60 } : undefined}
+        followPadding={panelHeight > 0 ? {
+          paddingTop: 0,
+          paddingBottom: Math.max(panelHeight - 40, 0),
+        } : undefined}
         showUserLocation={true}
         hideRouteMarkers={isInRun}
+        lastKnownLocation={myLocation ?? useSettingsStore.getState().lastKnownLocation ?? undefined}
         customUserLocation={myLocation ?? undefined}
         customUserHeading={isInRun ? runHeadingValue : undefined}
         interactive={!isInRun || phase !== 'running'}
@@ -1600,7 +1688,12 @@ export default function WorldScreen() {
           </SafeAreaView>
         )}
 
-        {/* Right side: controls (no location button — unified outside overlay) */}
+        {/* ===== Unified recenter button (always visible) ===== */}
+        <View style={styles.recenterContainer} pointerEvents="box-none">
+          <TouchableOpacity style={styles.recenterBtn} onPress={handleRecenter} activeOpacity={0.7}>
+            <Ionicons name="locate" size={20} color={colors.text} />
+          </TouchableOpacity>
+        </View>
 
         {/* ===== HUD overlay when marker selected ===== */}
         {selectedMarker && (
@@ -1854,6 +1947,7 @@ export default function WorldScreen() {
             onLayout={(e) => {
               const h = e.nativeEvent.layout.height;
               if (Math.abs(h - panelHeight) > 2) {
+                LayoutAnimation.configureNext(LayoutAnimation.create(250, 'easeInEaseOut', 'opacity'));
                 setPanelHeight(h);
               }
             }}
@@ -1862,7 +1956,7 @@ export default function WorldScreen() {
             {!navigatingToStart && (phase === 'running' || phase === 'paused') && (
               <TouchableOpacity
                 style={styles.lockBtn}
-                onPress={() => setScreenLocked(true)}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setScreenLocked(true); }}
                 activeOpacity={0.7}
               >
                 <Ionicons name="lock-closed" size={16} color={colors.textTertiary} />
@@ -2097,7 +2191,7 @@ export default function WorldScreen() {
                   </View>
                 )}
                 <View style={styles.resultActions}>
-                  {!runCourseId && (
+                  {!runCourseId && !courseRegistrationStarted && (
                     <TouchableOpacity
                       style={styles.resultCourseBtn}
                       onPress={() => {
@@ -2111,6 +2205,9 @@ export default function WorldScreen() {
                             : '기록 업로드 중입니다. 잠시만 기다려주세요.');
                           return;
                         }
+                        setCourseRegistrationStarted(true);
+                        // Close result panel before navigating to course creation
+                        handleCloseResult();
                         (navigation as any).navigate('CourseTab', {
                           screen: 'CourseCreate',
                           params: {
@@ -2202,16 +2299,18 @@ export default function WorldScreen() {
         </View>
       )}
 
-      {/* ===== Screen lock overlay (transparent — blocks touches only) ===== */}
+      {/* ===== Screen lock overlay — blocks touches, centered unlock button ===== */}
       {screenLocked && (
         <View style={styles.lockOverlay}>
-          {/* Unlock button — long-press to unlock */}
-          <View style={styles.lockUnlockArea}>
+          <View style={styles.lockCenterArea}>
+            <Ionicons name="lock-closed" size={32} color="rgba(255,255,255,0.7)" style={{ marginBottom: 16 }} />
+            <Text style={styles.lockTitle}>화면 잠금</Text>
+            <Text style={styles.lockSubtitle}>터치 오작동을 방지합니다</Text>
             <TouchableOpacity
               style={styles.lockUnlockBtn}
               onPressIn={handleLockPressIn}
               onPressOut={handleLockPressOut}
-              activeOpacity={0.8}
+              activeOpacity={0.9}
             >
               <Animated.View
                 style={[
@@ -2224,19 +2323,14 @@ export default function WorldScreen() {
                   },
                 ]}
               />
-              <Ionicons name="lock-closed" size={14} color="rgba(255,255,255,0.9)" />
-              <Text style={styles.lockUnlockText}>길게 눌러 잠금 해제</Text>
+              <Ionicons name="lock-open-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.lockUnlockText}>꾹 눌러서 잠금 해제</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
-      {/* ===== Unified recenter button (always visible) ===== */}
-      <View style={styles.recenterContainer} pointerEvents="box-none">
-        <TouchableOpacity style={styles.recenterBtn} onPress={handleRecenter} activeOpacity={0.7}>
-          <Ionicons name="locate" size={20} color={colors.text} />
-        </TouchableOpacity>
-      </View>
+      {/* Recenter button removed — map always follows user */}
 
       {/* ===== SHEETS (always available) ===== */}
       <RunGoalSheet
@@ -2248,6 +2342,8 @@ export default function WorldScreen() {
       <RunSettingsSheet
         visible={settingsSheetVisible}
         onClose={() => setSettingsSheetVisible(false)}
+        onNavigateHeartRate={() => navigation.navigate('HeartRateSettings')}
+        onNavigateWatch={() => navigation.navigate('WatchSettings')}
       />
     </View>
   );
@@ -2385,7 +2481,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   // -- HUD overlay (ranking) --
   hudRankingOverlay: {
     position: 'absolute' as const,
-    bottom: 170,
+    bottom: Platform.OS === 'android' ? 160 : 115,
     left: 0,
     right: 0,
     paddingHorizontal: SPACING.lg,
@@ -2480,7 +2576,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   // -- HUD overlay (bottom: actions) --
   hudBottomOverlay: {
     position: 'absolute',
-    bottom: 100,
+    bottom: Platform.OS === 'android' ? 64 : 24,
     left: 0,
     right: 0,
     paddingHorizontal: SPACING.lg,
@@ -2877,6 +2973,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     paddingHorizontal: SPACING.xl,
     ...SHADOWS.lg,
     zIndex: 60,
+    minHeight: 340,
   },
   runHeroRow: {
     flexDirection: 'row',
@@ -3037,23 +3134,39 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   lockOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     zIndex: 200,
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  lockUnlockArea: {
-    marginBottom: 140,
+  lockCenterArea: {
+    alignItems: 'center',
+  },
+  lockTitle: {
+    fontSize: 20,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+    marginBottom: 6,
+  },
+  lockSubtitle: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: 'rgba(255,255,255,0.6)',
+    marginBottom: 28,
   },
   lockUnlockBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 22,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.3)',
+    paddingHorizontal: 28,
+    paddingVertical: 14,
     overflow: 'hidden',
+    minWidth: 200,
   },
   lockUnlockProgress: {
     position: 'absolute',
@@ -3061,12 +3174,12 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     top: 0,
     bottom: 0,
     backgroundColor: c.primary,
-    borderRadius: 22,
+    borderRadius: 28,
   },
   lockUnlockText: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: '600' as const,
-    color: 'rgba(255,255,255,0.9)',
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: '#FFFFFF',
   },
 
   // ============================================================

@@ -260,30 +260,58 @@ class FollowService:
             .scalar_subquery()
         )
 
+        from datetime import datetime, timedelta, timezone
+        from app.models.run_chunk import RunChunk
+
+        # Only consider sessions started within the last 3 hours
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=3)
+        # Must have recent chunk activity (within 10 min) to be "currently running"
+        chunk_cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+
+        # Subquery: session IDs with recent chunk uploads
+        active_session_ids = (
+            select(RunChunk.session_id)
+            .where(RunChunk.created_at >= chunk_cutoff)
+            .distinct()
+            .scalar_subquery()
+        )
+
         result = await db.execute(
             select(RunSession)
             .where(
                 and_(
                     RunSession.user_id.in_(following_ids),
                     RunSession.status == "active",
+                    RunSession.started_at >= cutoff,
+                    RunSession.id.in_(active_session_ids),
                 )
             )
-            .options(joinedload(RunSession.user))
+            .options(
+                joinedload(RunSession.user),
+                joinedload(RunSession.course),
+            )
             .order_by(RunSession.started_at.desc())
         )
         sessions = result.scalars().unique().all()
 
-        return [
-            {
-                "user_id": str(s.user_id),
+        # Deduplicate: keep only the latest session per user
+        seen_users: set[str] = set()
+        deduplicated: list[dict] = []
+        for s in sessions:
+            uid = str(s.user_id)
+            if uid in seen_users:
+                continue
+            seen_users.add(uid)
+            deduplicated.append({
+                "user_id": uid,
                 "nickname": s.user.nickname,
                 "avatar_url": s.user.avatar_url,
                 "session_id": str(s.id),
                 "started_at": s.started_at,
                 "course_id": str(s.course_id) if s.course_id else None,
-            }
-            for s in sessions
-        ]
+                "course_title": s.course.title if s.course else None,
+            })
+        return deduplicated
 
     async def get_activity_feed(
         self,

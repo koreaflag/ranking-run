@@ -241,6 +241,86 @@ class GPSTrackerModule(
     }
 
     @ReactMethod
+    fun getSmoothedRoute(promise: Promise) {
+        try {
+            val engine = locationEngine
+            if (engine == null) {
+                val emptyResult = Arguments.createMap()
+                emptyResult.putArray("route", Arguments.createArray())
+                emptyResult.putDouble("distance", 0.0)
+                promise.resolve(emptyResult)
+                return
+            }
+
+            val smoothed = engine.kalmanFilter.smoothRoute()
+            if (smoothed.size < 2) {
+                // Not enough data — fall back to original filtered route
+                val session = engine.session
+                val array = Arguments.createArray()
+                if (session != null) {
+                    for (location in session.filteredLocations) {
+                        array.pushMap(location.toWritableMap())
+                    }
+                }
+                val result = Arguments.createMap()
+                result.putArray("route", array)
+                result.putDouble("distance", session?.totalDistance ?: 0.0)
+                promise.resolve(result)
+                return
+            }
+
+            // Sanity check: if smoothed covers < half original, fall back
+            val origCount = engine.session?.filteredLocations?.size ?: 0
+            if (origCount > 10 && smoothed.size < origCount / 2) {
+                engine.kalmanFilter.clearHistory()
+                val array = Arguments.createArray()
+                for (location in engine.session!!.filteredLocations) {
+                    array.pushMap(location.toWritableMap())
+                }
+                val result = Arguments.createMap()
+                result.putArray("route", array)
+                result.putDouble("distance", engine.session!!.totalDistance)
+                promise.resolve(result)
+                return
+            }
+
+            val array = Arguments.createArray()
+            var totalDist = 0.0
+            for (i in smoothed.indices) {
+                val s = smoothed[i]
+                var distFromPrev = 0.0
+                if (i > 0) {
+                    val prev = smoothed[i - 1]
+                    distFromPrev = com.runcrew.gps.util.GeoMath.haversineDistance(
+                        prev.latitude, prev.longitude, s.latitude, s.longitude
+                    )
+                    if (distFromPrev < 0.3) distFromPrev = 0.0
+                    totalDist += distFromPrev
+                }
+                val point = Arguments.createMap()
+                point.putDouble("latitude", s.latitude)
+                point.putDouble("longitude", s.longitude)
+                point.putDouble("altitude", s.altitude)
+                point.putDouble("speed", s.speed.toDouble())
+                point.putDouble("bearing", s.bearing.toDouble())
+                point.putDouble("timestamp", s.timestamp.toDouble())
+                point.putDouble("distanceFromPrevious", distFromPrev)
+                point.putDouble("cumulativeDistance", totalDist)
+                point.putBoolean("isInterpolated", false)
+                array.pushMap(point)
+            }
+
+            val result = Arguments.createMap()
+            result.putArray("route", array)
+            result.putDouble("distance", totalDist)
+            promise.resolve(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting smoothed route", e)
+            promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to get smoothed route: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
     fun getCurrentStatus(promise: Promise) {
         try {
             val session = locationEngine?.session
@@ -260,7 +340,12 @@ class GPSTrackerModule(
 
     override fun onFilteredLocationUpdate(location: FilteredLocation, session: RunSession) {
         val sensorFusion = locationEngine?.sensorFusionManager
-        val cadenceSPM = if (session.isMoving && sensorFusion != null) {
+        // Use real-time stationary state from SensorFusionManager rather than
+        // session.isMoving (which only updates on state transitions via listener).
+        // This ensures isMoving accurately reflects the current movement state
+        // for every GPS update, critical for auto-pause in JS.
+        val isCurrentlyMoving = sensorFusion?.let { !it.isStationary() } ?: session.isMoving
+        val cadenceSPM = if (isCurrentlyMoving && sensorFusion != null) {
             val stepDetector = sensorFusion.stepDetector
             val now = System.currentTimeMillis()
             // Add steps to rolling window based on total step count delta
@@ -279,7 +364,8 @@ class GPSTrackerModule(
         val elevGain = sensorFusion?.barometerTracker?.totalElevationGain ?: 0.0
         val elevLoss = sensorFusion?.barometerTracker?.totalElevationLoss ?: 0.0
 
-        val eventData = location.toLocationUpdateEvent(session.isMoving, cadenceSPM, elevGain, elevLoss)
+        val distSource = if (location.isInterpolated) "pedometer" else "gps"
+        val eventData = location.toLocationUpdateEvent(isCurrentlyMoving, cadenceSPM, elevGain, elevLoss, distSource)
         sendEvent(EVENT_LOCATION_UPDATE, eventData)
 
         // Update notification periodically (every 5th update to avoid excessive overhead)

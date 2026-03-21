@@ -6,12 +6,13 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '../../lib/icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -57,7 +58,7 @@ export default function CrewCreateScreen() {
   const [regionPickerVisible, setRegionPickerVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const canSubmit = name.trim().length > 0 && !isSubmitting && hasEnoughPoints;
+  const canSubmit = name.trim().length > 0 && region.trim().length > 0 && !isSubmitting && hasEnoughPoints;
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
@@ -189,7 +190,7 @@ export default function CrewCreateScreen() {
 
             {/* Region */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>{t('crew.region')}</Text>
+              <Text style={styles.label}>{t('crew.region')} <Text style={{ color: '#FF3B30' }}>*</Text></Text>
               <TouchableOpacity
                 style={styles.input}
                 onPress={() => setRegionPickerVisible(true)}

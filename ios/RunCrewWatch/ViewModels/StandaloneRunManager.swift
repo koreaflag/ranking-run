@@ -38,6 +38,11 @@ class StandaloneRunManager {
     private(set) var splits: [(Int, Int)] = []
 
     private static let autoPauseSpeedThreshold: Double = 0.3  // m/s (~18 min/km)
+    private static let autoPauseGracePeriod: TimeInterval = 15.0  // GPS 안정화 대기
+
+    /// Throttle standalone status updates to phone (every 5 seconds)
+    private var lastPhoneStatusUpdate: Date = .distantPast
+    private static let phoneStatusInterval: TimeInterval = 5.0
 
     // MARK: - Init
 
@@ -77,6 +82,9 @@ class StandaloneRunManager {
 
             // Auto-pause: check speed
             self.checkAutoPause(speed: speed)
+
+            // Send periodic status to phone for HomeScreen display
+            self.sendStandaloneStatusToPhone()
         }
 
         locationMgr.onRawLocation = { location in
@@ -136,7 +144,7 @@ class StandaloneRunManager {
         // Calculate split pace for this km
         let now = Date()
         let splitPace: Int
-        if let splitStart = splitStartTime, let runStart = standaloneStartTime {
+        if let _ = splitStartTime, let runStart = standaloneStartTime {
             let currentElapsed = now.timeIntervalSince(runStart) - standalonePausedDuration
             let splitElapsed = currentElapsed - splitStartDuration
             splitPace = max(0, Int(splitElapsed))  // seconds for 1km
@@ -162,12 +170,63 @@ class StandaloneRunManager {
         print("[StandaloneRunManager] Milestone: \(currentKm)km, split=\(splitPace)s")
     }
 
+    // MARK: - Phone Status Updates
+
+    /// Send condensed standalone run status to phone so HomeScreen can show a banner.
+    /// Throttled to every 5 seconds to minimize battery/communication overhead.
+    private func sendStandaloneStatusToPhone() {
+        let now = Date()
+        guard now.timeIntervalSince(lastPhoneStatusUpdate) >= Self.phoneStatusInterval else { return }
+        guard WCSession.default.activationState == .activated, WCSession.default.isReachable else { return }
+        guard let state = getState?() else { return }
+        lastPhoneStatusUpdate = now
+
+        let duration: Int
+        if let start = standaloneStartTime {
+            duration = Int(now.timeIntervalSince(start) - standalonePausedDuration)
+        } else {
+            duration = state.duration
+        }
+
+        let message: [String: Any] = [
+            "type": "standaloneStatus",
+            "phase": state.phase,
+            "distanceMeters": state.distance,
+            "durationSeconds": duration,
+            "currentPace": state.currentPace,
+            "avgPace": state.avgPace,
+            "heartRate": state.heartRate,
+            "timestamp": now.timeIntervalSince1970 * 1000,
+        ]
+        WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: nil)
+    }
+
+    /// Send final idle status to phone when standalone run ends.
+    func sendStandaloneIdleToPhone() {
+        guard WCSession.default.activationState == .activated else { return }
+        let message: [String: Any] = [
+            "type": "standaloneStatus",
+            "phase": "idle",
+            "timestamp": Date().timeIntervalSince1970 * 1000,
+        ]
+        // Use sendMessage if reachable, transferUserInfo as fallback
+        if WCSession.default.isReachable {
+            WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: nil)
+        }
+    }
+
     // MARK: - Auto-Pause
 
     private func checkAutoPause(speed: Double) {
         guard let settings = settingsManager else { return }
         guard let state = getState?() else { return }
         guard settings.isAutoPauseEnabled, state.phase == "running", !isAutoPaused else { return }
+
+        // 시작 직후 GPS 안정화 전 오탐 방지
+        if let start = standaloneStartTime,
+           Date().timeIntervalSince(start) < Self.autoPauseGracePeriod {
+            return
+        }
 
         if speed < Self.autoPauseSpeedThreshold {
             triggerAutoPause()
@@ -313,7 +372,7 @@ class StandaloneRunManager {
         if #available(watchOS 10, *) {
             let mgr = WorkoutMirroringManager.shared
             if !mgr.isSessionActive {
-                mgr.startRun()
+                mgr.startRun(indoor: standaloneIsIndoor)
             }
         }
     }
@@ -448,6 +507,9 @@ class StandaloneRunManager {
 
         // Attempt to sync to phone
         onSyncPendingRuns?()
+
+        // Notify phone that standalone run ended
+        sendStandaloneIdleToPhone()
 
         // Keep isStandaloneMode = true until user taps "확인" in CompletedView
         standaloneStartTime = nil

@@ -62,7 +62,7 @@ class LocationEngine(
     // --- Components ---
 
     private val coordinateConverter = CoordinateConverter()
-    private val kalmanFilter = KalmanFilter(coordinateConverter)
+    internal val kalmanFilter = KalmanFilter(coordinateConverter)
     private val outlierDetector = OutlierDetector()
     private val batteryOptimizer = BatteryOptimizer()
 
@@ -113,6 +113,15 @@ class LocationEngine(
     private var previousMilestoneDistance = 0.0
     @Volatile
     private var previousMilestoneTime = 0L  // elapsed ms at last km milestone
+
+    // --- Indoor / pedometer fallback ---
+
+    private val pedometerHandler = android.os.Handler(Looper.getMainLooper())
+    private var pedometerFallbackRunnable: Runnable? = null
+    @Volatile
+    private var pedometerBaseSteps = 0
+    @Volatile
+    private var gpsDistanceAtLost = 0.0
 
     /**
      * Initialize the engine. Must be called before start().
@@ -183,6 +192,7 @@ class LocationEngine(
      * Stop all GPS updates and sensor listeners.
      */
     fun stop() {
+        stopPedometerFallback()
         removeLocationUpdates()
         unregisterGnssStatusCallback()
         sensorFusionManager?.stop()
@@ -220,7 +230,7 @@ class LocationEngine(
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval)
             .setMinUpdateIntervalMillis(fastest)
             .setMinUpdateDistanceMeters(0f)
-            .setMaxUpdateDelayMillis(interval * 2)  // 2x interval for batching efficiency
+            .setWaitForAccurateLocation(true)
             .build()
 
         try {
@@ -245,7 +255,7 @@ class LocationEngine(
         )
             .setMinUpdateIntervalMillis(BatteryOptimizer.FASTEST_INTERVAL_MOVING_MS)
             .setMinUpdateDistanceMeters(0f)
-            .setMaxUpdateDelayMillis(BatteryOptimizer.INTERVAL_MOVING_MS * 2)  // 2x interval for batching efficiency
+            .setWaitForAccurateLocation(true)
             .build()
 
         locationCallback = object : LocationCallback() {
@@ -261,6 +271,7 @@ class LocationEngine(
                     if (now - lastGpsUpdateTime > GPS_LOST_TIMEOUT_MS && currentGpsStatus != "lost") {
                         currentGpsStatus = "lost"
                         listener?.onGPSStatusChange("lost", null, usedSatelliteCount)
+                        startPedometerFallback()
                     }
                 }
             }
@@ -291,6 +302,15 @@ class LocationEngine(
      */
     private fun processRawLocation(location: android.location.Location) {
         lastGpsUpdateTime = System.currentTimeMillis()
+
+        // Reject stale/cached locations from FusedLocationProvider.
+        // Android can return a cached cell-tower position with decent accuracy (~15m)
+        // but from a completely different location. Use elapsedRealtimeNanos to detect this.
+        val locationAgeMs = (android.os.SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos) / 1_000_000L
+        if (locationAgeMs > 10_000L) {
+            Log.d(TAG, "Rejected stale cached location: ${locationAgeMs}ms old")
+            return
+        }
 
         val point = GPSPoint.fromLocation(location)
 
@@ -324,10 +344,12 @@ class LocationEngine(
             if (currentGpsStatus != "lost") {
                 currentGpsStatus = "lost"
                 listener?.onGPSStatusChange("lost", point.horizontalAccuracy, usedSatelliteCount)
+                startPedometerFallback()
             }
         } else if (currentGpsStatus != "locked") {
             currentGpsStatus = "locked"
             listener?.onGPSStatusChange("locked", point.horizontalAccuracy, usedSatelliteCount)
+            stopPedometerFallback()
         }
 
         // If session is paused, don't process further
@@ -340,7 +362,38 @@ class LocationEngine(
             return
         }
 
+        // --- Spike detection: reject physically impossible jumps BEFORE kalman update ---
+        // Compare raw GPS against the last *filtered* position (matched with iOS).
+        // The Kalman filter smooths position, so raw-vs-filtered distance can appear
+        // larger than actual movement. Use generous limits to avoid rejecting valid points.
+        if (previousFilteredLat != 0.0) {
+            val rawDist = GeoMath.haversineDistance(
+                previousFilteredLat, previousFilteredLng,
+                point.latitude, point.longitude
+            )
+            val timeDelta = (point.timestamp - (session.filteredLocations.lastOrNull()?.timestamp ?: point.timestamp)) / 1000.0
+            // 15 m/s limit — generous to account for Kalman filter lag
+            val maxPlausibleDist = kotlin.math.max(15.0 * kotlin.math.max(timeDelta, 0.5), 10.0)
+            if (rawDist > maxPlausibleDist) {
+                Log.d(TAG, "Spike rejected: raw-vs-filtered ${rawDist}m > ${maxPlausibleDist}m")
+                return
+            }
+            // Background GPS guard: when update interval is large (>5s),
+            // GPS may report stale/cell-tower positions. Cap distance to 50m (matched with iOS).
+            if (timeDelta > 5.0 && rawDist > 50.0) {
+                Log.d(TAG, "Background spike rejected: ${rawDist}m in ${timeDelta}s")
+                return
+            }
+        }
+
         // --- Layer 3: Kalman Filter ---
+        // Update process noise from accelerometer BEFORE Kalman update (matched with iOS)
+        stationaryDetector?.let { detector ->
+            val accelVarianceG2 = (detector.currentAccelVariance / (9.81 * 9.81)).coerceAtLeast(0.001)
+            kalmanFilter.updateProcessNoise(accelVarianceG2)
+        }
+        kalmanFilter.updateSpeedAdaptiveQ()
+
         val filterResult = kalmanFilter.process(point) ?: return
 
         // --- Layer 4: Sensor Fusion ---
@@ -353,7 +406,10 @@ class LocationEngine(
         // Best altitude: barometer if available, else Kalman-filtered GPS alt
         val bestAltitude = fusion?.getBestAltitude(filterResult.altitude) ?: filterResult.altitude
 
-        // --- Stationary suppression: don't accumulate distance while stationary ---
+        // --- Stationary suppression: clamp position + don't accumulate distance ---
+        // Android FusedLocationProvider has significantly more GPS drift than iOS
+        // Core Location, especially indoors. When stationary, lock the emitted position
+        // to the last known good location to prevent the map marker from wandering.
         val isStationary = fusion?.isStationary() ?: false
         val rawDist = if (previousFilteredLat == 0.0) {
             0.0
@@ -363,20 +419,36 @@ class LocationEngine(
                 filterResult.latitude, filterResult.longitude
             )
         }
-        val distFromPrev = if (isStationary) {
+
+        val emitLat: Double
+        val emitLng: Double
+        val distFromPrev: Double
+
+        if (isStationary) {
             // Safety net: if detector says stationary but movement is clearly
-            // significant (> 2m), the detector is wrong — still count distance
-            if (rawDist > 2.0) rawDist else 0.0
+            // significant (> 2m), the detector is wrong — still count distance and update position
+            if (rawDist > 2.0) {
+                emitLat = filterResult.latitude
+                emitLng = filterResult.longitude
+                distFromPrev = rawDist
+            } else {
+                // Clamp position to last known location — prevents GPS drift on map
+                emitLat = if (previousFilteredLat != 0.0) previousFilteredLat else filterResult.latitude
+                emitLng = if (previousFilteredLng != 0.0) previousFilteredLng else filterResult.longitude
+                distFromPrev = 0.0
+            }
         } else {
+            emitLat = filterResult.latitude
+            emitLng = filterResult.longitude
             // Normal case: ignore tiny movements (< 0.3m) as noise
-            if (rawDist >= 0.3) rawDist else 0.0
+            distFromPrev = if (rawDist >= 0.3) rawDist else 0.0
         }
 
         val cumulativeDistance = session.totalDistance + distFromPrev
 
         val filteredLocation = FilteredLocation(
-            latitude = filterResult.latitude,
-            longitude = filterResult.longitude,
+            latitude = emitLat,
+            longitude = emitLng,
             altitude = bestAltitude,
             speed = if (isStationary) 0.0 else filterResult.speed,
             bearing = filterResult.bearing,
@@ -387,8 +459,11 @@ class LocationEngine(
         )
 
         session.addFilteredLocation(filteredLocation)
-        previousFilteredLat = filterResult.latitude
-        previousFilteredLng = filterResult.longitude
+        // Only update previous position when actually moving — keeps the anchor stable during stationary
+        if (!isStationary || previousFilteredLat == 0.0) {
+            previousFilteredLat = filterResult.latitude
+            previousFilteredLng = filterResult.longitude
+        }
 
         // Adaptive GPS interval based on movement and battery state
         val isMoving = !isStationary
@@ -413,6 +488,94 @@ class LocationEngine(
             listener?.onMilestoneReached(currentKm, splitPace, elapsedSec)
         }
         previousMilestoneDistance = cumulativeDistance
+    }
+
+    // --- Indoor / Pedometer Fallback ---
+
+    /**
+     * Start emitting pedometer-based distance events when GPS is lost.
+     * Fires every 2 seconds, using step count * stride for distance.
+     */
+    private fun startPedometerFallback() {
+        if (pedometerFallbackRunnable != null) return
+        val fusion = sensorFusionManager ?: return
+
+        pedometerBaseSteps = fusion.stepDetector.totalSteps
+        gpsDistanceAtLost = session.totalDistance
+        Log.i(TAG, "Starting pedometer fallback (baseSteps=$pedometerBaseSteps, gpsDistAtLost=$gpsDistanceAtLost)")
+
+        val runnable = object : Runnable {
+            override fun run() {
+                emitPedometerUpdate()
+                pedometerHandler.postDelayed(this, 2000)
+            }
+        }
+        pedometerFallbackRunnable = runnable
+        pedometerHandler.postDelayed(runnable, 2000)
+    }
+
+    private fun stopPedometerFallback() {
+        pedometerFallbackRunnable?.let {
+            pedometerHandler.removeCallbacks(it)
+        }
+        pedometerFallbackRunnable = null
+    }
+
+    /**
+     * Emit a synthetic location event using step-based distance.
+     */
+    private fun emitPedometerUpdate() {
+        if (session.state != RunSession.State.TRACKING) {
+            stopPedometerFallback()
+            return
+        }
+
+        val fusion = sensorFusionManager ?: return
+        val stepDelta = fusion.stepDetector.totalSteps - pedometerBaseSteps
+        if (stepDelta <= 0) return
+
+        val distance = stepDelta * fusion.stepDetector.currentStrideEstimate
+        val newCumulativeDistance = gpsDistanceAtLost + distance
+
+        // Only move forward
+        if (newCumulativeDistance <= session.totalDistance) return
+
+        // Dead reckoning for position
+        val dr = fusion.attemptDeadReckoning()
+        val lat = dr?.latitude ?: previousFilteredLat
+        val lon = dr?.longitude ?: previousFilteredLng
+
+        val distFromPrev = newCumulativeDistance - session.totalDistance
+
+        val filteredLocation = FilteredLocation(
+            latitude = lat,
+            longitude = lon,
+            altitude = fusion.getBestAltitude(0.0),
+            speed = if (fusion.isStationary()) 0.0 else fusion.stepDetector.currentStrideEstimate * 2.0,
+            bearing = 0.0,
+            timestamp = System.currentTimeMillis(),
+            distanceFromPrevious = distFromPrev,
+            cumulativeDistance = newCumulativeDistance,
+            isInterpolated = true
+        )
+
+        session.addFilteredLocation(filteredLocation)
+
+        // Emit to listener (listener adds distanceSource via the event builder)
+        listener?.onFilteredLocationUpdate(filteredLocation, session)
+
+        // Milestone detection
+        val prevKm = (previousMilestoneDistance / 1000).toInt()
+        val currentKm = (newCumulativeDistance / 1000).toInt()
+        if (currentKm > prevKm && currentKm > 0) {
+            val elapsedMs = session.getElapsedTime()
+            val elapsedSec = (elapsedMs / 1000).toInt()
+            val splitSeconds = ((elapsedMs - previousMilestoneTime) / 1000).toInt()
+            val splitPace = if (splitSeconds > 0) splitSeconds else 0
+            previousMilestoneTime = elapsedMs
+            listener?.onMilestoneReached(currentKm, splitPace, elapsedSec)
+        }
+        previousMilestoneDistance = newCumulativeDistance
     }
 
     // --- Permission & GPS availability checks ---

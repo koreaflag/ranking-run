@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useMemo, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useTheme } from '../../hooks/useTheme';
 import { FONT_SIZES, SPACING } from '../../utils/constants';
 
@@ -21,15 +21,28 @@ const DAYS = 7;
 // Weekday labels
 const DAY_LABELS = ['', 'M', '', 'W', '', 'F', ''];
 
+function formatDateLabel(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function formatDistanceShort(meters: number): string {
+  if (meters < 1000) return `${meters}m`;
+  return `${(meters / 1000).toFixed(1)}km`;
+}
+
 export default function ActivityHeatmap({ data }: Props) {
   const colors = useTheme();
+  const [selectedDay, setSelectedDay] = useState<{ date: string; distance: number; runCount: number } | null>(null);
 
-  const { grid, monthLabels, maxDistance } = useMemo(() => {
-    // Build a map of date -> distance
+  const { grid, monthLabels, maxDistance, dateInfoMap } = useMemo(() => {
+    // Build a map of date -> distance & run_count
     const dateMap = new Map<string, number>();
+    const infoMap = new Map<string, { distance: number; runCount: number }>();
     let maxDist = 0;
     for (const d of data) {
       dateMap.set(d.date, d.distance_meters);
+      infoMap.set(d.date, { distance: d.distance_meters, runCount: d.run_count });
       if (d.distance_meters > maxDist) maxDist = d.distance_meters;
     }
 
@@ -64,7 +77,7 @@ export default function ActivityHeatmap({ data }: Props) {
       g.push(week);
     }
 
-    return { grid: g, monthLabels: mLabels, maxDistance: maxDist };
+    return { grid: g, monthLabels: mLabels, maxDistance: maxDist, dateInfoMap: infoMap };
   }, [data]);
 
   const getColor = (distance: number): string => {
@@ -78,8 +91,45 @@ export default function ActivityHeatmap({ data }: Props) {
     return colors.primary;
   };
 
+  const handleCellPress = useCallback((date: string, distance: number) => {
+    if (distance < 0) return; // future
+    const info = dateInfoMap.get(date);
+    if (selectedDay?.date === date) {
+      setSelectedDay(null);
+    } else {
+      setSelectedDay({ date, distance, runCount: info?.runCount ?? 0 });
+    }
+  }, [dateInfoMap, selectedDay]);
+
+  // Legend distance labels
+  const legendLabels = useMemo(() => {
+    if (maxDistance === 0) return { q1: '', q2: '', q3: '', q4: '' };
+    return {
+      q1: formatDistanceShort(Math.round(maxDistance * 0.25)),
+      q4: formatDistanceShort(Math.round(maxDistance)),
+    };
+  }, [maxDistance]);
+
   return (
     <View>
+      {/* Selected day tooltip */}
+      {selectedDay && (
+        <View style={[styles.tooltip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.tooltipDate, { color: colors.text }]}>
+            {formatDateLabel(selectedDay.date)}
+          </Text>
+          {selectedDay.distance > 0 ? (
+            <Text style={[styles.tooltipValue, { color: colors.primary }]}>
+              {formatDistanceShort(selectedDay.distance)} · {selectedDay.runCount}회
+            </Text>
+          ) : (
+            <Text style={[styles.tooltipValue, { color: colors.textTertiary }]}>
+              휴식
+            </Text>
+          )}
+        </View>
+      )}
+
       {/* Month labels */}
       <View style={[styles.monthRow, { marginLeft: 20 }]}>
         {monthLabels.map((m, i) => (
@@ -117,34 +167,63 @@ export default function ActivityHeatmap({ data }: Props) {
           {grid.map((week, w) => (
             <View key={w} style={styles.weekCol}>
               {week.map((day, d) => (
-                <View
+                <TouchableOpacity
                   key={`${w}-${d}`}
-                  style={[styles.cell, {
-                    width: CELL_SIZE,
-                    height: CELL_SIZE,
-                    backgroundColor: getColor(day.distance),
-                    borderRadius: 3,
-                  }]}
-                />
+                  activeOpacity={0.7}
+                  onPress={() => handleCellPress(day.date, day.distance)}
+                >
+                  <View
+                    style={[styles.cell, {
+                      width: CELL_SIZE,
+                      height: CELL_SIZE,
+                      backgroundColor: getColor(day.distance),
+                      borderRadius: 3,
+                      borderWidth: selectedDay?.date === day.date ? 1.5 : 0,
+                      borderColor: selectedDay?.date === day.date ? colors.text : 'transparent',
+                    }]}
+                  />
+                </TouchableOpacity>
               ))}
             </View>
           ))}
         </View>
       </View>
 
-      {/* Legend */}
+      {/* Legend with distance labels */}
       <View style={styles.legend}>
-        <Text style={[styles.legendText, { color: colors.textTertiary }]}>Less</Text>
+        <Text style={[styles.legendText, { color: colors.textTertiary }]}>0</Text>
         {[colors.surfaceLight, colors.primary + '30', colors.primary + '60', colors.primary + '99', colors.primary].map((c, i) => (
           <View key={i} style={[styles.legendCell, { backgroundColor: c }]} />
         ))}
-        <Text style={[styles.legendText, { color: colors.textTertiary }]}>More</Text>
+        <Text style={[styles.legendText, { color: colors.textTertiary }]}>
+          {maxDistance > 0 ? legendLabels.q4 : ''}
+        </Text>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  tooltip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+    alignSelf: 'center',
+  },
+  tooltipDate: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  tooltipValue: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   monthRow: { flexDirection: 'row', height: 16, position: 'relative', marginBottom: 2 },
   monthLabel: { position: 'absolute', fontSize: 10, fontWeight: '600' },
   gridContainer: { flexDirection: 'row' },

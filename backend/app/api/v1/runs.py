@@ -311,6 +311,7 @@ async def get_run_record_detail(
         select(
             RunRecord,
             ST_AsGeoJSON(RunRecord.route_geometry).label("route_geojson"),
+            ST_AsGeoJSON(RunRecord.raw_route_geometry).label("raw_route_geojson"),
         ).where(
             RunRecord.id == run_id,
             RunRecord.user_id == current_user.id,
@@ -322,6 +323,7 @@ async def get_run_record_detail(
 
     record = row[0]
     route_geojson_str = row[1]
+    raw_route_geojson_str = row[2]
 
     course_info = None
     if record.course is not None:
@@ -341,9 +343,20 @@ async def get_run_record_detail(
     route_geo = None
     if route_geojson_str:
         try:
-            route_geo = json.loads(route_geojson_str)
+            geo = json.loads(route_geojson_str)
+            coords = geo.get("coordinates", [])
+            # If map-matched route has too few points, prefer raw GPS route
+            if len(coords) < 5 and raw_route_geojson_str:
+                route_geo = json.loads(raw_route_geojson_str)
+            else:
+                route_geo = geo
         except (json.JSONDecodeError, TypeError):
             route_geo = None
+    if route_geo is None and raw_route_geojson_str:
+        try:
+            route_geo = json.loads(raw_route_geojson_str)
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     splits = None
     if record.splits:

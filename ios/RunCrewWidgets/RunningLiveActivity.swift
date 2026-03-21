@@ -19,6 +19,7 @@ struct RunningLiveActivity: Widget {
                         Text(formatDistance(context.state.distanceMeters))
                             .font(.system(size: 28, weight: .heavy, design: .rounded).monospacedDigit())
                             .foregroundColor(appOrange)
+                            .contentTransition(.numericText())
                         Text("km")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(.gray)
@@ -95,6 +96,7 @@ struct RunningLiveActivity: Widget {
                     Text(formatDistance(context.state.distanceMeters))
                         .font(.system(size: 14, weight: .heavy, design: .rounded).monospacedDigit())
                         .foregroundColor(.white)
+                        .contentTransition(.numericText())
                 }
             } compactTrailing: {
                 // Compact — right pill
@@ -205,6 +207,7 @@ private struct LockScreenRunView: View {
                     Text(formatDistance(context.state.distanceMeters))
                         .font(.system(size: 38, weight: .heavy, design: .rounded).monospacedDigit())
                         .foregroundColor(appOrange)
+                        .contentTransition(.numericText())
                     Text("km")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundColor(.white.opacity(0.35))

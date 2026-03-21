@@ -40,7 +40,7 @@ class WatchSessionService: NSObject, WCSessionDelegate {
 
     /// Request location permission eagerly on first launch so it's ready for standalone runs.
     private func preAuthorizeLocation() {
-        let status = CLLocationManager.authorizationStatus()
+        let status = CLLocationManager().authorizationStatus
         if status == .notDetermined {
             WatchLocationManager.shared.requestPermission()
             print("[WatchSessionSvc] Location permission requested on launch")
@@ -56,6 +56,9 @@ class WatchSessionService: NSObject, WCSessionDelegate {
         }
         if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
             share.insert(energyType)
+        }
+        if let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate) {
+            share.insert(hrType)
         }
         var read: Set<HKObjectType> = []
         if let hr = HKQuantityType.quantityType(forIdentifier: .heartRate) {
@@ -178,7 +181,7 @@ class WatchSessionService: NSObject, WCSessionDelegate {
         case "countdown":
             return ageMs >= -5000 && ageMs < 30_000   // 30 seconds
         case "running":
-            return ageMs >= -5000 && ageMs < 300_000   // 5 minutes
+            return ageMs >= -5000 && ageMs < 15_000    // 15 seconds (was 5min — too stale)
         default:
             return true
         }
@@ -355,10 +358,17 @@ class WatchSessionService: NSObject, WCSessionDelegate {
         didReceiveApplicationContext applicationContext: [String: Any]
     ) {
         print("[WatchSessionSvc] didReceiveAppContext: \(applicationContext)")
-        // Fast-path: create HKWorkoutSession immediately to prevent suspension
         let phase = applicationContext["phase"] as? String
-        if shouldAutoForeground(phase: phase) {
-            ensureWorkoutSessionForRunning()
+
+        // Freshness check: applicationContext persists across app launches
+        // and can contain very stale data. Only auto-foreground if fresh.
+        if let phase = phase, shouldAutoForeground(phase: phase) {
+            if isAutoForegroundFresh(applicationContext, phase: phase) {
+                ensureWorkoutSessionForRunning()
+            } else {
+                print("[WatchSessionSvc] BLOCKED stale appContext phase=\(phase)")
+                return  // Don't process stale applicationContext at all
+            }
         }
         DispatchQueue.main.async { [weak self] in
             // Apply weeklyGoalKm from applicationContext

@@ -20,6 +20,7 @@ from app.schemas.follow import (
     UserSearchByCodeResponse,
 )
 from app.services.follow_service import FollowService
+from app.services.notification_service import NotificationService
 
 router = APIRouter(tags=["follows"])
 
@@ -57,12 +58,24 @@ async def follow_user(
     current_user: CurrentUser,
     db: DbSession,
     follow_service: FollowService = Depends(Provide[Container.follow_service]),
+    notification_service: NotificationService = Depends(Provide[Container.notification_service]),
 ) -> FollowResponse:
     """Follow a user."""
     follow = await follow_service.follow_user(
         db=db,
         follower_id=current_user.id,
         following_id=user_id,
+    )
+    # Send follow notification to the target user
+    await notification_service.create_and_send(
+        db=db,
+        user_id=user_id,
+        notification_type="follow",
+        actor_id=current_user.id,
+        title="새로운 팔로워",
+        body=f"{current_user.nickname}님이 회원님을 팔로우하기 시작했습니다.",
+        target_id=str(current_user.id),
+        target_type="user",
     )
     return _to_follow_response_for_following(follow)
 
@@ -172,10 +185,23 @@ async def follow_by_code(
     current_user: CurrentUser,
     db: DbSession,
     follow_service: FollowService = Depends(Provide[Container.follow_service]),
+    notification_service: NotificationService = Depends(Provide[Container.notification_service]),
 ) -> FollowResponse:
     """Follow a user by their unique code."""
     follow = await follow_service.follow_by_code(
         db=db, follower_id=current_user.id, user_code=body.user_code,
+    )
+    # Send follow notification to the target user
+    target_user_id = follow.following_id
+    await notification_service.create_and_send(
+        db=db,
+        user_id=target_user_id,
+        notification_type="follow",
+        actor_id=current_user.id,
+        title="새로운 팔로워",
+        body=f"{current_user.nickname}님이 회원님을 팔로우하기 시작했습니다.",
+        target_id=str(current_user.id),
+        target_type="user",
     )
     return _to_follow_response_for_following(follow)
 

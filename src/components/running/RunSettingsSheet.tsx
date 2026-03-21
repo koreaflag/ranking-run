@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo, useCallback } from 'react';
+import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,8 @@ const DISMISS_THRESHOLD = 120;
 interface RunSettingsSheetProps {
   visible: boolean;
   onClose: () => void;
+  onNavigateHeartRate?: () => void;
+  onNavigateWatch?: () => void;
 }
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
@@ -37,7 +39,7 @@ interface SettingTile {
   onTap: () => void;
 }
 
-export default function RunSettingsSheet({ visible, onClose }: RunSettingsSheetProps) {
+export default function RunSettingsSheet({ visible, onClose, onNavigateHeartRate, onNavigateWatch }: RunSettingsSheetProps) {
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -82,12 +84,22 @@ export default function RunSettingsSheet({ visible, onClose }: RunSettingsSheetP
     }
   }, [visible, slideAnim, overlayOpacity, dragOffset]);
 
-  // Pan responder for swipe-to-dismiss
+  // Track touch start position to restrict drag to handle area
+  const touchStartYRef = useRef(0);
+  const sheetTopRef = useRef(0);
+
+  // Pan responder for swipe-to-dismiss (only from handle area)
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, g) => g.dy > 8,
+        onStartShouldSetPanResponder: (evt) => {
+          touchStartYRef.current = evt.nativeEvent.pageY;
+          return false;
+        },
+        onMoveShouldSetPanResponder: (_, g) => {
+          const touchInHandle = touchStartYRef.current - sheetTopRef.current < 48;
+          return touchInHandle && g.dy > 8;
+        },
         onPanResponderMove: (_, g) => {
           if (g.dy > 0) {
             dragOffset.setValue(g.dy);
@@ -168,10 +180,17 @@ export default function RunSettingsSheet({ visible, onClose }: RunSettingsSheetP
     setCountdownSeconds(opts[(idx + 1) % opts.length]);
   }, [countdownSeconds, setCountdownSeconds, tap]);
 
-  const cycleHeartRate = useCallback(() => {
+  const openHeartRate = useCallback(() => {
     tap();
-    setShowHeartRate(!showHeartRate);
-  }, [showHeartRate, setShowHeartRate, tap]);
+    onClose();
+    setTimeout(() => onNavigateHeartRate?.(), 300);
+  }, [tap, onClose, onNavigateHeartRate]);
+
+  const openWatch = useCallback(() => {
+    tap();
+    onClose();
+    setTimeout(() => onNavigateWatch?.(), 300);
+  }, [tap, onClose, onNavigateWatch]);
 
   // Tile definitions
   const measureTiles: SettingTile[] = useMemo(() => [
@@ -215,18 +234,18 @@ export default function RunSettingsSheet({ visible, onClose }: RunSettingsSheetP
     {
       key: 'hr',
       icon: 'heart',
-      label: '심박수 표시',
+      label: '심박수',
       getValue: () => showHeartRate ? '켜기' : '끄기',
-      onTap: cycleHeartRate,
+      onTap: openHeartRate,
     },
     {
       key: 'watch',
-      icon: 'watch-outline',
-      label: 'Apple Watch',
+      icon: 'watch-outline' as keyof typeof Ionicons.glyphMap,
+      label: Platform.OS === 'ios' ? 'Apple Watch' : 'Galaxy Watch',
       getValue: () => '설정',
-      onTap: tap,
+      onTap: openWatch,
     },
-  ], [showHeartRate, cycleHeartRate, tap]);
+  ], [showHeartRate, openHeartRate, openWatch]);
 
   const renderTile = (tile: SettingTile) => (
     <TouchableOpacity
@@ -268,6 +287,7 @@ export default function RunSettingsSheet({ visible, onClose }: RunSettingsSheetP
       {/* Sheet — swipe down to dismiss */}
       <Animated.View
         style={[styles.sheet, { transform: [{ translateY: combinedTranslateY }] }]}
+        onLayout={(e) => { sheetTopRef.current = e.nativeEvent.layout.y; }}
         {...panResponder.panHandlers}
       >
         {/* Handle bar (visual drag hint) */}
@@ -302,7 +322,7 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: c.card,
       borderTopLeftRadius: BORDER_RADIUS.xl,
       borderTopRightRadius: BORDER_RADIUS.xl,
-      paddingBottom: Platform.OS === 'ios' ? 40 : SPACING.xxl,
+      paddingBottom: Platform.OS === 'ios' ? 40 : 60,
       ...SHADOWS.lg,
     },
     handleBar: {

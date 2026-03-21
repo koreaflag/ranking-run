@@ -30,6 +30,9 @@ class HeartRateManager: NSObject, ObservableObject {
         if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
             typesToShare.insert(energyType)
         }
+        if let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) {
+            typesToShare.insert(heartRateType)
+        }
         var typesToRead: Set<HKObjectType> = []
         if let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) {
             typesToRead.insert(heartRateType)

@@ -6,10 +6,10 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  SafeAreaView,
   Platform,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
 import * as Location from 'expo-location';
@@ -131,7 +131,7 @@ export default function CourseListScreen() {
 
   if (allEmpty) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <View style={styles.header}>
           <Text style={styles.headerTitle}>{t('course.discover')}</Text>
           <TouchableOpacity
@@ -151,7 +151,7 @@ export default function CourseListScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -464,7 +464,6 @@ const createStyles = (c: ThemeColors) =>
     container: {
       flex: 1,
       backgroundColor: c.background,
-      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
     },
     scrollContent: {
       flexGrow: 1,

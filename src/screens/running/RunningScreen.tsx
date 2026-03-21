@@ -5,12 +5,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
-  SafeAreaView,
   Platform,
   StatusBar,
   Animated,
   NativeModules,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -64,6 +64,7 @@ export default function RunningScreen() {
     avgPaceSecondsPerKm,
     gpsStatus,
     gpsAccuracy,
+    distanceSource,
     routePoints,
     calories,
     heartRate,
@@ -76,6 +77,7 @@ export default function RunningScreen() {
     loopDetected,
     distanceToStart,
     isAutoPaused,
+    speedAnomalyDetected,
     runGoal,
     splits,
     startSession,
@@ -96,6 +98,9 @@ export default function RunningScreen() {
   const isMoving = (currentLocation?.speed ?? 0) > 0.5; // > 0.5 m/s
   const { heading: headingValue } = useCompassHeading(100, isMoving ? (currentLocation?.bearing ?? null) : null);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  // Read persisted location synchronously — available instantly at mount time,
+  // unlike getLastKnownPositionAsync which is async and arrives too late.
+  const persistedLocation = useSettingsStore((s) => s.lastKnownLocation);
 
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -190,6 +195,33 @@ export default function RunningScreen() {
       });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Speed anomaly: warn user and stop the run
+  const speedAnomalyHandledRef = useRef(false);
+  useEffect(() => {
+    if (!speedAnomalyDetected || speedAnomalyHandledRef.current) return;
+    speedAnomalyHandledRef.current = true;
+
+    Alert.alert(
+      t('running.speedAnomaly.title'),
+      t('running.speedAnomaly.message'),
+      [
+        {
+          text: t('running.speedAnomaly.stop'),
+          style: 'destructive',
+          onPress: async () => {
+            await stopTracking();
+            complete();
+            const currentSessionId = useRunningStore.getState().sessionId;
+            if (currentSessionId) {
+              navigation.replace('RunResult', { sessionId: currentSessionId });
+            }
+          },
+        },
+      ],
+      { cancelable: false },
+    );
+  }, [speedAnomalyDetected, stopTracking, complete, navigation, t]);
 
   // Prevent accidental back navigation during active running
   const isRunActive = phase === 'running' || phase === 'paused' || phase === 'countdown';
@@ -310,15 +342,27 @@ export default function RunningScreen() {
       console.warn('[RunningScreen] 카운트다운 네이티브 호출 실패:', err);
     }
 
-    for (let i = countdownSeconds; i > 0; i--) {
-      setCountdown(i);
+    await new Promise<void>((resolve) => {
+      let remaining = countdownSeconds;
+      setCountdown(remaining);
       if (hapticFeedback) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
 
-    setCountdown(null);
+      const timer = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          clearInterval(timer);
+          setCountdown(null);
+          resolve();
+        } else {
+          setCountdown(remaining);
+          if (hapticFeedback) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
+        }
+      }, 1000);
+    });
 
     // Start GPS tracking with a local session ID first, then try to get
     // a server session ID with a 3-second timeout. Network latency must
@@ -437,6 +481,41 @@ export default function RunningScreen() {
     justPassed: !!cpJustPassed,
   });
 
+  // Auto-finish when goal is reached (distance or time)
+  const goalAutoFinishedRef = useRef(false);
+  useEffect(() => {
+    if (phase !== 'running' || goalAutoFinishedRef.current) return;
+    if (!runGoal?.type || !runGoal?.value) return;
+
+    let reached = false;
+    if (runGoal.type === 'distance' && distanceMeters >= runGoal.value) {
+      reached = true;
+    } else if (runGoal.type === 'time' && durationSeconds >= runGoal.value) {
+      reached = true;
+    } else if (runGoal.type === 'program' && distanceMeters >= runGoal.value) {
+      reached = true;
+    }
+
+    if (reached) {
+      goalAutoFinishedRef.current = true;
+      if (hapticFeedback) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      // Goal running: auto-finish immediately (no "continue" option)
+      (async () => {
+        if (checkpointPasses.length > 0) {
+          setCheckpointPasses(checkpointPasses);
+        }
+        await stopTracking();
+        complete();
+        const currentSessionId = useRunningStore.getState().sessionId;
+        if (currentSessionId) {
+          navigation.replace('RunResult', { sessionId: currentSessionId });
+        }
+      })();
+    }
+  }, [phase, runGoal, distanceMeters, durationSeconds, hapticFeedback, stopTracking, complete, navigation, checkpointPasses, setCheckpointPasses, t]);
+
   // Voice guidance for course navigation + program goal pace coaching
   const paceCoachingTTSMessage: string | null = paceCoaching
     ? (() => {
@@ -518,19 +597,24 @@ export default function RunningScreen() {
   }
 
   // During running, show live GPS accuracy instead of binary status
+  const isIndoorMode = distanceSource === 'pedometer';
   const gpsDisabled = gpsStatus === 'disabled';
   const gpsColor = gpsDisabled
     ? colors.error
-    : gpsAccuracy != null && gpsAccuracy < 10
-      ? colors.success
-      : gpsAccuracy != null && gpsAccuracy < 25
-        ? colors.warning
-        : colors.error;
+    : isIndoorMode
+      ? colors.warning
+      : gpsAccuracy != null && gpsAccuracy < 10
+        ? colors.success
+        : gpsAccuracy != null && gpsAccuracy < 25
+          ? colors.warning
+          : colors.error;
   const gpsLabel = gpsDisabled
     ? t('running.status.gpsPermissionNeeded')
-    : gpsAccuracy != null
-      ? `±${Math.round(gpsAccuracy)}m`
-      : 'GPS';
+    : isIndoorMode
+      ? t('running.status.indoor')
+      : gpsAccuracy != null
+        ? `±${Math.round(gpsAccuracy)}m`
+        : 'GPS';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -623,11 +707,12 @@ export default function RunningScreen() {
             previewPolyline={courseRoute ?? undefined}
             checkpoints={cpMarkerData.length > 0 ? cpMarkerData : undefined}
             showUserLocation
-            followsUserLocation={followUser}
+            followsUserLocation={followUser && phase !== 'completed'}
             followZoomLevel={16}
-            followUserMode="course"
-            followPitch={30}
+            followUserMode={phase === 'completed' ? undefined : "course"}
+            followPitch={phase === 'completed' ? undefined : 30}
             interactive={false}
+            lastKnownLocation={persistedLocation ?? undefined}
             customUserLocation={
               courseId && courseNavigation?.snappedPosition
                 ? courseNavigation.snappedPosition

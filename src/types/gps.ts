@@ -36,6 +36,7 @@ export interface LocationUpdateEvent {
   cadence?: number; // steps per minute
   elevationGain?: number; // cumulative meters (barometer)
   elevationLoss?: number; // cumulative meters (barometer)
+  distanceSource?: 'gps' | 'pedometer'; // source of distance measurement
 }
 
 export interface GPSStatusChangeEvent {

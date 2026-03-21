@@ -7,6 +7,8 @@ import CrewDetailScreen from '../screens/crew/CrewDetailScreen';
 import UserProfileScreen from '../screens/profile/UserProfileScreen';
 import RunningScreen from '../screens/running/RunningScreen';
 import RunResultScreen from '../screens/running/RunResultScreen';
+import HeartRateSettingsScreen from '../screens/world/HeartRateSettingsScreen';
+import WatchSettingsScreen from '../screens/world/WatchSettingsScreen';
 import { useTheme } from '../hooks/useTheme';
 
 const Stack = createNativeStackNavigator<WorldStackParamList>();
@@ -27,6 +29,8 @@ export default function WorldStack() {
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
       <Stack.Screen name="RunningMain" component={RunningScreen} options={{ gestureEnabled: false }} />
       <Stack.Screen name="RunResult" component={RunResultScreen} />
+      <Stack.Screen name="HeartRateSettings" component={HeartRateSettingsScreen} />
+      <Stack.Screen name="WatchSettings" component={WatchSettingsScreen} options={{ presentation: 'modal' }} />
     </Stack.Navigator>
   );
 }

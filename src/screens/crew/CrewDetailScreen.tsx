@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   ActionSheetIOS,
@@ -17,7 +16,9 @@ import {
   UIManager,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -424,11 +425,11 @@ export default function CrewDetailScreen() {
             )}
             {crew?.is_member && crew?.my_role !== 'owner' && (
               <TouchableOpacity
-                onPress={handleMoreMenu}
+                onPress={() => navigation.navigate('CrewMemberSettings', { crewId, crewName: crew?.name ?? '' })}
                 activeOpacity={0.6}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
-                <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
+                <Ionicons name="settings-outline" size={22} color={colors.text} />
               </TouchableOpacity>
             )}
             {!crew?.is_member && !canEdit && <View style={styles.headerSpacer} />}

@@ -34,6 +34,10 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
     /// before the actual "countdown" phase arrives via WCSession.
     var suppressInitialCallback = false
 
+    /// True while stopRun() async chain is in progress. Prevents startRunMinimal()
+    /// from creating a new session before the old one has fully ended.
+    private(set) var isStopping = false
+
     var isSessionActive: Bool {
         guard let session = session else { return false }
         return session.state == .running || session.state == .paused || session.state == .prepared
@@ -49,13 +53,27 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
     /// This is the minimum needed to foreground the app.
     /// Called synchronously from WCSession callbacks via DispatchQueue.main.sync.
     /// Builder, mirroring, and data collection are deferred to startRunFullSetup().
-    func startRunMinimal() {
+    func startRunMinimal(indoor: Bool = false) {
+        // If stopRun() is still in progress, force-cleanup immediately so we can start fresh.
+        if isStopping {
+            print("[WorkoutMirror] startRunMinimal: force-cleanup (stopRun still in progress)")
+            isStopping = false
+            if let s = session { s.delegate = nil }
+            session = nil
+            builder = nil
+            routeBuilder = nil
+            accumulatedDistanceMeters = 0
+            lastSampledDistance = 0
+            suppressInitialCallback = false
+        }
+
         // If an old session exists but is stopped/ended (from a previous run),
         // clean it up immediately so we can create a new one.
         // This prevents the 1-second delayed cleanup from blocking new session creation.
         if let existing = session {
             if existing.state == .stopped || existing.state == .ended {
                 print("[WorkoutMirror] startRunMinimal: cleaning up stale session (state=\(existing.state.rawValue))")
+                existing.delegate = nil
                 session = nil
                 builder = nil
                 routeBuilder = nil
@@ -70,7 +88,7 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
 
         let config = HKWorkoutConfiguration()
         config.activityType = .running
-        config.locationType = .outdoor
+        config.locationType = indoor ? .indoor : .outdoor
 
         do {
             let newSession = try HKWorkoutSession(healthStore: healthStore, configuration: config)
@@ -166,8 +184,8 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
 
     /// Convenience: create session + full setup in one call.
     /// Used when not called from a WCSession fast-path (e.g., watch-initiated runs).
-    func startRun() {
-        startRunMinimal()
+    func startRun(indoor: Bool = false) {
+        startRunMinimal(indoor: indoor)
         startRunFullSetup()
     }
 
@@ -310,10 +328,18 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
 
     func stopRun() {
         guard let session = session else { return }
+        isStopping = true
 
         let endDate = Date()
 
-        // Add distance/energy samples, then end collection and finish workout.
+        // Call session.end() FIRST to release HealthKit resources promptly.
+        // This allows a new session to be created without "device busy" errors.
+        // The builder finalization (samples, endCollection, finishWorkout) runs
+        // asynchronously after — HealthKit allows this ordering.
+        session.end()
+        print("[WorkoutMirror] end() called immediately")
+
+        // Finalize builder asynchronously (non-blocking for new session creation)
         addFinalSamples(endDate: endDate) { [weak self] in
             guard let self = self else { return }
             self.builder?.endCollection(withEnd: endDate) { [weak self] success, error in
@@ -337,8 +363,8 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
                         }
                     }
                     DispatchQueue.main.async {
-                        session.end()
-                        print("[WorkoutMirror] end() called (after samples + endCollection + finishWorkout)")
+                        self?.isStopping = false
+                        print("[WorkoutMirror] stopRun finalization complete")
                     }
                 }
             }
@@ -356,6 +382,10 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
     /// Reset session state without ending (for when session already ended via mirroring)
     func cleanup() {
         if let session = session {
+            // Nil delegate FIRST to prevent stale callbacks from the old session
+            // reaching CompanionRunManager after cleanup (e.g., .stopped/.ended firing
+            // after a new countdown has already started → reverts phase to "completed").
+            session.delegate = nil
             Task {
                 try? await session.stopMirroringToCompanionDevice()
             }
@@ -366,6 +396,7 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
         accumulatedDistanceMeters = 0
         lastSampledDistance = 0
         suppressInitialCallback = false
+        isStopping = false
         print("[WorkoutMirror] cleanup complete")
     }
 
@@ -411,10 +442,19 @@ extension WorkoutMirroringManager: HKWorkoutSessionDelegate {
             self.onPhaseChange?(oldPhase, newPhase)
         }
 
-        // Auto-cleanup when session ends
+        // Auto-cleanup when session ends.
+        // Capture the session reference so the delayed cleanup only runs if this
+        // is still the current session — prevents killing a new session created
+        // for the next run (completed→countdown within 1 second).
         if toState == .stopped || toState == .ended {
+            let endedSession = workoutSession
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                self?.cleanup()
+                guard let self = self else { return }
+                if self.session === endedSession || self.session == nil {
+                    self.cleanup()
+                } else {
+                    print("[WorkoutMirror] SKIPPED auto-cleanup: new session already active")
+                }
             }
         }
     }

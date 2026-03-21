@@ -50,6 +50,10 @@ struct WatchRunState {
     var programStatus: String = ""        // "ahead"/"on_pace"/"behind"/"critical"
     var metronomeBPM: Int = 0             // 0 = off
 
+    // Timer sync (startTime-based, from phone)
+    var runStartTime: Double = 0          // ms since epoch — when current segment started
+    var elapsedBeforePause: Double = 0    // seconds accumulated before current segment
+
     // Countdown sync (from phone)
     var countdownStartedAt: Double = 0    // ms since epoch (JS Date.now())
     var countdownTotal: Int = 3           // total countdown seconds

@@ -98,6 +98,7 @@ target 'RunCrew' do
     existing = main_target.shell_script_build_phases.find { |p| p.name == phase_name }
     unless existing
       phase = main_target.new_shell_script_build_phase(phase_name)
+      phase.always_out_of_date = "1"
       phase.shell_script = <<~'SCRIPT'
         FRAMEWORKS_DIR="${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}"
         [ ! -d "$FRAMEWORKS_DIR" ] && exit 0

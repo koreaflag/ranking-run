@@ -5,8 +5,9 @@ import type { RootStackParamList } from '../types/navigation';
 import { useAuthStore } from '../stores/authStore';
 import AuthStack from './AuthStack';
 import TabNavigator from './TabNavigator';
+import OnboardingScreen from '../screens/auth/OnboardingScreen';
 import { useTheme } from '../hooks/useTheme';
-import { ActivityIndicator, Alert, View, StatusBar } from 'react-native';
+import { Alert, View, StatusBar } from 'react-native';
 import { syncPendingData } from '../services/pendingSyncService';
 import ToastContainer from '../components/common/ToastContainer';
 import {
@@ -190,14 +191,11 @@ export default function RootNavigator() {
   );
 
   if (isLoading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+    return null;
   }
 
-  const showAuth = !isAuthenticated || isNewUser;
+  const showAuth = !isAuthenticated && !isNewUser;
+  const showOnboarding = isNewUser;
 
   return (
     <View style={{ flex: 1 }}>
@@ -205,7 +203,9 @@ export default function RootNavigator() {
       <NavigationContainer theme={navTheme} ref={navRef} onReady={handleNavReady} linking={linking}>
         <StatusBar barStyle={colors.statusBar} />
         <Stack.Navigator screenOptions={{ headerShown: false }}>
-          {showAuth ? (
+          {showOnboarding ? (
+            <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+          ) : showAuth ? (
             <Stack.Screen name="Auth" component={AuthStack} />
           ) : (
             <Stack.Screen name="Main" component={TabNavigator} />

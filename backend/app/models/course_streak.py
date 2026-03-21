@@ -23,7 +23,7 @@ class CourseStreak(Base, UUIDPrimaryKeyMixin):
     )
     course_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("courses.id"),
+        ForeignKey("courses.id", ondelete="CASCADE"),
         nullable=False,
     )
     current_streak: Mapped[int] = mapped_column(

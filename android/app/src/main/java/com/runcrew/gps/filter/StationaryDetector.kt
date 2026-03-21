@@ -25,19 +25,40 @@ class StationaryDetector(
         // Accelerometer variance threshold for stationary classification.
         // Empirically tuned: a person holding still produces variance ~0.02-0.05 m/s^2,
         // walking produces ~0.5-2.0, running produces ~2.0-8.0.
-        private const val ACCEL_VARIANCE_THRESHOLD = 0.15
+        private const val ACCEL_VARIANCE_THRESHOLD = 0.25
 
         // Speed below which GPS alone suggests stationary (m/s)
+        // Matched with iOS: 0.3 m/s ~ 1.1 km/h
         private const val SPEED_THRESHOLD = 0.3
+
+        // Speed above which a stationary user is considered moving again (m/s)
+        // Matched with iOS: lowered from 0.5 to 0.35 for faster resume detection
+        private const val RESUME_SPEED_THRESHOLD = 0.35
 
         // Window duration for accelerometer variance calculation (ms)
         private const val WINDOW_DURATION_MS = 3000L
 
         // Minimum time in a state before transition is allowed (debounce)
-        private const val MIN_STATE_DURATION_MS = 1000L
+        // Unified at 2s across iOS/Android for consistent behavior.
+        private const val MIN_STATE_DURATION_MS = 2000L
 
-        // Number of consecutive readings in the new state required before transitioning
-        private const val HYSTERESIS_COUNT = 3
+        // Number of consecutive readings required to enter STATIONARY
+        // Set to 3 (matched with iOS) to avoid false triggers during brief slow-downs
+        private const val REQUIRED_STATIONARY_COUNT = 3
+
+        // Number of consecutive readings required to resume MOVING
+        // Set to 1 (matched with iOS) for maximum responsiveness — critical for distance
+        private const val REQUIRED_MOVING_COUNT = 1
+
+        // Accelerometer magnitude threshold for movement detection (matched with iOS: 0.2g)
+        private const val ACCEL_MAGNITUDE_THRESHOLD = 0.2
+
+        // Number of consecutive accel readings above threshold to resume moving
+        private const val REQUIRED_ACCEL_MOVING_COUNT = 3
+
+        // Grace period: ignore the first N evaluations to avoid false stationary
+        // detection during cold start (GPS speed may report 0 initially)
+        private const val GRACE_EVALUATIONS = 5
     }
 
     /**
@@ -65,9 +86,15 @@ class StationaryDetector(
     private var lastStateChangeTime: Long = System.currentTimeMillis()
     private var lastGpsSpeed: Double = 0.0
 
-    // Hysteresis: count consecutive readings that suggest the opposite state
-    private var pendingStateCount: Int = 0
-    private var pendingState: MovementState? = null
+    // Hysteresis counters (matched with iOS: separate counts for stationary/moving)
+    private var consecutiveStationaryCount: Int = 0
+    private var consecutiveMovingCount: Int = 0
+
+    // Grace period counter
+    private var totalEvaluationCount: Int = 0
+
+    // Recent speed samples for windowed average (matched with iOS: 5 samples)
+    private val recentSpeeds = ArrayDeque<Double>(6)
 
     // Accelerometer magnitude samples: Pair(timestamp_ms, magnitude)
     private val accelSamples = ArrayDeque<Pair<Long, Double>>(200)
@@ -101,11 +128,88 @@ class StationaryDetector(
 
     /**
      * Feed in the latest GPS-derived speed so the detector can cross-check.
+     * Matched with iOS: uses windowed average + instantaneous speed for resume.
      */
     @Synchronized
     fun updateGpsSpeed(speedMs: Double) {
+        // Skip invalid speed readings (hasSpeed() returned false → -1)
+        if (speedMs < 0) return
+
         lastGpsSpeed = speedMs
-        evaluateState()
+        totalEvaluationCount++
+
+        // Maintain speed window (matched with iOS: 5 samples)
+        recentSpeeds.addLast(speedMs)
+        if (recentSpeeds.size > 5) recentSpeeds.removeFirst()
+
+        val avgSpeed = if (recentSpeeds.isNotEmpty()) recentSpeeds.average() else 0.0
+
+        when (currentState) {
+            MovementState.MOVING -> {
+                // Grace period: don't transition to stationary too early
+                // GPS speed may report 0 for the first few readings
+                if (totalEvaluationCount <= GRACE_EVALUATIONS) return
+
+                // Matched with iOS: use GPS speed alone for stationary detection.
+                // Accelerometer variance is unreliable (hand tremor, phone in pocket, etc.)
+                val isLowSpeed = avgSpeed < SPEED_THRESHOLD
+                if (isLowSpeed) {
+                    consecutiveStationaryCount++
+                    consecutiveMovingCount = 0
+                    if (consecutiveStationaryCount >= REQUIRED_STATIONARY_COUNT) {
+                        transitionTo(MovementState.STATIONARY)
+                    }
+                } else {
+                    consecutiveStationaryCount = 0
+                }
+            }
+            MovementState.STATIONARY -> {
+                // Use max of instantaneous and average speed for resume check (matched with iOS).
+                // The window contains stale zeros from when the user was stopped,
+                // which dilute the average and delay resume. A single GPS reading
+                // above the threshold is a strong signal of movement.
+                val resumeSpeed = kotlin.math.max(speedMs, avgSpeed)
+                if (resumeSpeed > RESUME_SPEED_THRESHOLD) {
+                    consecutiveMovingCount++
+                    if (consecutiveMovingCount >= REQUIRED_MOVING_COUNT) {
+                        transitionTo(MovementState.MOVING)
+                    }
+                }
+                // NOTE: intentionally do NOT reset consecutiveMovingCount when speed
+                // is below threshold — accelerometer path also increments it.
+            }
+        }
+    }
+
+    /**
+     * Feed accelerometer magnitude for movement detection when in stationary state.
+     * Matched with iOS: 3 consecutive readings above 0.2g threshold to resume.
+     */
+    @Synchronized
+    fun updateAccelerometerMagnitude(magnitude: Double, isLowAccuracyMode: Boolean = false) {
+        if (currentState == MovementState.STATIONARY && magnitude > ACCEL_MAGNITUDE_THRESHOLD) {
+            consecutiveMovingCount++
+            val threshold = if (isLowAccuracyMode) REQUIRED_MOVING_COUNT else REQUIRED_ACCEL_MOVING_COUNT
+            if (consecutiveMovingCount >= threshold) {
+                transitionTo(MovementState.MOVING)
+            }
+        }
+    }
+
+    private fun transitionTo(newState: MovementState) {
+        if (newState == currentState) return
+        val now = System.currentTimeMillis()
+        val durationInPreviousState = now - lastStateChangeTime
+        currentState = newState
+        lastStateChangeTime = now
+        consecutiveStationaryCount = 0
+        consecutiveMovingCount = 0
+        // Clear speed window on transition so stale readings don't affect next state
+        recentSpeeds.clear()
+
+        for (listener in listeners) {
+            listener.onStateChanged(newState, durationInPreviousState)
+        }
     }
 
     // --- SensorEventListener ---
@@ -130,9 +234,11 @@ class StationaryDetector(
         }
 
         currentAccelVariance = computeVariance()
-        synchronized(this) {
-            evaluateState()
-        }
+
+        // Compute acceleration magnitude relative to gravity for movement detection
+        // (matched with iOS: uses deviation from 9.81 m/s²)
+        val accelMagnitudeG = kotlin.math.abs(magnitude - 9.81) / 9.81
+        updateAccelerometerMagnitude(accelMagnitudeG)
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
@@ -153,60 +259,18 @@ class StationaryDetector(
         return magnitudes.sumOf { (it - mean) * (it - mean) } / magnitudes.size
     }
 
-    private fun evaluateState() {
-        val now = System.currentTimeMillis()
-        val timeSinceLastChange = now - lastStateChangeTime
-
-        // Debounce: don't change state too rapidly
-        if (timeSinceLastChange < MIN_STATE_DURATION_MS) return
-
-        val isLowAccel = currentAccelVariance < ACCEL_VARIANCE_THRESHOLD
-        val isLowSpeed = lastGpsSpeed < SPEED_THRESHOLD
-
-        val suggestedState = if (isLowAccel && isLowSpeed) {
-            MovementState.STATIONARY
-        } else {
-            MovementState.MOVING
-        }
-
-        if (suggestedState != currentState) {
-            // Hysteresis: require N consecutive readings in the new state
-            if (pendingState == suggestedState) {
-                pendingStateCount++
-            } else {
-                pendingState = suggestedState
-                pendingStateCount = 1
-            }
-
-            if (pendingStateCount >= HYSTERESIS_COUNT) {
-                val durationInPreviousState = timeSinceLastChange
-                currentState = suggestedState
-                lastStateChangeTime = now
-                pendingState = null
-                pendingStateCount = 0
-
-                for (listener in listeners) {
-                    listener.onStateChanged(suggestedState, durationInPreviousState)
-                }
-            }
-        } else {
-            // Still in current state — reset pending counter
-            pendingState = null
-            pendingStateCount = 0
-        }
-    }
-
     @Synchronized
     fun reset() {
-        // Start in STATIONARY state so the first movement is properly detected
-        // as a state transition. The evaluateState() call from the first accelerometer
-        // or GPS update will transition to MOVING once real movement is detected.
-        currentState = MovementState.STATIONARY
+        // Start in MOVING state (matched with iOS) — first movement is natural start.
+        // Grace period prevents false stationary during cold start.
+        currentState = MovementState.MOVING
         lastStateChangeTime = System.currentTimeMillis()
         lastGpsSpeed = 0.0
         currentAccelVariance = 0.0
         accelSamples.clear()
-        pendingState = null
-        pendingStateCount = 0
+        recentSpeeds.clear()
+        consecutiveStationaryCount = 0
+        consecutiveMovingCount = 0
+        totalEvaluationCount = 0
     }
 }

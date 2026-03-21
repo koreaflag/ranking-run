@@ -10,6 +10,7 @@ from sqlalchemy.orm import joinedload
 
 from app.models.ranking import Ranking
 from app.models.run_record import RunRecord
+from app.models.user import User
 
 
 class RankingService:
@@ -22,28 +23,39 @@ class RankingService:
         page: int = 0,
         per_page: int = 20,
         requesting_user_id: UUID | None = None,
+        country: str | None = None,
     ) -> dict:
-        """Get paginated course leaderboard."""
+        """Get paginated course leaderboard, optionally filtered by country."""
+        # Base conditions
+        base_conditions = [Ranking.course_id == course_id]
+        if country:
+            base_conditions.append(Ranking.user.has(User.country == country))
+
         total_result = await db.execute(
-            select(func.count(Ranking.id)).where(Ranking.course_id == course_id)
+            select(func.count(Ranking.id)).where(*base_conditions)
         )
         total_runners = total_result.scalar() or 0
 
-        result = await db.execute(
+        query = (
             select(Ranking)
+            .join(Ranking.user)
             .where(Ranking.course_id == course_id)
             .options(joinedload(Ranking.user))
             .order_by(Ranking.best_duration_seconds)
             .offset(page * per_page)
             .limit(per_page)
         )
+        if country:
+            query = query.where(User.country == country)
+
+        result = await db.execute(query)
         rankings = result.scalars().unique().all()
 
         data = []
         for i, ranking in enumerate(rankings):
             rank = page * per_page + i + 1
             data.append({
-                "rank": ranking.rank if ranking.rank else rank,
+                "rank": rank,
                 "user": {
                     "id": str(ranking.user.id),
                     "nickname": ranking.user.nickname,
@@ -59,16 +71,29 @@ class RankingService:
 
         my_ranking = None
         if requesting_user_id:
+            my_conditions = [
+                Ranking.course_id == course_id,
+                Ranking.user_id == requesting_user_id,
+            ]
             my_result = await db.execute(
-                select(Ranking).where(
-                    Ranking.course_id == course_id,
-                    Ranking.user_id == requesting_user_id,
-                )
+                select(Ranking).where(*my_conditions)
             )
             my_entry = my_result.scalar_one_or_none()
             if my_entry:
+                # Compute rank within the filtered set
+                rank_conditions = [
+                    Ranking.course_id == course_id,
+                    Ranking.best_duration_seconds < my_entry.best_duration_seconds,
+                ]
+                if country:
+                    rank_conditions.append(Ranking.user.has(User.country == country))
+                rank_result = await db.execute(
+                    select(func.count(Ranking.id)).where(*rank_conditions)
+                )
+                filtered_rank = (rank_result.scalar() or 0) + 1
+
                 my_ranking = {
-                    "rank": my_entry.rank or await self._compute_rank(db, course_id, my_entry.best_duration_seconds),
+                    "rank": filtered_rank,
                     "best_duration_seconds": my_entry.best_duration_seconds,
                     "best_pace_seconds_per_km": my_entry.best_pace_seconds_per_km,
                 }

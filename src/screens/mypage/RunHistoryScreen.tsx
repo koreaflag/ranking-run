@@ -6,15 +6,17 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  SafeAreaView,
+  Platform,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '../../lib/icons';
 import { useTheme } from '../../hooks/useTheme';
 import BlurredBackground from '../../components/common/BlurredBackground';
-import RoutePreview from '../../components/common/RoutePreview';
+import CourseThumbnailMap from '../../components/course/CourseThumbnailMap';
 import type { MyPageStackParamList } from '../../types/navigation';
 import type { RunHistoryItem } from '../../types/api';
 import { userService } from '../../services/userService';
@@ -129,13 +131,11 @@ export default function RunHistoryScreen() {
           {/* Route thumbnail or accent bar */}
           {run.route_preview && run.route_preview.length >= 2 ? (
             <View style={styles.routeThumb}>
-              <RoutePreview
-                coordinates={run.route_preview}
+              <CourseThumbnailMap
+                routePreview={run.route_preview}
                 width={56}
                 height={56}
-                strokeColor={colors.primary}
-                strokeWidth={2}
-                showMap
+                borderRadius={8}
               />
             </View>
           ) : (

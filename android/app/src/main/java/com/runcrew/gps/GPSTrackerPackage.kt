@@ -21,7 +21,7 @@ class GPSTrackerPackage : ReactPackage {
     override fun createNativeModules(
         reactContext: ReactApplicationContext
     ): List<NativeModule> {
-        return listOf(GPSTrackerModule(reactContext))
+        return listOf(GPSTrackerModule(reactContext), MetronomeModule(reactContext))
     }
 
     override fun createViewManagers(

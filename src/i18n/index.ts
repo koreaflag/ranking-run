@@ -26,4 +26,14 @@ i18n.use(initReactI18next).init({
   compatibilityJSON: 'v4',
 });
 
+/**
+ * Sync language from settingsStore after hydration.
+ * Called once in App.tsx or root component.
+ */
+export function syncLanguageFromStore(storedLang: string | undefined) {
+  if (storedLang && supportedLangs.includes(storedLang) && i18n.language !== storedLang) {
+    i18n.changeLanguage(storedLang);
+  }
+}
+
 export default i18n;

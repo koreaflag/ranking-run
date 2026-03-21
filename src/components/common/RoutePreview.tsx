@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Image, StyleSheet, PixelRatio } from 'react-native';
 import { MAPBOX_ACCESS_TOKEN, MAPBOX_DARK_STYLE } from '../../config/env';
 
@@ -75,13 +75,17 @@ export default function RoutePreview({
   strokeWidth = 2,
   showMap = false,
 }: RoutePreviewProps) {
+  const [mapFailed, setMapFailed] = useState(false);
+
   const mapUrl = useMemo(() => {
     if (!showMap) return null;
     return buildStaticMapUrl(coordinates, width, height, strokeColor, strokeWidth);
   }, [showMap, coordinates, width, height, strokeColor, strokeWidth]);
 
+  const useMap = mapUrl && !mapFailed;
+
   const points = useMemo(() => {
-    if (mapUrl || !coordinates || coordinates.length < 2) return [];
+    if (useMap || !coordinates || coordinates.length < 2) return [];
 
     let minLng = Infinity, maxLng = -Infinity;
     let minLat = Infinity, maxLat = -Infinity;
@@ -107,7 +111,7 @@ export default function RoutePreview({
       x: offsetX + (lng - minLng) * scale,
       y: offsetY + (maxLat - lat) * scale,
     }));
-  }, [mapUrl, coordinates, width, height]);
+  }, [useMap, coordinates, width, height]);
 
   const segments = useMemo(() => {
     if (points.length < 2) return [];
@@ -126,12 +130,13 @@ export default function RoutePreview({
   }, [points]);
 
   // Mapbox Static API mode — map + route drawn by Mapbox
-  if (mapUrl) {
+  if (useMap) {
     return (
       <Image
         source={{ uri: mapUrl }}
         style={[styles.mapImage, { width, height, borderRadius: 6 }]}
         resizeMode="cover"
+        onError={() => setMapFailed(true)}
       />
     );
   }

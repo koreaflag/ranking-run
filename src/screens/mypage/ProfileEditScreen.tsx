@@ -7,7 +7,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  SafeAreaView,
   Image,
   Platform,
   ActivityIndicator,
@@ -17,6 +16,7 @@ import {
   FlatList,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '../../lib/icons';
@@ -600,6 +600,22 @@ export default function ProfileEditScreen() {
             </View>
           </View>
 
+          {/* Gear Management */}
+          <TouchableOpacity
+            style={styles.gearLink}
+            onPress={() => navigation.navigate('GearManage' as never)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.gearLinkLeft}>
+              <Ionicons name="footsteps-outline" size={20} color={colors.primary} />
+              <View>
+                <Text style={styles.gearLinkTitle}>{t('mypage.menuGear')}</Text>
+                <Text style={styles.gearLinkDesc}>{t('mypage.menuGearDesc')}</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
+          </TouchableOpacity>
+
           {/* Info note */}
           <View style={styles.infoBox}>
             <Ionicons name="shield-checkmark-outline" size={16} color={colors.textTertiary} />
@@ -707,7 +723,6 @@ const createStyles = (c: ThemeColors) =>
     container: {
       flex: 1,
       backgroundColor: c.background,
-      paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
     },
     header: {
       flexDirection: 'row',
@@ -993,6 +1008,34 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '500',
       color: c.textTertiary,
       lineHeight: 16,
+    },
+
+    // Gear link
+    gearLink: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: SPACING.lg,
+      paddingHorizontal: SPACING.lg,
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    gearLinkLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.md,
+    },
+    gearLinkTitle: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '700',
+      color: c.text,
+    },
+    gearLinkDesc: {
+      fontSize: FONT_SIZES.xs,
+      color: c.textTertiary,
+      marginTop: 1,
     },
 
     // Info box

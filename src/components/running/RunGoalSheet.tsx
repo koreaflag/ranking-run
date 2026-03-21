@@ -7,7 +7,7 @@ import {
   Animated,
   Modal,
   TextInput,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Dimensions,
   ScrollView,
@@ -238,6 +238,7 @@ function WheelPicker({
           onMomentumScrollEnd={handleScrollEnd}
           overScrollMode="never"
           bounces={false}
+          nestedScrollEnabled={true}
         >
           {values.map((v, i) => (
             <Animated.View
@@ -296,6 +297,29 @@ export default function RunGoalSheet({
 
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const isClosingRef = useRef(false);
+
+  // Animate out then call onClose — prevents instant disappearance
+  const animateClose = useCallback(() => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+    Keyboard.dismiss();
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: SCREEN_HEIGHT,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+      Animated.timing(overlayOpacity, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      isClosingRef.current = false;
+      onClose();
+    });
+  }, [slideAnim, overlayOpacity, onClose]);
 
   // Local state for editing before confirming
   const [selectedType, setSelectedType] = useState<GoalType | null>(goal.type);
@@ -353,18 +377,10 @@ export default function RunGoalSheet({
         }),
       ]).start();
     } else {
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: SCREEN_HEIGHT,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(overlayOpacity, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      // Reset position instantly when closed (animateClose handles the animation)
+      slideAnim.setValue(SCREEN_HEIGHT);
+      overlayOpacity.setValue(0);
+      isClosingRef.current = false;
     }
   }, [visible, slideAnim, overlayOpacity]);
 
@@ -461,9 +477,18 @@ export default function RunGoalSheet({
 
   const getCustomPlaceholder = (): string => {
     switch (selectedType) {
-      case 'distance': return 'km 입력 (예: 7.5)';
-      case 'time': return '분 입력 (예: 45)';
-      case 'pace': return '분 입력 (예: 5.5)';
+      case 'distance': return '7.5';
+      case 'time': return '45';
+      case 'pace': return '5.5';
+      default: return '';
+    }
+  };
+
+  const getCustomUnit = (): string => {
+    switch (selectedType) {
+      case 'distance': return 'km';
+      case 'time': return '분';
+      case 'pace': return "'/km";
       default: return '';
     }
   };
@@ -497,10 +522,7 @@ export default function RunGoalSheet({
 
   return (
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
-      <KeyboardAvoidingView
-        style={styles.modalRoot}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={styles.modalRoot}>
         {/* Overlay */}
         <Animated.View
           style={[styles.overlay, { opacity: overlayOpacity }]}
@@ -508,7 +530,7 @@ export default function RunGoalSheet({
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
-            onPress={onClose}
+            onPress={animateClose}
           />
         </Animated.View>
 
@@ -525,7 +547,7 @@ export default function RunGoalSheet({
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>목표 설정</Text>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
+            <TouchableOpacity onPress={animateClose} activeOpacity={0.7}>
               <Ionicons name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -566,6 +588,7 @@ export default function RunGoalSheet({
             style={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             bounces={false}
+            keyboardShouldPersistTaps="handled"
           >
             {/* Simple goal types: distance/time/pace */}
             {selectedType && selectedType !== 'program' && (
@@ -597,16 +620,19 @@ export default function RunGoalSheet({
                 </View>
 
                 <View style={styles.customRow}>
-                  <TextInput
-                    style={styles.customInput}
-                    placeholder={getCustomPlaceholder()}
-                    placeholderTextColor={colors.textTertiary}
-                    keyboardType="decimal-pad"
-                    value={customInput}
-                    onChangeText={setCustomInput}
-                    onSubmitEditing={handleCustomSubmit}
-                    returnKeyType="done"
-                  />
+                  <View style={styles.customInputWrap}>
+                    <TextInput
+                      style={styles.customInput}
+                      placeholder={getCustomPlaceholder()}
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="decimal-pad"
+                      value={customInput}
+                      onChangeText={setCustomInput}
+                      onSubmitEditing={handleCustomSubmit}
+                      returnKeyType="done"
+                    />
+                    <Text style={styles.customUnit}>{getCustomUnit()}</Text>
+                  </View>
                   <TouchableOpacity
                     style={[
                       styles.customConfirmBtn,
@@ -657,24 +683,26 @@ export default function RunGoalSheet({
                     })}
                   </View>
                   <View style={styles.pgCustomRow}>
-                    <TextInput
-                      style={styles.pgCustomInput}
-                      keyboardType="decimal-pad"
-                      value={programDistanceCustom}
-                      onChangeText={(v) => {
-                        const cleaned = v.replace(/[^0-9.]/g, '');
-                        setProgramDistanceCustom(cleaned);
-                        const km = parseFloat(cleaned);
-                        if (!isNaN(km) && km > 0) {
-                          setProgramDistance(Math.round(km * 1000));
-                        }
-                      }}
-                      placeholder="직접 입력 (km)"
-                      placeholderTextColor={colors.textTertiary}
-                      returnKeyType="done"
-                      selectTextOnFocus
-                    />
-                    <Text style={styles.pgCustomUnit}>km</Text>
+                    <View style={styles.pgCustomInputWrap}>
+                      <TextInput
+                        style={styles.pgCustomInput}
+                        keyboardType="decimal-pad"
+                        value={programDistanceCustom}
+                        onChangeText={(v) => {
+                          const cleaned = v.replace(/[^0-9.]/g, '');
+                          setProgramDistanceCustom(cleaned);
+                          const km = parseFloat(cleaned);
+                          if (!isNaN(km) && km > 0) {
+                            setProgramDistance(Math.round(km * 1000));
+                          }
+                        }}
+                        placeholder="직접 입력"
+                        placeholderTextColor={colors.textTertiary}
+                        returnKeyType="done"
+                        selectTextOnFocus
+                      />
+                      <Text style={styles.pgCustomUnit}>km</Text>
+                    </View>
                   </View>
                 </View>
 
@@ -837,7 +865,7 @@ export default function RunGoalSheet({
             </TouchableOpacity>
           </View>
         </Animated.View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -859,7 +887,7 @@ const createStyles = (c: ThemeColors) =>
       borderTopLeftRadius: BORDER_RADIUS.xl,
       borderTopRightRadius: BORDER_RADIUS.xl,
       paddingHorizontal: SPACING.xl,
-      paddingBottom: Platform.OS === 'ios' ? 40 : SPACING.xxl,
+      paddingBottom: Platform.OS === 'ios' ? 40 : 60,
       maxHeight: SCREEN_HEIGHT * 0.85,
       ...SHADOWS.lg,
     },
@@ -1035,24 +1063,32 @@ const createStyles = (c: ThemeColors) =>
     pgCustomRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: SPACING.sm,
     },
-    pgCustomInput: {
+    pgCustomInputWrap: {
       flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
       height: 44,
       borderRadius: BORDER_RADIUS.md,
       backgroundColor: c.card,
-      paddingHorizontal: SPACING.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      paddingHorizontal: SPACING.md,
+    },
+    pgCustomInput: {
+      flex: 1,
+      height: 42,
       fontSize: FONT_SIZES.md,
       fontWeight: '600',
       color: c.text,
-      borderWidth: 1,
-      borderColor: c.border,
+      textAlign: 'right',
+      paddingHorizontal: 4,
     },
     pgCustomUnit: {
       fontSize: FONT_SIZES.md,
       fontWeight: '700',
       color: c.textSecondary,
+      marginLeft: 4,
     },
     // Computed pace banner
     pgPaceBanner: {
@@ -1176,17 +1212,31 @@ const createStyles = (c: ThemeColors) =>
       gap: SPACING.sm,
       alignItems: 'center',
     },
-    customInput: {
+    customInputWrap: {
       flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
       height: 44,
       borderRadius: BORDER_RADIUS.sm,
       backgroundColor: c.surface,
-      paddingHorizontal: SPACING.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      paddingHorizontal: SPACING.md,
+    },
+    customInput: {
+      flex: 1,
+      height: 42,
       fontSize: FONT_SIZES.md,
       fontWeight: '600',
       color: c.text,
-      borderWidth: 1,
-      borderColor: c.border,
+      textAlign: 'right',
+      paddingHorizontal: 4,
+    },
+    customUnit: {
+      fontSize: FONT_SIZES.md,
+      fontWeight: '700',
+      color: c.textSecondary,
+      marginLeft: 4,
     },
     customConfirmBtn: {
       width: 44,

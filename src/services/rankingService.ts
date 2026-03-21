@@ -8,9 +8,12 @@ export const rankingService = {
   async getCourseRankings(
     courseId: string,
     limit: number = 10,
+    country?: string,
   ): Promise<RankingEntry[]> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (country) params.set('country', country);
     const res = await api.get<RankingListResponse>(
-      `/courses/${courseId}/rankings?limit=${limit}`,
+      `/courses/${courseId}/rankings?${params.toString()}`,
     );
     return res.data;
   },
@@ -22,9 +25,15 @@ export const rankingService = {
     courseId: string,
     page: number = 0,
     perPage: number = 20,
+    country?: string,
   ): Promise<RankingListResponse> {
+    const params = new URLSearchParams({
+      page: String(page),
+      per_page: String(perPage),
+    });
+    if (country) params.set('country', country);
     return api.get<RankingListResponse>(
-      `/courses/${courseId}/rankings?page=${page}&per_page=${perPage}`,
+      `/courses/${courseId}/rankings?${params.toString()}`,
     );
   },
 

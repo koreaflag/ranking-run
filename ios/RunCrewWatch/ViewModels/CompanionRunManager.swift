@@ -43,6 +43,16 @@ class CompanionRunManager {
     func handleLocationUpdate(_ message: [String: Any]) {
         guard isStandaloneMode?() == false else { return }
 
+        // Session ID validation: reject location updates from a previous run session.
+        // Without this, stale location data from the old run can overwrite the new run's state.
+        if let incomingId = message[WatchMessageKeys.sessionId] as? String,
+           !incomingId.isEmpty,
+           let myId = currentSessionId,
+           !myId.isEmpty,
+           incomingId != myId {
+            return
+        }
+
         updateState?({ state in
             // During countdown or when distance is 0 (new run), allow any distance value.
             // Otherwise only accept monotonically increasing values.
@@ -109,15 +119,20 @@ class CompanionRunManager {
         let phaseLockedUntil = getPhaseLockedUntil?() ?? .distantPast
         print("[CompanionRunManager] handleStateUpdate: incoming=\(incomingPhase) current=\(previousPhase) locked=\(Date() < phaseLockedUntil)")
 
-        // Block stale "completed"/"paused" from showing when app starts fresh.
+        // Block stale states from showing when app starts fresh.
+        // Only "countdown" can transition from idle (explicit new run signal).
         if previousPhase == "idle" || previousPhase == "" {
-            if incomingPhase == "completed" || incomingPhase == "paused" {
-                print("[CompanionRunManager] BLOCKED stale \(incomingPhase) — currently idle")
+            if incomingPhase != "countdown" {
+                print("[CompanionRunManager] BLOCKED stale \(incomingPhase) — currently idle (only countdown allowed)")
                 return
             }
         }
 
-        // Phase: respect phase lock
+        // Phase: respect phase lock.
+        // The phone-side WatchSessionManager already strips phase from WCSession messages
+        // when HK mirroring is handling it (running/paused/completed go through mirroring,
+        // only countdown comes via WCSession). So we just need the phase lock here as
+        // defense-in-depth — no need for a separate mirroring-active check.
         if let phase = message[WatchMessageKeys.phase] as? String {
             let isNewRunSignal = phase == "countdown"
             let isCountdownToRunning = phase == "running" && currentState.phase == "countdown"
@@ -125,9 +140,13 @@ class CompanionRunManager {
                 if phase != currentState.phase {
                     currentState.phase = phase
                     if !isCountdownToRunning {
-                        setPhaseLockedUntil?(Date().addingTimeInterval(5.0))
+                        // Countdown lock = 1s (countdown lasts 3s; shorter lock lets
+                        // the countdown→running transition arrive promptly).
+                        // Other phases = 5s (defense against duplicate deliveries).
+                        let lockDuration: TimeInterval = isNewRunSignal ? 1.0 : 5.0
+                        setPhaseLockedUntil?(Date().addingTimeInterval(lockDuration))
                     }
-                    print("[CompanionRunManager] phase SET → \(phase) (locked=\(!isCountdownToRunning))")
+                    print("[CompanionRunManager] phase SET → \(phase) (locked=\(!isCountdownToRunning), dur=\(isNewRunSignal ? 1 : 5)s)")
                 }
             } else {
                 print("[CompanionRunManager] phase BLOCKED \(phase) (locked until \(phaseLockedUntil.timeIntervalSinceNow)s)")
@@ -193,6 +212,16 @@ class CompanionRunManager {
         if let v = message[WatchMessageKeys.cadence] as? Int { currentState.cadence = v }
         else if let v = message[WatchMessageKeys.cadence] as? Double { currentState.cadence = Int(v) }
         if let v = message[WatchMessageKeys.sessionId] as? String { currentState.sessionId = v }
+
+        // Timer sync (startTime-based)
+        if let v = message[WatchMessageKeys.runStartTime] as? Double, v > 0 {
+            currentState.runStartTime = v
+        }
+        if let v = message[WatchMessageKeys.elapsedBeforePause] as? Double {
+            currentState.elapsedBeforePause = v
+        } else if let v = message[WatchMessageKeys.elapsedBeforePause] as? Int {
+            currentState.elapsedBeforePause = Double(v)
+        }
 
         // Countdown sync
         if let v = message[WatchMessageKeys.countdownStartedAt] as? Double { currentState.countdownStartedAt = v }
@@ -322,6 +351,28 @@ class CompanionRunManager {
     /// Handle phase change from HKWorkoutSession mirroring.
     func handleMirroredPhaseChange(from oldPhase: String, to newPhase: String) {
         guard let state = getState?(), newPhase != state.phase else { return }
+
+        // Block mirroring from reviving idle/completed state.
+        // After standalone run ends → resetToIdle() sets isStandaloneMode=false.
+        // Delayed WorkoutMirroringManager cleanup callbacks can then pass the
+        // standalone guard and set phase back to "running". Block this.
+        if state.phase == "idle" || state.phase == "" {
+            if newPhase != "countdown" {
+                print("[CompanionRunManager] MIRRORED BLOCKED: \(newPhase) while idle (only countdown allowed)")
+                return
+            }
+        }
+
+        // Block stale "completed" from old session's delayed delegate callback
+        // when a new run (countdown) has already started. Without this, the old
+        // HKWorkoutSession's .stopped/.ended transition fires asynchronously and
+        // reverts the phase from "countdown" back to "completed", causing the
+        // result screen to reappear briefly.
+        if state.phase == "countdown" && (newPhase == "completed" || newPhase == "idle") {
+            print("[CompanionRunManager] MIRRORED BLOCKED: stale \(newPhase) while countdown (new run in progress)")
+            return
+        }
+
         print("[CompanionRunManager] MIRRORED phase: \(oldPhase)→\(newPhase)")
 
         let previousPhase = state.phase

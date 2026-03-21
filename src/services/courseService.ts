@@ -173,6 +173,21 @@ export const courseService = {
   },
 
   /**
+   * Correct/adjust a course route. Each point must be within 50m of the original.
+   */
+  async correctRoute(
+    courseId: string,
+    coordinates: [number, number, number][],
+  ): Promise<{ id: string; distance_meters: number; corrected: boolean }> {
+    const result = await api.patch<{ id: string; distance_meters: number; corrected: boolean }>(
+      `/courses/${courseId}/route`,
+      { route_geometry: { type: 'LineString', coordinates } },
+    );
+    invalidateCourseCache(courseId);
+    return result;
+  },
+
+  /**
    * Delete a course. Only the creator can delete.
    */
   async deleteCourse(courseId: string): Promise<void> {

@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  SafeAreaView,
   Alert,
   Image,
   Linking,
@@ -17,6 +16,7 @@ import {
   TextInput,
   Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
@@ -26,12 +26,9 @@ import { useAuthStore } from '../../stores/authStore';
 import type { MyPageStackParamList } from '../../types/navigation';
 import { useTheme } from '../../hooks/useTheme';
 import BlurredBackground from '../../components/common/BlurredBackground';
-import PaceTrendChart from '../../components/charts/PaceTrendChart';
-import ActivityHeatmap from '../../components/charts/ActivityHeatmap';
 import WeeklyGoalBar from '../../components/charts/WeeklyGoalBar';
 import type {
   UserStats,
-  RunHistoryItem,
   StatsPeriod,
   AnalyticsData,
 } from '../../types/api';
@@ -50,6 +47,7 @@ import type { ThemeColors } from '../../utils/constants';
 import RunnerLevelBadge from '../../components/runner/RunnerLevelBadge';
 import MyPageSkeleton from '../../components/skeleton/MyPageSkeleton';
 import { getRunnerTier, getRunnerXpProgress } from '../../utils/runnerLevelConfig';
+import { getCache, setCache } from '../../utils/apiCache';
 
 // Period option values (labels resolved via t() inside component)
 const PERIOD_VALUES: StatsPeriod[] = ['week', 'month', 'year', 'all'];
@@ -60,32 +58,14 @@ const PERIOD_KEYS: Record<StatsPeriod, string> = {
   all: 'mypage.periodAll',
 };
 
-const WEEKDAY_KEYS = [
-  'mypage.days.sun', 'mypage.days.mon', 'mypage.days.tue', 'mypage.days.wed',
-  'mypage.days.thu', 'mypage.days.fri', 'mypage.days.sat',
-];
-
-function getRunLabel(run: RunHistoryItem, t: (key: string) => string): string {
-  if (run.course) return run.course.title;
-  if (run.device_model === 'Apple Watch') return t('mypage.watchRunning');
-  return t('mypage.freeRunning');
-}
-
-function getTimeOfDay(iso: string, t: (key: string) => string): string {
-  const h = new Date(iso).getHours();
-  if (h < 6) return t('mypage.timeOfDay.dawn');
-  if (h < 12) return t('mypage.timeOfDay.morning');
-  if (h < 18) return t('mypage.timeOfDay.afternoon');
-  return t('mypage.timeOfDay.evening');
-}
 
 type Nav = NativeStackNavigationProp<MyPageStackParamList, 'MyPage'>;
 
 // Module-level cache: survives tab switches
 let _cachedStats: UserStats | null = null;
-let _cachedRuns: RunHistoryItem[] = [];
 let _cachedAnalytics: AnalyticsData | null = null;
 let _cachedSocial = { following: 0, followers: 0, likes: 0 };
+let _diskCacheLoaded = false;
 
 export default function MyPageScreen() {
   const navigation = useNavigation<Nav>();
@@ -96,17 +76,15 @@ export default function MyPageScreen() {
 
   const [stats, setStats] = useState<UserStats | null>(_cachedStats);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(_cachedAnalytics);
-  const [allRuns, setAllRuns] = useState<RunHistoryItem[]>(_cachedRuns);
   const [selectedPeriod, setSelectedPeriod] = useState<StatsPeriod>('month');
   const [refreshing, setRefreshing] = useState(false);
   const [socialCounts, setSocialCounts] = useState<{ following: number; followers: number; likes: number }>(_cachedSocial);
-  const [showAllCharts, setShowAllCharts] = useState(false);
   const [checkedInToday, setCheckedInToday] = useState(true); // default hidden until we check
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [customGoalInput, setCustomGoalInput] = useState('');
   const [isSavingGoal, setIsSavingGoal] = useState(false);
-  const [isInitialLoading, setIsInitialLoading] = useState(_cachedStats === null && _cachedRuns.length === 0);
+  const [isInitialLoading, setIsInitialLoading] = useState(_cachedStats === null);
 
   // Runner level info
   const runnerLv = user?.runner_level ?? 1;
@@ -187,6 +165,23 @@ export default function MyPageScreen() {
     }
   }, [analytics, isSavingGoal, t]);
 
+  // Restore disk cache on first mount (instant display before API)
+  useEffect(() => {
+    if (_diskCacheLoaded) return;
+    _diskCacheLoaded = true;
+    (async () => {
+      const [cStats, cAnalytics, cSocial] = await Promise.all([
+        getCache<UserStats>('mypage:stats'),
+        getCache<AnalyticsData>('mypage:analytics'),
+        getCache<{ following: number; followers: number; likes: number }>('mypage:social'),
+      ]);
+      if (cStats && !_cachedStats) { _cachedStats = cStats.data; setStats(cStats.data); }
+      if (cAnalytics && !_cachedAnalytics) { _cachedAnalytics = cAnalytics.data; setAnalytics(cAnalytics.data); }
+      if (cSocial) { _cachedSocial = cSocial.data; setSocialCounts(cSocial.data); }
+      if (cStats) setIsInitialLoading(false);
+    })();
+  }, []);
+
   const loadData = useCallback(async () => {
     try {
       // Primary data: stats + social counts + profile (above the fold)
@@ -196,8 +191,10 @@ export default function MyPageScreen() {
         authService.getProfile().catch(() => null),
       ]);
       setStats(statsData); _cachedStats = statsData;
+      setCache('mypage:stats', statsData);
       const social = { following: socialData.following_count, followers: socialData.followers_count, likes: socialData.total_likes_received };
       setSocialCounts(social); _cachedSocial = social;
+      setCache('mypage:social', social);
       if (profileData) {
         useAuthStore.getState().setUser(profileData);
       }
@@ -207,14 +204,11 @@ export default function MyPageScreen() {
       setIsInitialLoading(false);
     }
 
-    // Secondary data: runs + analytics (below the fold, deferred)
+    // Secondary data: analytics (below the fold, deferred)
     try {
-      const [runsData, analyticsData] = await Promise.all([
-        userService.getRunHistory(0, 200).catch(() => ({ data: [], total_count: 0, has_next: false })),
-        userService.getAnalytics().catch(() => null),
-      ]);
-      setAllRuns(runsData.data); _cachedRuns = runsData.data;
+      const analyticsData = await userService.getAnalytics().catch(() => null);
       setAnalytics(analyticsData); _cachedAnalytics = analyticsData;
+      setCache('mypage:analytics', analyticsData);
     } catch {
       // Secondary data failures are non-blocking
     }
@@ -295,7 +289,7 @@ export default function MyPageScreen() {
 
   return (
     <BlurredBackground>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Top Header — Instagram style */}
       <View style={styles.headerRow}>
         <Text style={styles.headerUsername} numberOfLines={1}>{user?.nickname ?? 'RUNVS'}</Text>
@@ -304,7 +298,7 @@ export default function MyPageScreen() {
           activeOpacity={0.7}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="menu-outline" size={26} color={colors.text} />
+          <Ionicons name="settings-sharp" size={24} color={colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -608,115 +602,7 @@ export default function MyPageScreen() {
               </View>
             )}
 
-            {/* Charts toggle — show pace trend & heatmap on demand */}
-            {analytics && (analytics.pace_trend.length >= 2 || analytics.activity_calendar.length > 0) && (
-              <>
-                {showAllCharts && (
-                  <>
-                    {analytics.pace_trend.length >= 2 && (
-                      <View style={styles.card}>
-                        <View style={styles.cardTitleRow}>
-                          <View style={styles.cardTitleWithIcon}>
-                            <Ionicons name="analytics" size={14} color={colors.primary} />
-                            <Text style={styles.cardTitle}>{t('mypage.paceTrend')}</Text>
-                          </View>
-                          <Text style={styles.cardSubtitle}>min/km</Text>
-                        </View>
-                        <PaceTrendChart data={analytics.pace_trend} />
-                      </View>
-                    )}
-                    {analytics.activity_calendar.length > 0 && (
-                      <View style={styles.card}>
-                        <View style={[styles.cardTitleWithIcon, { marginBottom: SPACING.sm }]}>
-                          <Ionicons name="grid" size={14} color={colors.primary} />
-                          <Text style={styles.cardTitle}>{t('mypage.activityCalendar')}</Text>
-                        </View>
-                        <ActivityHeatmap data={analytics.activity_calendar} />
-                      </View>
-                    )}
-                  </>
-                )}
-                <TouchableOpacity
-                  style={styles.chartToggle}
-                  onPress={() => setShowAllCharts(!showAllCharts)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.chartToggleText}>
-                    {showAllCharts ? t('mypage.showLessCharts') : t('mypage.showMoreCharts')}
-                  </Text>
-                  <Ionicons
-                    name={showAllCharts ? 'chevron-up' : 'chevron-down'}
-                    size={16}
-                    color={colors.primary}
-                  />
-                </TouchableOpacity>
-              </>
-            )}
 
-            {/* ============================================================ */}
-            {/* 4. Recent Activity — Recency bias (Kahneman peak-end)         */}
-            {/*    Most recent first → feels "alive". Left accent bar guides  */}
-            {/*    the scanning eye downward. Tap → RunDetail (clear CTA).    */}
-            {/* ============================================================ */}
-            {allRuns.length > 0 && (
-              <View style={styles.card}>
-                <View style={styles.cardTitleRow}>
-                  <View style={styles.cardTitleWithIcon}>
-                    <Ionicons name="time" size={14} color={colors.primary} />
-                    <Text style={styles.cardTitle}>{t('mypage.recentActivity')}</Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate('RunHistory')}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={styles.seeAllText}>{t('common.viewAll')}</Text>
-                  </TouchableOpacity>
-                </View>
-                {allRuns.slice(0, 5).map((run, idx) => {
-                  const d = new Date(run.finished_at);
-                  const dayLabel = t(WEEKDAY_KEYS[d.getDay()]);
-                  const timeLabel = `${dayLabel} ${getTimeOfDay(run.finished_at, t)}`;
-
-                  return (
-                    <TouchableOpacity
-                      key={run.id}
-                      style={[styles.recentRunCard, idx > 0 && styles.recentRunCardBorder]}
-                      onPress={() => navigation.navigate('RunDetail', { runId: run.id })}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.recentRunInner}>
-                        <View style={[styles.recentRunAccent, { backgroundColor: colors.primary }]} />
-                        <View style={styles.recentRunBody}>
-                          <View style={styles.recentRunHeader}>
-                            <Text style={styles.recentRunTitle} numberOfLines={1}>
-                              {getRunLabel(run, t)}
-                            </Text>
-                            <Text style={styles.recentRunDate}>
-                              {(d.getMonth() + 1)}/{d.getDate()}
-                            </Text>
-                          </View>
-                          <Text style={styles.recentRunTimeLabel}>{timeLabel}</Text>
-                          <View style={styles.recentRunStatsRow}>
-                            <Text style={styles.recentRunStatText}>
-                              {formatDistance(run.distance_meters)}
-                            </Text>
-                            <View style={styles.recentRunDot} />
-                            <Text style={styles.recentRunStatText}>
-                              {formatPace(run.avg_pace_seconds_per_km)}
-                            </Text>
-                            <View style={styles.recentRunDot} />
-                            <Text style={styles.recentRunStatText}>
-                              {formatDuration(run.duration_seconds)}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
 
             {/* ============================================================ */}
             {/* 5. Personal Records — Achievement unlocks (Zeigarnik effect)  */}
@@ -857,124 +743,6 @@ export default function MyPageScreen() {
           </>
         )}
 
-        {/* Section divider — separates analytics from tools */}
-        {stats && <View style={styles.sectionDivider} />}
-
-        {/* Menu Group 1: Activity tools */}
-        <View style={styles.menuGroup}>
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={() => navigation.navigate('RunHistory')}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuButtonLeft}>
-              <View style={styles.menuIconCircle}>
-                <Ionicons name="time-outline" size={20} color={colors.primary} />
-              </View>
-              <View>
-                <Text style={styles.menuButtonTitle}>{t('mypage.runHistory')}</Text>
-                <Text style={styles.menuButtonDesc}>{t('mypage.menuRunHistoryDesc')}</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={() => navigation.navigate('Friends')}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuButtonLeft}>
-              <View style={styles.menuIconCircle}>
-                <Ionicons name="people-outline" size={20} color={colors.primary} />
-              </View>
-              <View>
-                <Text style={styles.menuButtonTitle}>{t('friend.title')}</Text>
-                <Text style={styles.menuButtonDesc}>{t('friend.menuDesc')}</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={() => navigation.navigate('GearManage')}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuButtonLeft}>
-              <View style={styles.menuIconCircle}>
-                <Ionicons name="footsteps-outline" size={20} color={colors.primary} />
-              </View>
-              <View>
-                <Text style={styles.menuButtonTitle}>{t('mypage.menuGear')}</Text>
-                <Text style={styles.menuButtonDesc}>{t('mypage.menuGearDesc')}</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Menu Group 2: Import & Settings */}
-        <View style={styles.menuGroup}>
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={() => navigation.navigate('ImportActivity')}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuButtonLeft}>
-              <View style={styles.menuIconCircle}>
-                <Ionicons name="download-outline" size={20} color={colors.primary} />
-              </View>
-              <View>
-                <Text style={styles.menuButtonTitle}>{t('mypage.menuImport')}</Text>
-                <Text style={styles.menuButtonDesc}>{t('mypage.menuImportDesc')}</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={() => navigation.navigate('StravaConnect')}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuButtonLeft}>
-              <View style={styles.menuIconCircle}>
-                <Ionicons name="sync-outline" size={20} color={colors.primary} />
-              </View>
-              <View>
-                <Text style={styles.menuButtonTitle}>{t('mypage.menuStrava')}</Text>
-                <Text style={styles.menuButtonDesc}>{t('mypage.menuStravaDesc')}</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
-
-          <View style={styles.menuDivider} />
-
-          <TouchableOpacity
-            style={styles.menuButton}
-            onPress={() => navigation.navigate('Settings')}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuButtonLeft}>
-              <View style={styles.menuIconCircle}>
-                <Ionicons name="settings-outline" size={20} color={colors.primary} />
-              </View>
-              <View>
-                <Text style={styles.menuButtonTitle}>{t('mypage.menuSettings')}</Text>
-                <Text style={styles.menuButtonDesc}>{t('mypage.menuSettingsDesc')}</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-          </TouchableOpacity>
-        </View>
       </ScrollView>
       )}
       {/* Weekly Goal Setting Modal */}
@@ -1059,7 +827,6 @@ export default function MyPageScreen() {
 const createStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight ?? 0 : 0,
   },
   scrollView: { flex: 1 },
   content: {
@@ -1072,7 +839,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: SPACING.xxl,
     paddingVertical: SPACING.sm,
   },
   headerUsername: {
@@ -1088,7 +855,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   playerCardTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: SPACING.xxl,
     paddingTop: 4,
     paddingBottom: 12,
     gap: 28,
@@ -1107,7 +874,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.text, letterSpacing: -0.3,
   },
   runnerBanner: {
-    marginHorizontal: 16,
+    marginHorizontal: SPACING.xxl,
     paddingHorizontal: 14, paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
@@ -1137,12 +904,12 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const,
   },
   playerCardMeta: {
-    paddingHorizontal: 16,
+    paddingHorizontal: SPACING.xxl,
     paddingBottom: 0,
     gap: 4,
   },
   editProfileButton: {
-    marginHorizontal: 16,
+    marginHorizontal: SPACING.xxl,
     marginTop: 12,
     marginBottom: 4,
     height: 34,
@@ -1366,7 +1133,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     letterSpacing: 0.8, textTransform: 'uppercase',
   },
   cardSubtitle: { fontSize: FONT_SIZES.xs, fontWeight: '600', color: c.textTertiary },
-  seeAllText: { fontSize: FONT_SIZES.sm, fontWeight: '600', color: c.primary },
 
   // -- Monthly Chart --
   monthlyChart: {
@@ -1388,44 +1154,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
 
-  // -- Chart Toggle --
-  chartToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SPACING.xs,
-    marginHorizontal: SPACING.xxl,
-    paddingVertical: SPACING.sm,
-  },
-  chartToggleText: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: c.primary,
-  },
-
-  // -- Recent Activity --
-  recentRunCard: { paddingVertical: SPACING.sm },
-  recentRunCardBorder: { borderTopWidth: 1, borderTopColor: c.divider },
-  recentRunInner: { flexDirection: 'row', gap: SPACING.md },
-  recentRunAccent: { width: 3, borderRadius: 2, alignSelf: 'stretch' },
-  recentRunBody: { flex: 1, gap: 3 },
-  recentRunHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-  },
-  recentRunTitle: { fontSize: FONT_SIZES.md, fontWeight: '700', color: c.text, flex: 1 },
-  recentRunDate: {
-    fontSize: FONT_SIZES.xs, fontWeight: '500', color: c.textTertiary,
-    fontVariant: ['tabular-nums'],
-  },
-  recentRunTimeLabel: { fontSize: FONT_SIZES.xs, color: c.textSecondary, fontWeight: '500' },
-  recentRunStatsRow: {
-    flexDirection: 'row', alignItems: 'center', marginTop: SPACING.xs, gap: SPACING.sm,
-  },
-  recentRunStatText: {
-    fontSize: FONT_SIZES.sm, fontWeight: '700', color: c.text,
-    fontVariant: ['tabular-nums'],
-  },
-  recentRunDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: c.textTertiary },
 
   // -- Personal Records (2x2 tiles) --
   recordsRow: { flexDirection: 'row', gap: SPACING.sm },

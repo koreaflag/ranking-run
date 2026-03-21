@@ -1,6 +1,8 @@
 import React from 'react';
-import { StyleSheet, View, Text, Platform } from 'react-native';
+import { StyleSheet, View, Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { CommonActions } from '@react-navigation/native';
 import { Ionicons } from '../lib/icons';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
@@ -10,7 +12,7 @@ import HomeStack from './HomeStack';
 import CourseStack from './CourseStack';
 import CommunityStack from './CommunityStack';
 import MyPageStack from './MyPageStack';
-import { COLORS, FONT_SIZES } from '../utils/constants';
+import { FONT_SIZES } from '../utils/constants';
 import { useTheme } from '../hooks/useTheme';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useWatchStartListener } from '../hooks/useWatchStartListener';
@@ -43,6 +45,8 @@ function TabIcon({ label, iconName, iconNameFocused, focused, colors }: TabIconP
           { color: focused ? active : inactive },
         ]}
         numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
       >
         {label}
       </Text>
@@ -50,38 +54,11 @@ function TabIcon({ label, iconName, iconNameFocused, focused, colors }: TabIconP
   );
 }
 
-function WorldTabIcon({ focused, colors, label }: { focused: boolean; colors: ThemeColors; label: string }) {
-  return (
-    <View style={styles.worldTabWrapper}>
-      <View
-        style={[
-          styles.worldTabCircle,
-          focused
-            ? [styles.worldTabCircleActive, { backgroundColor: colors.primary }]
-            : { backgroundColor: colors.surface },
-        ]}
-      >
-        <Ionicons
-          name={focused ? 'globe' : 'globe-outline'}
-          size={26}
-          color={focused ? COLORS.white : colors.textTertiary}
-        />
-      </View>
-      <Text
-        style={[
-          styles.worldTabLabel,
-          { color: focused ? colors.text : colors.textTertiary },
-        ]}
-      >
-        {label}
-      </Text>
-    </View>
-  );
-}
 
 export default function TabNavigator() {
   const colors = useTheme();
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
 
   // Global: listen for Watch-initiated run start and navigate to WorldTab
   useWatchStartListener();
@@ -100,6 +77,8 @@ export default function TabNavigator() {
             backgroundColor: colors.background,
             borderTopColor: colors.divider,
             shadowColor: colors.black,
+            paddingBottom: Math.max(insets.bottom, 8),
+            height: 60 + Math.max(insets.bottom, 8),
           },
         ],
         tabBarShowLabel: false,
@@ -129,6 +108,16 @@ export default function TabNavigator() {
             />
           ),
         }}
+        listeners={({ navigation, route }) => ({
+          tabPress: (e) => {
+            const state = navigation.getState();
+            const tabRoute = state.routes.find((r: any) => r.key === route.key);
+            if (tabRoute?.state && (tabRoute.state.index ?? 0) > 0) {
+              e.preventDefault();
+              navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: route.name }] }));
+            }
+          },
+        })}
       />
       <Tab.Screen
         name="CourseTab"
@@ -145,13 +134,31 @@ export default function TabNavigator() {
             />
           ),
         }}
+        listeners={({ navigation, route }) => ({
+          tabPress: (e) => {
+            const state = navigation.getState();
+            const tabRoute = state.routes.find((r: any) => r.key === route.key);
+            if (tabRoute?.state && (tabRoute.state.index ?? 0) > 0) {
+              e.preventDefault();
+              navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: route.name }] }));
+            }
+          },
+        })}
       />
       <Tab.Screen
         name="WorldTab"
         component={WorldStack}
         options={{
           tabBarAccessibilityLabel: t('tabs.world'),
-          tabBarIcon: ({ focused }) => <WorldTabIcon focused={focused} colors={colors} label={t('tabs.world')} />,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              label={t('tabs.world')}
+              iconName="globe-outline"
+              iconNameFocused="globe"
+              focused={focused}
+              colors={colors}
+            />
+          ),
         }}
       />
       <Tab.Screen
@@ -169,6 +176,16 @@ export default function TabNavigator() {
             />
           ),
         }}
+        listeners={({ navigation, route }) => ({
+          tabPress: (e) => {
+            const state = navigation.getState();
+            const tabRoute = state.routes.find((r: any) => r.key === route.key);
+            if (tabRoute?.state && (tabRoute.state.index ?? 0) > 0) {
+              e.preventDefault();
+              navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: route.name }] }));
+            }
+          },
+        })}
       />
       <Tab.Screen
         name="MyPageTab"
@@ -185,6 +202,16 @@ export default function TabNavigator() {
             />
           ),
         }}
+        listeners={({ navigation, route }) => ({
+          tabPress: (e) => {
+            const state = navigation.getState();
+            const tabRoute = state.routes.find((r: any) => r.key === route.key);
+            if (tabRoute?.state && (tabRoute.state.index ?? 0) > 0) {
+              e.preventDefault();
+              navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: route.name }] }));
+            }
+          },
+        })}
       />
     </Tab.Navigator>
   );
@@ -193,8 +220,6 @@ export default function TabNavigator() {
 const styles = StyleSheet.create({
   tabBar: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    height: 84,
-    paddingBottom: 24,
     paddingTop: 10,
     shadowOffset: { width: 0, height: -1 },
     shadowOpacity: 0.03,
@@ -205,6 +230,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
+    maxWidth: 64,
   },
   tabLabel: {
     fontSize: FONT_SIZES.xs,
@@ -212,40 +238,4 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  // World tab — raised highlighted circle
-  worldTabWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -14,
-  },
-  worldTabCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  worldTabCircleActive: {
-    backgroundColor: COLORS.primary,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 6,
-      },
-    }),
-  },
-  worldTabCircleInactive: {
-    backgroundColor: '#F0F0F0',
-  },
-  worldTabLabel: {
-    fontSize: FONT_SIZES.xs,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-    marginTop: 2,
-  },
 });

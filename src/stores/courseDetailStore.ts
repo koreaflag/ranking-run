@@ -26,6 +26,9 @@ interface CourseDetailState {
   isLoadingDetail: boolean;
   error: string | null;
 
+  // Ranking filter
+  rankingCountry: string | null;
+
   // Reviews
   selectedCourseReviews: CourseReview[];
   selectedCourseAvgRating: number | null;
@@ -38,6 +41,7 @@ interface CourseDetailState {
 
   // Actions
   fetchCourseDetail: (courseId: string) => Promise<void>;
+  fetchRankingsWithCountry: (courseId: string, country: string | null) => Promise<void>;
   toggleLike: (courseId: string) => Promise<void>;
   submitReview: (courseId: string, content?: string) => Promise<void>;
   deleteReview: (reviewId: string, courseId: string) => Promise<void>;
@@ -55,6 +59,8 @@ export const useCourseDetailStore = create<CourseDetailState>((set, get) => ({
   selectedCourseMyBest: null,
   isLoadingDetail: false,
   error: null,
+
+  rankingCountry: null,
 
   selectedCourseReviews: [],
   selectedCourseAvgRating: null,
@@ -96,6 +102,20 @@ export const useCourseDetailStore = create<CourseDetailState>((set, get) => ({
       const message =
         error instanceof Error ? error.message : i18n.t('courses.detailError');
       set({ isLoadingDetail: false, error: message });
+    }
+  },
+
+  fetchRankingsWithCountry: async (courseId: string, country: string | null) => {
+    set({ rankingCountry: country });
+    try {
+      const rankings = await rankingService.getCourseRankings(
+        courseId,
+        10,
+        country || undefined,
+      );
+      set({ selectedCourseRankings: rankings });
+    } catch {
+      // Keep existing rankings on error
     }
   },
 
@@ -190,6 +210,7 @@ export const useCourseDetailStore = create<CourseDetailState>((set, get) => ({
       selectedCourseCrewRankings: [],
       selectedCourseMyCrewRankings: [],
       selectedCourseMyBest: null,
+      rankingCountry: null,
       selectedCourseReviews: [],
       selectedCourseAvgRating: null,
       selectedCourseReviewCount: 0,

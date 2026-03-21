@@ -131,6 +131,11 @@ class CourseUpdateRequest(BaseModel):
     lap_count: int | None = Field(None, ge=1, le=10)
 
 
+class CourseRouteCorrectRequest(BaseModel):
+    """Request to correct/adjust a course route within deviation limits."""
+    route_geometry: GeoJSONLineString
+
+
 class CourseMarker(BaseModel):
     """Lightweight course data for map markers."""
     id: str

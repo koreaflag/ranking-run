@@ -278,9 +278,9 @@ class KalmanFilter {
     private func measurementNoiseMatrix(horizontalAccuracy: Double,
                                          speedAccuracy: Double) -> [[Double]] {
         // Floor: GPS reports optimistic accuracy; actual scatter is always larger.
-        // Previous floor of 8.0m made the filter too sluggish with good GPS signal (3-5m accuracy).
-        // Modern iPhones with L5 GPS regularly achieve 3-5m accuracy — trust that signal more.
-        let clamped = max(horizontalAccuracy, 4.0)
+        // Modern iPhones with L5 GPS regularly achieve 1-3m accuracy — trust that signal.
+        // Floor of 3.0m balances L5 precision with realistic multipath scatter.
+        let clamped = max(horizontalAccuracy, 3.0)
         // Urban canyon inflation: when accuracy > 20m, multipath likely — trust GPS less
         let inflated = clamped > 20 ? clamped * 2.0 : clamped
         let posVar = inflated * inflated

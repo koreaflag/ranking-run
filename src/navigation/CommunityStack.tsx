@@ -19,6 +19,7 @@ import CommunityPostEditScreen from '../screens/community/CommunityPostEditScree
 import FollowListScreen from '../screens/profile/FollowListScreen';
 import FriendsScreen from '../screens/profile/FriendsScreen';
 import UnifiedSearchScreen from '../screens/community/UnifiedSearchScreen';
+import CrewMemberSettingsScreen from '../screens/crew/CrewMemberSettingsScreen';
 import { useTheme } from '../hooks/useTheme';
 
 const Stack = createNativeStackNavigator<CommunityStackParamList>();
@@ -51,6 +52,7 @@ export default function CommunityStack() {
       <Stack.Screen name="FollowList" component={FollowListScreen} />
       <Stack.Screen name="Friends" component={FriendsScreen} />
       <Stack.Screen name="UnifiedSearch" component={UnifiedSearchScreen} />
+      <Stack.Screen name="CrewMemberSettings" component={CrewMemberSettingsScreen} />
     </Stack.Navigator>
   );
 }

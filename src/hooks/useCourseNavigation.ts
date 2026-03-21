@@ -36,6 +36,8 @@ const OFF_COURSE_THRESHOLD = 30; // meters
 const LOOK_AHEAD_DISTANCE_M = 30; // meters (distance-based instead of fixed points)
 const SEARCH_WINDOW_BACK = 5;
 const SEARCH_WINDOW_FORWARD = 20;
+/** Maximum segments to regress for GPS noise on round-trip courses */
+const MAX_BACKWARD_REGRESSION = 5;
 
 function classifyDirection(bearingDiff: number): NavDirection {
   // bearingDiff is -180 to 180
@@ -125,10 +127,11 @@ export function useCourseNavigation(
 
     // Find nearest point on course (forward-biased windowed search)
     const lastIdx = lastIndexRef.current;
-    // Full search when starting or when far off course
+    // Full search only at the very start; otherwise use directional window
+    // to prevent snapping back to earlier segments on round-trip courses.
     const pointDist = haversineDistance(currentLocation, courseRoute[lastIdx]);
-    const fullSearch = lastIdx === 0 || pointDist > OFF_COURSE_THRESHOLD * 2;
-    const searchStart = fullSearch ? 0 : Math.max(0, lastIdx - SEARCH_WINDOW_BACK);
+    const fullSearch = lastIdx === 0 && pointDist > OFF_COURSE_THRESHOLD * 2;
+    const searchStart = fullSearch ? 0 : Math.max(0, lastIdx - MAX_BACKWARD_REGRESSION);
     const searchEnd = fullSearch ? courseRoute.length - 1 : Math.min(courseRoute.length - 1, lastIdx + SEARCH_WINDOW_FORWARD);
 
     let nearestIdx = lastIdx;
@@ -142,10 +145,14 @@ export function useCourseNavigation(
       }
     }
 
-    // Prevent backward regression when on-course
+    // Prevent backward regression when on-course — allow small backward
+    // movement (up to MAX_BACKWARD_REGRESSION segments) for GPS noise,
+    // but never jump far back (critical for round-trip courses).
     if (nearestIdx < lastIdx && nearestDist <= OFF_COURSE_THRESHOLD) {
-      nearestIdx = lastIdx;
-      nearestDist = haversineDistance(currentLocation, courseRoute[lastIdx]);
+      if (lastIdx - nearestIdx > MAX_BACKWARD_REGRESSION) {
+        nearestIdx = lastIdx;
+        nearestDist = haversineDistance(currentLocation, courseRoute[lastIdx]);
+      }
     }
 
     // Segment projection for precise deviation measurement + snapped position

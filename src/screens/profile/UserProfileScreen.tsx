@@ -5,12 +5,13 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  SafeAreaView,
   TouchableOpacity,
-  Image,
   Linking,
   Animated,
+  Platform,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
@@ -25,10 +26,10 @@ import { friendService } from '../../services/friendService';
 import type { ThemeColors } from '../../utils/constants';
 import type { CourseStackParamList } from '../../types/navigation';
 import type { PublicProfile, PublicProfileCourse, PublicProfileRanking, GearItem, FriendshipStatusResponse } from '../../types/api';
-import { formatDistance, formatDuration, formatNumber, metersToKm } from '../../utils/format';
-import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
-import RunnerLevelBadge from '../../components/runner/RunnerLevelBadge';
-import { getRunnerTier, getRunnerXpProgress } from '../../utils/runnerLevelConfig';
+import { formatDistance, formatDuration, formatNumber } from '../../utils/format';
+import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
+import PlayerCard from '../../components/profile/PlayerCard';
+import XpProgressBar from '../../components/profile/XpProgressBar';
 
 type ProfileRoute = RouteProp<CourseStackParamList, 'UserProfile'>;
 type ProfileNavigation = NativeStackNavigationProp<CourseStackParamList>;
@@ -137,11 +138,6 @@ export default function UserProfileScreen() {
     navigation.push('CourseDetail', { courseId });
   }, [navigation]);
 
-  const getInitials = (nickname: string | null): string => {
-    if (!nickname) return '?';
-    return nickname.charAt(0).toUpperCase();
-  };
-
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -182,75 +178,23 @@ export default function UserProfileScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Player Card — Hero Style */}
-        {(() => {
-          const lv = profile.runner_level ?? 1;
-          const tier = getRunnerTier(lv);
-          const xp = getRunnerXpProgress(lv, profile.total_distance_meters ?? 0);
-          return (
-        <>
-        <View style={[styles.playerCard, { borderColor: tier.color + '30' }]}>
-          {/* Tier accent stripe at top */}
-          <View style={[styles.tierStripe, { backgroundColor: tier.color }]} />
-
-          {/* Profile header — Instagram style */}
-          <View style={styles.playerCardTop}>
-            {/* Avatar with tier-colored ring */}
-            <View style={[styles.avatarRing, { borderColor: tier.color + '60' }]}>
-              {profile.avatar_url ? (
-                <Image source={{ uri: profile.avatar_url }} style={styles.avatarImage} />
-              ) : (
-                <View style={[styles.avatarCircle, { backgroundColor: tier.color + '20', borderColor: tier.color + '40' }]}>
-                  <Text style={[styles.avatarInitials, { color: tier.color }]}>
-                    {getInitials(profile.nickname)}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.playerCardStatsRow}>
-              <View style={styles.profileStatItem}>
-                <Text style={styles.profileStatValue}>{formatNumber(followersCount)}</Text>
-                <Text style={styles.profileStatLabel}>{t('profile.followers')}</Text>
-              </View>
-              <View style={styles.profileStatItem}>
-                <Text style={styles.profileStatValue}>{formatNumber(profile.following_count)}</Text>
-                <Text style={styles.profileStatLabel}>{t('profile.following')}</Text>
-              </View>
-              <View style={styles.profileStatItem}>
-                <Text style={styles.profileStatValue}>{formatNumber(profile.total_likes_received ?? 0)}</Text>
-                <Text style={styles.profileStatLabel}>{t('profile.likes')}</Text>
-              </View>
-            </View>
-          </View>
-          {/* Identity + Meta */}
-          <View style={styles.playerCardMeta}>
-            <View style={styles.nameRow}>
-              <Text style={styles.playerCardName}>{profile.nickname ?? t('profile.defaultNickname')}</Text>
-              <RunnerLevelBadge level={profile.runner_level} size="sm" />
-            </View>
-            {profile.crew_name ? (
-              <View style={styles.crewTag}>
-                <Ionicons name="people" size={11} color={colors.primary} />
-                <Text style={styles.crewTagText}>{profile.crew_name}</Text>
-              </View>
-            ) : null}
-            {profile.bio ? (
-              <Text style={styles.playerCardBio} numberOfLines={2}>{profile.bio}</Text>
-            ) : null}
-            {profile.instagram_username ? (
-              <TouchableOpacity
-                style={styles.instagramRow}
-                onPress={() => handleOpenInstagram(profile.instagram_username!)}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="logo-instagram" size={13} color={colors.textTertiary} />
-                <Text style={styles.instagramText}>@{profile.instagram_username}</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-          {/* Action Buttons — Instagram style (inside card) */}
+        {/* Player Card */}
+        <PlayerCard
+          nickname={profile.nickname}
+          avatarUrl={profile.avatar_url}
+          runnerLevel={profile.runner_level ?? 1}
+          crewName={profile.crew_name}
+          bio={profile.bio}
+          instagramUsername={profile.instagram_username}
+          followersCount={followersCount}
+          followingCount={profile.following_count}
+          likesCount={profile.total_likes_received ?? 0}
+          totalDistanceMeters={profile.total_distance_meters}
+          totalRuns={profile.total_runs}
+          onInstagramTap={() => profile.instagram_username && handleOpenInstagram(profile.instagram_username)}
+          variant="profile"
+        >
+          {/* Action Buttons */}
           {!isOwnProfile && (
             <View style={styles.cardActionRow}>
               <Animated.View style={[{ flex: 1 }, { transform: [{ scale: followScale }] }]}>
@@ -310,43 +254,10 @@ export default function UserProfileScreen() {
               )}
             </View>
           )}
+        </PlayerCard>
 
-        </View>
-
-        {/* Runner Level Banner — matches MyPage style */}
-        <View style={[styles.runnerBanner, { backgroundColor: tier.bgColor, borderColor: tier.color + '30' }]}>
-          <View style={styles.runnerBannerText}>
-            <View style={styles.runnerBannerTitleRow}>
-              <Text style={[styles.runnerBannerTitle, { color: tier.textColor }]}>{t(tier.nameKey)}</Text>
-              <Text style={[styles.runnerBannerLv, { color: tier.color }]}>Lv.{lv}</Text>
-            </View>
-            <View style={styles.xpBarRow}>
-              <View style={[styles.xpBarTrack, { backgroundColor: tier.color + '30' }]}>
-                <View style={[styles.xpBarFill, { width: `${Math.round(xp.ratio * 100)}%`, backgroundColor: tier.color }]} />
-              </View>
-              <Text style={[styles.xpBarLabel, { color: tier.textColor }]}>
-                {xp.isMax ? 'MAX' : `${metersToKm(xp.current, 1)} / ${metersToKm(xp.next, 0)}km`}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Activity stats */}
-        <View style={styles.activityRow}>
-          <View style={styles.activityItem}>
-            <Ionicons name="walk-outline" size={14} color={tier.color} />
-            <Text style={styles.activityValue}>{formatDistance(profile.total_distance_meters)}</Text>
-          </View>
-          <View style={styles.activityDot} />
-          <View style={styles.activityItem}>
-            <Ionicons name="fitness-outline" size={14} color={tier.color} />
-            <Text style={styles.activityValue}>{formatNumber(profile.total_runs)}</Text>
-            <Text style={styles.activityLabel}>{t('profile.totalRuns')}</Text>
-          </View>
-        </View>
-        </>
-          );
-        })()}
+        {/* XP Progress — thin bar outside card */}
+        <XpProgressBar level={profile.runner_level ?? 1} totalDistanceMeters={profile.total_distance_meters ?? 0} />
 
         {/* Gear Section */}
         {(profile.primary_gear || (profile.gear_items && profile.gear_items.length > 0)) && (
@@ -576,138 +487,13 @@ const createStyles = (c: ThemeColors) =>
       color: c.white,
     },
 
-    // -- Profile Section (flat — no card, Instagram style) --
-    playerCard: {
-      // Flat layout, no card container
-    },
-    tierStripe: {
-      height: 3,
-      width: '100%',
-      marginBottom: 4,
-    },
-    playerCardTop: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 16,
-      paddingTop: 4,
-      paddingBottom: 12,
-      gap: 28,
-    },
-    playerCardStatsRow: {
-      flex: 1,
-      flexDirection: 'row',
-      justifyContent: 'space-around',
-      alignItems: 'center',
-    },
-    nameRow: {
-      flexDirection: 'row', alignItems: 'center', gap: 6,
-    },
-    playerCardName: {
-      fontSize: 17,
-      fontWeight: '700',
-      color: c.text,
-      letterSpacing: -0.3,
-    },
-    avatarRing: {
-      width: 92,
-      height: 92,
-      borderRadius: 46,
-      borderWidth: 3,
-      padding: 3,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    avatarCircle: {
-      width: 80,
-      height: 80,
-      borderRadius: 40,
-      borderWidth: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    avatarImage: {
-      width: 80,
-      height: 80,
-      borderRadius: 40,
-    },
-    avatarInitials: {
-      fontSize: FONT_SIZES.xxl,
-      fontWeight: '800',
-    },
-    runnerBanner: {
-      marginHorizontal: 16,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      borderRadius: 10,
-      borderWidth: 1,
-    },
-    runnerBannerText: {
-      flex: 1, gap: 4,
-    },
-    runnerBannerTitleRow: {
-      flexDirection: 'row', alignItems: 'center', gap: 6,
-    },
-    runnerBannerTitle: {
-      fontSize: 14, fontWeight: '800',
-    },
-    runnerBannerLv: {
-      fontSize: 12, fontWeight: '900',
-    },
-    xpBarRow: {
-      gap: 4, marginTop: 2,
-    },
-    xpBarTrack: {
-      height: 6, borderRadius: 3, overflow: 'hidden' as const,
-    },
-    xpBarFill: {
-      height: '100%' as any, borderRadius: 3,
-    },
-    xpBarLabel: {
-      fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] as const,
-    },
-    activityRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: SPACING.md,
-      paddingHorizontal: 16,
-      paddingTop: SPACING.sm,
-      paddingBottom: SPACING.sm,
-    },
-    activityItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-    },
-    activityValue: {
-      fontSize: FONT_SIZES.sm,
-      fontWeight: '800',
-      color: c.text,
-      fontVariant: ['tabular-nums'] as const,
-    },
-    activityLabel: {
-      fontSize: FONT_SIZES.xs,
-      fontWeight: '500',
-      color: c.textTertiary,
-    },
-    activityDot: {
-      width: 3,
-      height: 3,
-      borderRadius: 1.5,
-      backgroundColor: c.textTertiary,
-    },
-    playerCardMeta: {
-      paddingHorizontal: 16,
-      paddingTop: 0,
-      paddingBottom: 0,
-      gap: 4,
-    },
+    // -- Action buttons (inside PlayerCard children) --
     cardActionRow: {
       flexDirection: 'row',
       gap: 8,
-      paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 4,
+      paddingHorizontal: SPACING.xxl,
+      paddingTop: 8,
+      paddingBottom: 12,
     },
     cardActionButton: {
       flex: 1,
@@ -729,105 +515,6 @@ const createStyles = (c: ThemeColors) =>
       color: c.text,
     },
     cardActionButtonTextPrimary: {
-      color: c.white,
-    },
-    playerCardBio: {
-      fontSize: 14,
-      color: c.text,
-      lineHeight: 20,
-    },
-    profileStatItem: {
-      alignItems: 'center',
-      gap: 2,
-      flex: 1,
-    },
-    profileStatValue: {
-      fontSize: 17,
-      fontWeight: '700',
-      color: c.text,
-      fontVariant: ['tabular-nums'],
-    },
-    profileStatLabel: {
-      fontSize: 13,
-      fontWeight: '400',
-      color: c.textSecondary,
-    },
-    instagramRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      alignSelf: 'flex-start',
-      gap: 4,
-      marginTop: 2,
-    },
-    instagramText: {
-      fontSize: 14,
-      color: c.primary,
-      fontWeight: '600',
-    },
-    crewTag: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      alignSelf: 'flex-start',
-      gap: 3,
-      backgroundColor: c.primary + '15',
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: BORDER_RADIUS.xs,
-    },
-    crewTagText: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: c.primary,
-    },
-
-    // -- Action row --
-    actionRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: SPACING.md,
-      marginHorizontal: SPACING.xxl,
-    },
-    followButton: {
-      backgroundColor: c.primary,
-      paddingVertical: SPACING.sm + 2,
-      borderRadius: BORDER_RADIUS.lg,
-      alignItems: 'center',
-    },
-    followButtonActive: {
-      backgroundColor: c.transparent,
-      borderWidth: 1.5,
-      borderColor: c.border,
-    },
-    followButtonText: {
-      fontSize: FONT_SIZES.md,
-      fontWeight: '700',
-      color: c.white,
-    },
-    followButtonTextActive: {
-      color: c.textSecondary,
-    },
-    friendButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: SPACING.xs,
-      backgroundColor: c.primary,
-      paddingVertical: SPACING.sm + 2,
-      paddingHorizontal: SPACING.lg,
-      borderRadius: BORDER_RADIUS.lg,
-    },
-    friendButtonActive: {
-      backgroundColor: c.surface,
-      borderWidth: 1,
-      borderColor: c.border,
-    },
-    friendButtonPending: {
-      backgroundColor: c.surface,
-      borderWidth: 1,
-      borderColor: c.border,
-    },
-    friendButtonText: {
-      fontSize: FONT_SIZES.sm,
-      fontWeight: '700',
       color: c.white,
     },
 

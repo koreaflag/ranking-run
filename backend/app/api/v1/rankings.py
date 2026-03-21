@@ -31,6 +31,7 @@ async def get_course_rankings(
     page: int = Query(0, ge=0),
     per_page: int = Query(20, ge=1, le=100),
     limit: int | None = Query(None, ge=1, le=100),
+    country: str | None = Query(None, description="Filter rankings by user country"),
     course_service: CourseService = Depends(Provide[Container.course_service]),
     ranking_service: RankingService = Depends(Provide[Container.ranking_service]),
 ) -> RankingListResponse:
@@ -46,6 +47,7 @@ async def get_course_rankings(
         page=page,
         per_page=actual_per_page,
         requesting_user_id=current_user.id if current_user else None,
+        country=country,
     )
 
     data = [

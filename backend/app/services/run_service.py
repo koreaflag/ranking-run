@@ -8,6 +8,8 @@ from shapely.geometry import LineString
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy.orm.attributes import flag_modified
+
 from app.core.exceptions import AppError, ConflictError, NotFoundError
 from app.models.course import Course
 from app.models.run_chunk import RunChunk
@@ -279,18 +281,40 @@ class RunService:
                     match_result = await matcher.match_route(coords)
                     await matcher.close()
                     matched_coords = match_result.coordinates
-                    if matched_coords and len(matched_coords) >= 2:
+                    confidence = match_result.confidence or 0
+                    # Only use matched route if quality is acceptable:
+                    # - Must retain enough points (at least 30% of original or 5+)
+                    # - Confidence must be non-zero
+                    min_points = max(5, len(coords) * 0.3)
+                    use_matched = (
+                        matched_coords
+                        and len(matched_coords) >= min_points
+                        and confidence > 0
+                    )
+                    if use_matched:
                         matched_line = LineString([(c[0], c[1]) for c in matched_coords])
                         run_record.route_geometry = from_shape(matched_line, srid=4326)
-                        run_record.map_matching_confidence = match_result.confidence
+                        run_record.map_matching_confidence = confidence
                         if match_result.gap_indices:
                             run_record.signal_gap_segments = match_result.gap_indices
                         logger.info(
                             f"[RunService] Map matched route: {len(coords)} → {len(matched_coords)} pts"
-                            f" (confidence={match_result.confidence})"
+                            f" (confidence={confidence})"
+                        )
+                    else:
+                        logger.warning(
+                            f"[RunService] Map matching quality too low: {len(coords)} → "
+                            f"{len(matched_coords) if matched_coords else 0} pts "
+                            f"(confidence={confidence}), keeping original"
                         )
                 except Exception as e:
                     logger.warning(f"[RunService] Map matching failed, keeping original: {e}")
+
+            # Ensure map-matching updates are persisted
+            # (WKBElement changes may not be detected by SQLAlchemy dirty tracking after flush)
+            if run_record.raw_route_geometry is not None:
+                flag_modified(run_record, "route_geometry")
+                await db.flush()
 
         total_chunks = complete_data.get("total_chunks", 0)
 

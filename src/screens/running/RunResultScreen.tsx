@@ -4,14 +4,15 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   Dimensions,
   TouchableOpacity,
   NativeModules,
   Platform,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { useRunningStore } from '../../stores/runningStore';
@@ -83,8 +84,20 @@ export default function RunResultScreen() {
     uploadedChunkSequences,
     deviationLog,
     filteredLocations,
+    runGoal,
     reset,
   } = useRunningStore();
+
+  // Auto-dismiss result screen when user switches to another tab
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('blur', () => {
+      reset();
+      navigation.dispatch(
+        CommonActions.reset({ index: 0, routes: [{ name: 'World' }] }),
+      );
+    });
+    return unsubscribe;
+  }, [navigation, reset]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<RunCompleteResponse | null>(null);
@@ -110,6 +123,39 @@ export default function RunResultScreen() {
     },
     [],
   );
+
+  // Compute split km markers along the route for map visualization
+  const splitMapMarkers = useMemo(() => {
+    if (routePoints.length < 2 || splits.length === 0) return [];
+    const markers: Array<{ km: number; latitude: number; longitude: number; pace?: string }> = [];
+    let cumulDist = 0;
+    let nextKm = 1;
+    const splitMap = new Map(splits.map(s => [s.split_number, s]));
+
+    for (let i = 1; i < routePoints.length && nextKm <= splits.length; i++) {
+      const prev = routePoints[i - 1];
+      const curr = routePoints[i];
+      const dLat = (curr.latitude - prev.latitude) * Math.PI / 180;
+      const dLng = (curr.longitude - prev.longitude) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(prev.latitude * Math.PI / 180) * Math.cos(curr.latitude * Math.PI / 180) *
+        Math.sin(dLng / 2) ** 2;
+      const segDist = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const prevCumul = cumulDist;
+      cumulDist += segDist;
+
+      while (nextKm * 1000 <= cumulDist && nextKm <= splits.length) {
+        const ratio = (nextKm * 1000 - prevCumul) / segDist;
+        const lat = prev.latitude + ratio * (curr.latitude - prev.latitude);
+        const lng = prev.longitude + ratio * (curr.longitude - prev.longitude);
+        const split = splitMap.get(nextKm);
+        const pace = split ? formatPace(split.pace_seconds_per_km) : undefined;
+        markers.push({ km: nextKm, latitude: lat, longitude: lng, pace });
+        nextKm++;
+      }
+    }
+    return markers;
+  }, [routePoints, splits]);
 
   // Compute off-course deviation segments for result map visualization
   const OFF_COURSE_THRESHOLD = 30;
@@ -476,6 +522,7 @@ export default function RunResultScreen() {
             endPointOverride={stopLocation ?? undefined}
             onUserLocationChange={handleUserLocationChange}
             deviationSegments={deviationSegments.length > 0 ? deviationSegments : undefined}
+            splitMarkers={splitMapMarkers.length > 0 ? splitMapMarkers : undefined}
             style={styles.mapPreview}
           />
           <TouchableOpacity
@@ -646,6 +693,109 @@ export default function RunResultScreen() {
             </View>
           );
         })()}
+
+        {/* Pace Analysis */}
+        {splits.length >= 2 && (() => {
+          const paces = splits.map(s => s.pace_seconds_per_km);
+          const avgPace = paces.reduce((a, b) => a + b, 0) / paces.length;
+          const fastestIdx = paces.indexOf(Math.min(...paces));
+          const slowestIdx = paces.indexOf(Math.max(...paces));
+
+          // Detect slowdown: find first split where pace degrades by >5% from rolling average
+          let slowdownKm: number | null = null;
+          if (paces.length >= 3) {
+            let rollingAvg = paces[0];
+            for (let i = 1; i < paces.length; i++) {
+              if (paces[i] > rollingAvg * 1.05 && i >= 2) {
+                slowdownKm = splits[i].split_number;
+                break;
+              }
+              rollingAvg = (rollingAvg * i + paces[i]) / (i + 1);
+            }
+          }
+
+          // Negative split detection: second half avg pace < first half
+          const half = Math.floor(paces.length / 2);
+          const firstHalfAvg = paces.slice(0, half).reduce((a, b) => a + b, 0) / half;
+          const secondHalfAvg = paces.slice(half).reduce((a, b) => a + b, 0) / (paces.length - half);
+          const isNegativeSplit = secondHalfAvg < firstHalfAvg * 0.97;
+
+          // Pace variation coefficient
+          const variance = paces.reduce((sum, p) => sum + (p - avgPace) ** 2, 0) / paces.length;
+          const cv = Math.sqrt(variance) / avgPace;
+          const isConsistent = cv < 0.05 && !slowdownKm;
+
+          return (
+            <View style={styles.splitsSection}>
+              <Text style={styles.sectionTitle}>{t('running.result.paceAnalysis')}</Text>
+              <View style={[styles.splitsTable, { paddingHorizontal: 16, paddingVertical: 12, gap: 8 }]}>
+                {/* Fastest / Slowest */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.splitHeaderText, { textAlign: 'left', marginBottom: 4 }]}>
+                      {t('running.result.fastestSplit')}
+                    </Text>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: colors.success }}>
+                      {splits[fastestIdx].split_number}km — {formatPace(paces[fastestIdx])}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.splitHeaderText, { textAlign: 'left', marginBottom: 4 }]}>
+                      {t('running.result.slowestSplit')}
+                    </Text>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: colors.error }}>
+                      {splits[slowestIdx].split_number}km — {formatPace(paces[slowestIdx])}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Insight */}
+                <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider, paddingTop: 8 }}>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 18 }}>
+                    {isNegativeSplit
+                      ? `\u2705 ${t('running.result.negativeSplit')}`
+                      : slowdownKm
+                        ? `\u26A0\uFE0F ${t('running.result.slowdownFrom', { km: slowdownKm })}`
+                        : isConsistent
+                          ? `\u2705 ${t('running.result.consistentPace')}`
+                          : ''}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          );
+        })()}
+
+        {/* Goal Summary */}
+        {runGoal?.type && runGoal?.value && (
+          <View style={styles.splitsSection}>
+            <Text style={styles.sectionTitle}>{t('running.result.goalComplete')}</Text>
+            <View style={[styles.splitsTable, { paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', justifyContent: 'space-around' }]}>
+              {(runGoal.type === 'distance' || runGoal.type === 'program') && (
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>{t('running.result.goalDistance')}</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '800', color: colors.text, marginTop: 4 }}>
+                    {formatDistance(runGoal.value)}
+                  </Text>
+                </View>
+              )}
+              {runGoal.type === 'time' && (
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>{t('running.result.goalTime')}</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '800', color: colors.text, marginTop: 4 }}>
+                    {formatDuration(runGoal.value)}
+                  </Text>
+                </View>
+              )}
+              <View style={{ alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, color: colors.textSecondary }}>{t('running.result.splitTime')}</Text>
+                <Text style={{ fontSize: 17, fontWeight: '800', color: colors.text, marginTop: 4 }}>
+                  {formatDuration(durationSeconds)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Elevation Card */}
         {(elevationGainMeters > 0 || elevationLossMeters > 0) && (

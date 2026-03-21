@@ -7,8 +7,12 @@ type PaceUnit = 'min/km' | 'min/mi';
 export type RunEnvironment = 'outdoor' | 'indoor';
 export type VoiceGender = 'female' | 'male';
 export type ScreenOrientation = 'portrait' | 'landscape';
+export type AppLanguage = 'ko' | 'en' | 'ja';
 
 interface SettingsState {
+  // Language
+  language: AppLanguage;
+
   // Units
   distanceUnit: DistanceUnit;
   paceUnit: PaceUnit;
@@ -24,6 +28,8 @@ interface SettingsState {
 
   // Map
   map3DStyle: boolean; // true = custom 3D style, false = basic 2D flat style
+  // Last known user location (persisted for instant map centering on screen transitions)
+  lastKnownLocation: { latitude: number; longitude: number } | null;
 
   // Running preferences
   autoPause: boolean;
@@ -37,6 +43,7 @@ interface SettingsState {
   showLevelColor: boolean;
 
   // Actions
+  setLanguage: (lang: AppLanguage) => void;
   setDistanceUnit: (unit: DistanceUnit) => void;
   setPaceUnit: (unit: PaceUnit) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
@@ -54,11 +61,14 @@ interface SettingsState {
   setScreenOrientation: (orientation: ScreenOrientation) => void;
   setShowHeartRate: (show: boolean) => void;
   setShowLevelColor: (show: boolean) => void;
+  setLastKnownLocation: (loc: { latitude: number; longitude: number }) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
+      language: 'ko' as AppLanguage,
+
       distanceUnit: 'km',
       paceUnit: 'min/km',
 
@@ -70,6 +80,7 @@ export const useSettingsStore = create<SettingsState>()(
       backgroundImageUri: null,
 
       map3DStyle: true,
+      lastKnownLocation: null,
 
       autoPause: true,
       countdownSeconds: 3,
@@ -81,6 +92,7 @@ export const useSettingsStore = create<SettingsState>()(
       showHeartRate: true,
       showLevelColor: true,
 
+      setLanguage: (lang) => set({ language: lang }),
       setDistanceUnit: (unit) => set({ distanceUnit: unit }),
       setPaceUnit: (unit) => set({ paceUnit: unit }),
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
@@ -102,11 +114,13 @@ export const useSettingsStore = create<SettingsState>()(
       setScreenOrientation: (orientation) => set({ screenOrientation: orientation }),
       setShowHeartRate: (show) => set({ showHeartRate: show }),
       setShowLevelColor: (show) => set({ showLevelColor: show }),
+      setLastKnownLocation: (loc) => set({ lastKnownLocation: loc }),
     }),
     {
       name: 'settings-storage',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
+        language: state.language,
         distanceUnit: state.distanceUnit,
         paceUnit: state.paceUnit,
         notificationsEnabled: state.notificationsEnabled,
@@ -124,6 +138,7 @@ export const useSettingsStore = create<SettingsState>()(
         screenOrientation: state.screenOrientation,
         showHeartRate: state.showHeartRate,
         showLevelColor: state.showLevelColor,
+        lastKnownLocation: state.lastKnownLocation,
       }),
     },
   ),

@@ -14,6 +14,7 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     var onHeartRateUpdate: (([String: Any]) -> Void)?
     var onWatchReachabilityChange: ((Bool) -> Void)?
     var onWeeklyGoalFromWatch: (([String: Any]) -> Void)?
+    var onStandaloneStatusUpdate: (([String: Any]) -> Void)?
     var onStandaloneRunReceived: (([String: Any]) -> Void)? {
         didSet {
             // Flush any standalone runs that arrived before the callback was set
@@ -120,7 +121,12 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
 
                 switch newPhase {
                 case "running" where oldPhase == "idle" || oldPhase == "completed":
-                    NotificationCenter.default.post(name: Self.watchStartRunNotification, object: nil)
+                    // Do NOT post watchStartRunNotification from mirroring.
+                    // Mirroring fires for both companion and standalone watch runs.
+                    // Standalone runs should NOT trigger the phone's running screen —
+                    // they only send standaloneStatus updates and standaloneRunComplete.
+                    // Companion start is handled via WCSession "start" command instead.
+                    NSLog("[WatchSessionMgr] MIRRORED start ignored — standalone or already handled via WCSession")
                 case "paused":
                     NotificationCenter.default.post(name: Self.watchPauseRunNotification, object: nil)
                 case "running" where oldPhase == "paused":
@@ -267,8 +273,6 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
             // Non-authoritative call trying to change phase.
             // Only block during an active run (running/paused) to prevent stale
             // useWatchCompanion calls from reverting pause/resume/stop.
-            // During idle/completed/countdown, allow freely — this lets the watch
-            // receive "countdown" when the phone starts a new run.
             let isActiveRun = currentRunPhase == "running" || currentRunPhase == "paused"
             if isActiveRun {
                 let elapsed = Date().timeIntervalSince(lastAuthoritativePhaseChange)
@@ -288,8 +292,6 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
             }
 
             // Launch watch app as soon as countdown starts (not when running starts).
-            // This gives the watch time to foreground during the 3-second countdown
-            // so the user sees the countdown on the watch too.
             if phase == "countdown" {
                 launchWatchApp()
             }
@@ -297,35 +299,52 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
 
         lastRunState = message
 
-        if isPhaseChange {
-            // Critical phase transition: transferUserInfo (guaranteed) + applicationContext + sendMessage
-            NSLog("[WatchSessionMgr] PHASE CHANGE → %@ reachable=%d activated=%d paired=%d",
-                  newPhase ?? "nil", session.isReachable ? 1 : 0,
-                  session.activationState.rawValue,
-                  session.isPaired ? 1 : 0)
+        // ── Phase delivery routing ──
+        // Check if HKWorkoutSession mirroring is active on the phone side.
+        // When mirroring handles phase (running/paused/completed), WCSession should
+        // NOT also send phase — that causes 4x duplicate phase deliveries on the watch.
+        // Countdown always goes via WCSession since HKWorkoutSession has no countdown concept.
+        // Use session != nil (not isSessionActive) because after session.end()
+        // the session still exists but state is .stopped — mirroring is still
+        // delivering the phase change to the watch. Cleanup happens after 1s delay.
+        let mirroringHandlesPhase: Bool
+        if #available(iOS 17, *) {
+            mirroringHandlesPhase = isPhaseChange
+                && WorkoutMirroringPhone.shared.session != nil
+                && newPhase != "countdown"
+                && newPhase != "idle"
+        } else {
+            mirroringHandlesPhase = false
+        }
+
+        if mirroringHandlesPhase {
+            // Phase is handled by HK mirroring (~10-20ms, more reliable).
+            // Send data-only update via sendMessage so watch still gets metrics.
+            var dataOnly = message
+            dataOnly.removeValue(forKey: "phase")
+            trySendMessage(dataOnly)
+            NSLog("[WatchSessionMgr] phase %@ → MIRRORING (WCSession sends data-only)",
+                  newPhase ?? "nil")
+        } else if isPhaseChange {
+            // No mirroring OR countdown: use WCSession triple-redundancy for reliability
+            NSLog("[WatchSessionMgr] PHASE CHANGE → %@ via WCSession (mirroring=%@)",
+                  newPhase ?? "nil",
+                  { if #available(iOS 17, *) { return WorkoutMirroringPhone.shared.isSessionActive ? "inactive-for-phase" : "unavailable" } else { return "n/a" } }())
 
             // 1. transferUserInfo: queued, guaranteed delivery even if watch app is not running
             session.transferUserInfo(message)
-            NSLog("[WatchSessionMgr] transferUserInfo queued for phase=%@", newPhase ?? "nil")
 
             // 2. applicationContext: best-effort (may fail in dev builds)
             do {
                 try session.updateApplicationContext(message)
-                NSLog("[WatchSessionMgr] updateApplicationContext OK")
             } catch {
                 // Expected in dev builds where isWatchAppInstalled=false
             }
 
-            // 3. sendMessage: real-time delivery attempt + aggressive retries
+            // 3. sendMessage: single real-time delivery attempt
             trySendMessage(message)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                self?.trySendMessage(message)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.trySendMessage(message)
-            }
         } else {
-            // Continuous metrics: single send, no retry
+            // Continuous metrics (same phase): single send, no retry
             trySendMessage(message)
         }
     }
@@ -438,6 +457,8 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         case "standaloneRunComplete":
             NSLog("[WatchSessionMgr] Received standalone run data from watch")
             deliverStandaloneRun(message)
+        case "standaloneStatus":
+            onStandaloneStatusUpdate?(message)
         case "weeklyGoalUpdate":
             NSLog("[WatchSessionMgr] Received weekly goal update from watch")
             onWeeklyGoalFromWatch?(message)
@@ -483,6 +504,9 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         case "standaloneRunComplete":
             NSLog("[WatchSessionMgr] Received standalone run data from watch (with reply)")
             deliverStandaloneRun(message)
+            replyHandler(["status": "ok"])
+        case "standaloneStatus":
+            onStandaloneStatusUpdate?(message)
             replyHandler(["status": "ok"])
         case "weeklyGoalUpdate":
             NSLog("[WatchSessionMgr] Received weekly goal from watch (with reply)")

@@ -44,7 +44,8 @@ data class FilteredLocation(
         isMoving: Boolean,
         cadenceSPM: Int = 0,
         elevationGain: Double = 0.0,
-        elevationLoss: Double = 0.0
+        elevationLoss: Double = 0.0,
+        distanceSource: String = "gps"
     ): WritableMap {
         return Arguments.createMap().apply {
             putDouble("latitude", latitude)
@@ -52,13 +53,14 @@ data class FilteredLocation(
             putDouble("altitude", altitude)
             putDouble("speed", speed)
             putDouble("bearing", bearing)
-            putDouble("accuracy", 0.0) // Kalman-filtered, accuracy is implicit
+            putDouble("accuracy", if (distanceSource == "pedometer") 100.0 else 0.0)
             putDouble("timestamp", timestamp.toDouble())
             putDouble("distanceFromStart", cumulativeDistance)
             putBoolean("isMoving", isMoving)
             putInt("cadence", cadenceSPM)
             putDouble("elevationGain", elevationGain)
             putDouble("elevationLoss", elevationLoss)
+            putString("distanceSource", distanceSource)
         }
     }
 }

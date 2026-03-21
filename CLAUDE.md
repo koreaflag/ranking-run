@@ -61,6 +61,7 @@ Layer 5: Map Matching (도심, 서버 사이드)
 - 원시 GPS 데이터는 반드시 서버에 저장 (랭킹 공정성 + 알고리즘 개선 시 재처리)
 - GPS 필터링 인터페이스는 플랫폼 공통으로 정의 (agents/shared-interfaces.md 참조)
 - 커밋 메시지는 Conventional Commits 사용 (feat:, fix:, refactor: 등)
+- **⚠️ 플랫폼 분리 원칙**: Android는 Android에 맞게, iOS는 iPhone에 맞게 독립 개발. 한 플랫폼 수정 시 다른 플랫폼 코드/값 절대 건드리지 않기. Platform.select/Platform.OS 분기에서 요청된 플랫폼만 수정할 것.
 
 ## DB 핵심 엔티티
 ```

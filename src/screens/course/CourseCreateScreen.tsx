@@ -5,11 +5,13 @@ import {
   StyleSheet,
   TextInput,
   ScrollView,
-  SafeAreaView,
   TouchableOpacity,
   Alert,
   Switch,
+  Platform,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { courseService } from '../../services/courseService';
@@ -91,21 +93,14 @@ export default function CourseCreateScreen() {
       createdAt: new Date().toISOString(),
     });
 
-    // 2) Navigate back immediately
+    // 2) Navigate back immediately (no blocking Alert)
     setIsSubmitting(false);
-    Alert.alert(t('course.create.courseSaved'), t('course.create.courseSavedMsg', { title: title.trim() }), [
-      {
-        text: t('common.confirm'),
-        onPress: () => {
-          navigation.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [{ name: 'CourseList' }],
-            }),
-          );
-        },
-      },
-    ]);
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'CourseList' }],
+      }),
+    );
 
     // 3) Try server sync in background (non-blocking)
     (async () => {

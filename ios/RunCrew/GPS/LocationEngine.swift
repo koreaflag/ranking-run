@@ -21,6 +21,11 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
     private var gpsLostTime: Date?
     private var baseAltitude: Double?
 
+    // Indoor / dead-reckoning fallback
+    private var pedometerFallbackTimer: Timer?
+    private var pedometerBaseDistance: Double = 0  // pedometer totalDistance at GPS-lost time
+    private var gpsDistanceAtFallbackStart: Double = 0  // cumulative GPS distance when fallback started
+
     // Background execution
     private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
     private var silentAudioPlayer: AVAudioPlayer?
@@ -51,6 +56,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
     deinit {
         coldStartTimer?.invalidate()
         gpsLostTimer?.invalidate()
+        pedometerFallbackTimer?.invalidate()
     }
 
     private func setupLocationManager() {
@@ -139,6 +145,7 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         coldStartTimer = nil
         gpsLostTimer?.invalidate()
         gpsLostTimer = nil
+        stopPedometerFallback()
         stopBackgroundExecution()
 
         DispatchQueue.main.async { [weak self] in
@@ -364,7 +371,10 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             guard let self = self, self.session.state == .running else { return }
             self.gpsLostTime = Date()
             self.updateGPSStatus("lost")
+            self.startPedometerFallback()
         }
+        // GPS regained — stop pedometer fallback
+        stopPedometerFallback()
 
         // Update sensor fusion with GPS data
         sensorFusion.onGPSUpdate(validLocation)
@@ -519,7 +529,8 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             "isMoving": stationaryDetector.isMoving,
             "cadence": cadenceSPM,
             "elevationGain": sensorFusion.altimeterTracker.totalElevationGain,
-            "elevationLoss": sensorFusion.altimeterTracker.totalElevationLoss
+            "elevationLoss": sensorFusion.altimeterTracker.totalElevationLoss,
+            "distanceSource": "gps"
         ]
         onLocationUpdate?(event)
 
@@ -533,6 +544,96 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             let elapsedSeconds = Int(session.getCurrentElapsedTime())
             // Split pace = time for THIS km only, not cumulative average.
             // previousMilestoneTime tracks elapsed time at km (N-1).
+            let splitSeconds = elapsedSeconds - previousMilestoneTime
+            let splitPace = splitSeconds > 0 ? splitSeconds : 0
+            previousMilestoneTime = elapsedSeconds
+            onMilestoneReached?(currentKm, splitPace, elapsedSeconds)
+        }
+        previousCumulativeDistance = cumulativeDistance
+    }
+
+    // MARK: - Indoor / Pedometer Fallback
+
+    /// Start emitting pedometer-based distance events when GPS is lost.
+    /// Fires every 2 seconds, using Apple-calibrated CMPedometer distance.
+    private func startPedometerFallback() {
+        guard pedometerFallbackTimer == nil else { return }
+        guard sensorFusion.pedometerTracker.isActive else { return }
+
+        pedometerBaseDistance = sensorFusion.pedometerTracker.totalDistance
+        gpsDistanceAtFallbackStart = cumulativeDistance
+        NSLog("[LocationEngine] Starting pedometer fallback (base: \(pedometerBaseDistance)m, gpsDist: \(gpsDistanceAtFallbackStart)m)")
+
+        pedometerFallbackTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.emitPedometerUpdate()
+        }
+    }
+
+    private func stopPedometerFallback() {
+        guard pedometerFallbackTimer != nil else { return }
+        pedometerFallbackTimer?.invalidate()
+        pedometerFallbackTimer = nil
+    }
+
+    /// Emit a synthetic location event using pedometer distance.
+    /// Position is estimated via dead reckoning; distance is from CMPedometer (Apple-calibrated).
+    private func emitPedometerUpdate() {
+        guard session.state == .running else {
+            stopPedometerFallback()
+            return
+        }
+
+        let pedometer = sensorFusion.pedometerTracker
+        let pedometerDelta = pedometer.totalDistance - pedometerBaseDistance
+        guard pedometerDelta > 0 else { return }
+
+        // Use dead reckoning for estimated position
+        var lat = lastFilteredLocation?.latitude ?? 0
+        var lon = lastFilteredLocation?.longitude ?? 0
+        let bearing = lastFilteredLocation?.bearing ?? 0
+
+        if let gpsLost = gpsLostTime, let lastLoc = lastFilteredLocation {
+            if let dr = sensorFusion.estimatePosition(
+                from: lastLoc.latitude,
+                lastKnownLon: lastLoc.longitude,
+                lastKnownBearing: lastLoc.bearing,
+                gpsLostSince: gpsLost
+            ) {
+                lat = dr.lat
+                lon = dr.lon
+            }
+        }
+
+        // Pedometer-based cumulative distance: GPS distance at fallback start + pedometer delta
+        let newCumulativeDistance = gpsDistanceAtFallbackStart + pedometerDelta
+        guard newCumulativeDistance > cumulativeDistance else { return }
+        cumulativeDistance = newCumulativeDistance
+
+        let cadenceSPM = stationaryDetector.isStationary ? 0 : Int(pedometer.currentCadence * 60)
+
+        let event: [String: Any] = [
+            "latitude": lat,
+            "longitude": lon,
+            "altitude": lastFilteredLocation?.altitude ?? 0,
+            "speed": pedometer.currentCadence > 0 ? pedometer.currentCadence * 0.75 : 0,
+            "bearing": bearing,
+            "accuracy": 100.0,  // Low accuracy indicator for pedometer
+            "timestamp": Date().timeIntervalSince1970 * 1000,
+            "distanceFromStart": cumulativeDistance,
+            "isMoving": pedometer.currentCadence > 0,
+            "cadence": cadenceSPM,
+            "elevationGain": sensorFusion.altimeterTracker.totalElevationGain,
+            "elevationLoss": sensorFusion.altimeterTracker.totalElevationLoss,
+            "distanceSource": "pedometer"
+        ]
+        onLocationUpdate?(event)
+        onWatchLocationUpdate?(event)
+
+        // Milestone detection for pedometer updates
+        let prevKm = Int(previousCumulativeDistance / 1000)
+        let currentKm = Int(cumulativeDistance / 1000)
+        if currentKm > prevKm && currentKm > 0 {
+            let elapsedSeconds = Int(session.getCurrentElapsedTime())
             let splitSeconds = elapsedSeconds - previousMilestoneTime
             let splitPace = splitSeconds > 0 ? splitSeconds : 0
             previousMilestoneTime = elapsedSeconds

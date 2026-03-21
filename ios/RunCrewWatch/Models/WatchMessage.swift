@@ -74,6 +74,10 @@ struct WatchMessageKeys {
     static let programStatus = "programStatus"
     static let metronomeBPM = "metronomeBPM"
 
+    // Timer sync (startTime-based)
+    static let runStartTime = "runStartTime"           // epoch ms — when run actually started
+    static let elapsedBeforePause = "elapsedBeforePause" // seconds accumulated before current segment
+
     // Countdown sync
     static let countdownStartedAt = "countdownStartedAt"
     static let countdownTotal = "countdownTotal"

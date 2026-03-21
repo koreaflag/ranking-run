@@ -1,10 +1,7 @@
-import React, { useMemo, useRef } from 'react';
-import { View, StyleSheet } from 'react-native';
-import Mapbox from '@rnmapbox/maps';
+import React, { useMemo } from 'react';
+import { View, Image, StyleSheet } from 'react-native';
 import { useTheme } from '../../hooks/useTheme';
-import { MAPBOX_DARK_STYLE, MAPBOX_LIGHT_STYLE } from '../../config/env';
-
-let _thumbIdCounter = 0;
+import { MAPBOX_ACCESS_TOKEN } from '../../config/env';
 
 interface CourseThumbnailMapProps {
   routePreview: number[][]; // [[lng, lat], ...]
@@ -13,6 +10,49 @@ interface CourseThumbnailMapProps {
   borderRadius?: number;
 }
 
+/** Downsample points array to at most maxPts, keeping first and last. */
+function downsample(pts: number[][], maxPts: number): number[][] {
+  if (pts.length <= maxPts) return pts;
+  const step = (pts.length - 1) / (maxPts - 1);
+  const result: number[][] = [];
+  for (let i = 0; i < maxPts - 1; i++) {
+    result.push(pts[Math.round(i * step)]);
+  }
+  result.push(pts[pts.length - 1]);
+  return result;
+}
+
+/** Build a Mapbox Static Images API URL with a GeoJSON line overlay. */
+function buildStaticMapUrl(
+  pts: number[][],
+  styleId: string,
+  pixelW: number,
+  pixelH: number,
+  decimals: number,
+): string {
+  const geojson = encodeURIComponent(JSON.stringify({
+    type: 'Feature',
+    properties: {
+      stroke: '#FFC800',
+      'stroke-width': 3,
+      'stroke-opacity': 1,
+    },
+    geometry: {
+      type: 'LineString',
+      coordinates: pts.map(([lng, lat]) => [
+        parseFloat(lng.toFixed(decimals)),
+        parseFloat(lat.toFixed(decimals)),
+      ]),
+    },
+  }));
+  return `https://api.mapbox.com/styles/v1/${styleId}/static/geojson(${geojson})/auto/${pixelW}x${pixelH}@2x?padding=20&access_token=${MAPBOX_ACCESS_TOKEN}`;
+}
+
+/**
+ * Route thumbnail using Mapbox Static Images API.
+ * Renders a real map background with the route overlaid, but as a plain
+ * <Image> — zero GPU/memory overhead unlike a full MapView.
+ */
 export default React.memo(function CourseThumbnailMap({
   routePreview,
   width,
@@ -21,75 +61,42 @@ export default React.memo(function CourseThumbnailMap({
 }: CourseThumbnailMapProps) {
   const colors = useTheme();
   const isDark = colors.statusBar === 'light-content';
-  const styleURL = isDark ? MAPBOX_DARK_STYLE : MAPBOX_LIGHT_STYLE;
+  const bgColor = isDark ? '#1C1C1E' : '#F2F2F7';
 
-  // Unique IDs per instance to avoid Mapbox native layer conflicts
-  const idRef = useRef(`thumb-${++_thumbIdCounter}`);
-  const sourceId = idRef.current;
-  const layerId = `${idRef.current}-line`;
+  const imageUri = useMemo(() => {
+    if (!routePreview || routePreview.length < 2 || !MAPBOX_ACCESS_TOKEN) return null;
 
-  const routeGeoJSON = useMemo(
-    () => ({
-      type: 'Feature' as const,
-      properties: {},
-      geometry: {
-        type: 'LineString' as const,
-        coordinates: routePreview,
-      },
-    }),
-    [routePreview],
-  );
+    const styleId = isDark
+      ? 'runsvs/cmlt12hqy001d01r49zt66z85'
+      : 'runsvs/cmlt0wpwv001e01sq8mg39xas';
 
-  // Calculate bounds from route
-  const bounds = useMemo(() => {
-    let minLng = Infinity, maxLng = -Infinity;
-    let minLat = Infinity, maxLat = -Infinity;
-    for (const [lng, lat] of routePreview) {
-      if (lng < minLng) minLng = lng;
-      if (lng > maxLng) maxLng = lng;
-      if (lat < minLat) minLat = lat;
-      if (lat > maxLat) maxLat = lat;
+    const pixelW = Math.min(Math.round(width * 2), 640);
+    const pixelH = Math.min(Math.round(height * 2), 640);
+
+    // First attempt: 60 points, 5 decimal places
+    let pts = downsample(routePreview, 60);
+    let url = buildStaticMapUrl(pts, styleId, pixelW, pixelH, 5);
+
+    // If URL too long, reduce points and precision
+    if (url.length > 8000) {
+      pts = downsample(routePreview, 30);
+      url = buildStaticMapUrl(pts, styleId, pixelW, pixelH, 4);
     }
-    // Add padding in degrees (~50m)
-    const padLng = Math.max((maxLng - minLng) * 0.15, 0.0005);
-    const padLat = Math.max((maxLat - minLat) * 0.15, 0.0005);
-    return {
-      ne: [maxLng + padLng, maxLat + padLat] as [number, number],
-      sw: [minLng - padLng, minLat - padLat] as [number, number],
-    };
-  }, [routePreview]);
+
+    return url;
+  }, [routePreview, width, height, isDark]);
+
+  if (!imageUri) {
+    return <View style={[styles.container, { width, height, borderRadius, backgroundColor: bgColor }]} />;
+  }
 
   return (
-    <View style={[styles.container, { width, height, borderRadius }]}>
-      <Mapbox.MapView
-        style={styles.map}
-        styleURL={styleURL}
-        logoEnabled={false}
-        attributionEnabled={false}
-        compassEnabled={false}
-        scaleBarEnabled={false}
-        scrollEnabled={false}
-        pitchEnabled={false}
-        rotateEnabled={false}
-        zoomEnabled={false}
-      >
-        <Mapbox.Camera
-          bounds={bounds}
-          animationDuration={0}
-        />
-        <Mapbox.ShapeSource id={sourceId} shape={routeGeoJSON}>
-          <Mapbox.LineLayer
-            id={layerId}
-            style={{
-              lineColor: '#FFC800',
-              lineWidth: 3,
-              lineCap: 'round',
-              lineJoin: 'round',
-              lineEmissiveStrength: 1,
-            }}
-          />
-        </Mapbox.ShapeSource>
-      </Mapbox.MapView>
+    <View style={[styles.container, { width, height, borderRadius, backgroundColor: bgColor }]}>
+      <Image
+        source={{ uri: imageUri }}
+        style={{ width, height }}
+        resizeMode="cover"
+      />
     </View>
   );
 });
@@ -97,8 +104,5 @@ export default React.memo(function CourseThumbnailMap({
 const styles = StyleSheet.create({
   container: {
     overflow: 'hidden',
-  },
-  map: {
-    flex: 1,
   },
 });

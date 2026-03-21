@@ -12,6 +12,7 @@ from geoalchemy2.shape import from_shape, to_shape
 from shapely.geometry import LineString, Point
 from sqlalchemy import and_, desc, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundError, PermissionDeniedError
@@ -791,6 +792,76 @@ class CourseService:
         await db.flush()
         return course
 
+    async def correct_route(
+        self,
+        db: AsyncSession,
+        course_id: UUID,
+        user_id: UUID,
+        new_coordinates: list[list[float]],
+        max_deviation_m: float = 50.0,
+    ) -> "Course":
+        """Correct/adjust a course route within a maximum deviation from the original.
+
+        Each point in the new route must be within *max_deviation_m* metres of
+        the nearest point on the original route.  This prevents abuse while
+        allowing small GPS-error corrections.
+        """
+        course = await self._get_owned_course(db, course_id, user_id)
+
+        if course.route_geometry is None:
+            raise NotFoundError(code="NO_ROUTE", message="Course has no route geometry")
+
+        if len(new_coordinates) < 2:
+            raise ValueError("Route must have at least 2 points")
+
+        # Build the original route as a Shapely LineString
+        original_line = to_shape(course.route_geometry)
+
+        # Validate every new point is within the allowed deviation
+        for i, coord in enumerate(new_coordinates):
+            lng, lat = coord[0], coord[1]
+            pt = Point(lng, lat)
+            # project + distance gives the minimum distance from the point to the line
+            # Note: this is in degrees — convert approximately to metres.
+            nearest_dist_deg = original_line.distance(pt)
+            # Rough degree→meter conversion at typical latitudes (~35-37°N Korea)
+            nearest_dist_m = nearest_dist_deg * 111_320 * math.cos(math.radians(lat))
+            if nearest_dist_m > max_deviation_m:
+                raise ValueError(
+                    f"Point {i} deviates {nearest_dist_m:.0f}m from original route "
+                    f"(max allowed: {max_deviation_m:.0f}m)"
+                )
+
+        # Build new geometry
+        new_line = LineString([(c[0], c[1]) for c in new_coordinates])
+        course.route_geometry = from_shape(new_line, srid=4326)
+
+        # Update start_point
+        first = new_coordinates[0]
+        course.start_point = from_shape(Point(first[0], first[1]), srid=4326)
+
+        # Recalculate distance from the new geometry
+        total_distance = 0.0
+        for j in range(len(new_coordinates) - 1):
+            total_distance += _haversine(new_coordinates[j], new_coordinates[j + 1])
+        course.distance_meters = max(1, round(total_distance))
+
+        # Regenerate checkpoints
+        if total_distance >= 1000:
+            course.checkpoints = _generate_checkpoints(new_coordinates, 500)
+        else:
+            course.checkpoints = []
+
+        # Clear thumbnail so it gets regenerated
+        course.thumbnail_url = None
+
+        # Ensure SQLAlchemy detects WKBElement changes for geography columns
+        flag_modified(course, "route_geometry")
+        flag_modified(course, "start_point")
+
+        await db.flush()
+        return course
+
     async def delete_course(
         self,
         db: AsyncSession,
@@ -803,6 +874,13 @@ class CourseService:
         await db.execute(
             update(RunRecord)
             .where(RunRecord.course_id == course_id)
+            .values(course_id=None)
+        )
+
+        # Clear course_id from run_sessions (SET NULL equivalent at app level)
+        await db.execute(
+            update(RunSession)
+            .where(RunSession.course_id == course_id)
             .values(course_id=None)
         )
 

@@ -58,6 +58,11 @@ struct RunCrewWatchApp: App {
         if let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
             toShare.insert(energy)
         }
+        // Heart rate in share set: ensures the authorization dialog shows HR prominently
+        // and allows HKLiveWorkoutBuilder to write HR samples during workouts.
+        if let hr = HKQuantityType.quantityType(forIdentifier: .heartRate) {
+            toShare.insert(hr)
+        }
 
         var toRead: Set<HKObjectType> = []
         if let hr = HKQuantityType.quantityType(forIdentifier: .heartRate) {
@@ -79,9 +84,9 @@ struct RunCrewWatchApp: App {
                 .onChange(of: scenePhase) { newPhase in
                     if newPhase == .active {
                         viewModel.updateReachabilityStatus()
-                        // Immediately poll phone for fresh stats when wrist is raised.
-                        // Prevents stale metrics from lingering on the display.
                         viewModel.pollPhoneState()
+                        // Request HealthKit auth when scene is active (dialog needs foreground)
+                        Self.requestHealthKitAuthorization()
                     }
                 }
         }

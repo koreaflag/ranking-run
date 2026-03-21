@@ -36,6 +36,8 @@ export function useWatchCompanion(
     phase,
     distanceMeters,
     durationSeconds,
+    startTime,
+    elapsedBeforePause,
     currentPaceSecondsPerKm,
     avgPaceSecondsPerKm,
     gpsStatus,
@@ -45,6 +47,7 @@ export function useWatchCompanion(
     updateHeartRate,
     setWatchConnected,
   } = useRunningStore();
+  // phase is still read for event subscription below, but NOT sent to watch
 
   // Keep callbacks ref up to date without causing re-subscriptions
   const callbacksRef = useRef(callbacks);
@@ -54,10 +57,16 @@ export function useWatchCompanion(
   useEffect(() => {
     if (Platform.OS !== 'ios' || !WatchBridgeModule) return;
 
+    // Phase is sent authoritatively by GPSTrackerModule (native).
+    // Do NOT send phase here — it causes duplicate phase messages
+    // that conflict with HKWorkoutSession mirroring and native sends.
     WatchBridgeModule.sendRunState({
-      phase,
       distanceMeters,
       durationSeconds,
+      // Timer sync: send startTime + elapsedBeforePause so watch can compute
+      // its own smooth timer locally instead of relying on durationSeconds updates
+      runStartTime: startTime ?? 0,
+      elapsedBeforePause,
       currentPace: currentPaceSecondsPerKm,
       avgPace: avgPaceSecondsPerKm,
       gpsStatus,
@@ -110,9 +119,12 @@ export function useWatchCompanion(
     }).catch(() => {
       // Silently ignore send failures (Watch may be unreachable)
     });
-  }, [phase, distanceMeters, durationSeconds, currentPaceSecondsPerKm,
+  // NOTE: durationSeconds intentionally NOT in deps — watch computes timer
+  // locally from runStartTime + elapsedBeforePause. This prevents sending
+  // state every second just because duration ticked, reducing WCSession traffic.
+  }, [distanceMeters, currentPaceSecondsPerKm,
       avgPaceSecondsPerKm, gpsStatus, calories, isAutoPaused, runGoal,
-      navigation, checkpointData]);
+      navigation, checkpointData, startTime, elapsedBeforePause]);
 
   // Subscribe to Watch events during active running
   useEffect(() => {

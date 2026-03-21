@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   TextInput,
   ActivityIndicator,
@@ -14,7 +13,9 @@ import {
   Image,
   ActionSheetIOS,
   Dimensions,
+  StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '../../lib/icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -35,6 +36,7 @@ type Route = RouteProp<CommunityStackParamList, 'CrewEdit'>;
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const COVER_HEIGHT = 180;
+const SOCIAL_TAB_HEIGHT = 100;
 
 const BADGE_COLORS = [
   '#FF7A33', '#FF4757', '#3B82F6', '#10B981',
@@ -280,6 +282,29 @@ export default function CrewEditScreen() {
                     <Text style={[styles.coverPlaceholderText, { color: badgeColor }]}>
                       {t('crew.addCoverImage')}
                     </Text>
+                  </View>
+                )}
+                {/* Crop guideline overlay */}
+                {coverUri && (
+                  <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                    {/* Overlay on the bottom area (below social tab crop line) */}
+                    <View style={styles.cropOverlayBottom} />
+                    {/* Dashed guideline at the social tab height */}
+                    <View style={styles.cropGuideline}>
+                      <View style={styles.cropGuidelineLine} />
+                      <View style={styles.cropGuidelineLabelWrap}>
+                        <Text style={styles.cropGuidelineLabelText}>
+                          {'소셜탭 표시 영역'}
+                        </Text>
+                        <Ionicons name="arrow-up" size={10} color="#FFFFFF" style={{ marginLeft: 2 }} />
+                      </View>
+                    </View>
+                    {/* Label for bottom area */}
+                    <View style={styles.cropBottomLabelWrap}>
+                      <Text style={styles.cropBottomLabelText}>
+                        {'크루 상세에서만 표시'}
+                      </Text>
+                    </View>
                   </View>
                 )}
                 <View style={styles.coverEditBadge}>
@@ -539,6 +564,57 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: 'rgba(0,0,0,0.5)',
       justifyContent: 'center',
       alignItems: 'center',
+    },
+
+    // Crop guideline overlay
+    cropOverlayBottom: {
+      position: 'absolute',
+      top: SOCIAL_TAB_HEIGHT,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.35)',
+    },
+    cropGuideline: {
+      position: 'absolute',
+      top: SOCIAL_TAB_HEIGHT,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    cropGuidelineLine: {
+      flex: 1,
+      height: 0,
+      borderTopWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: 'rgba(255,255,255,0.8)',
+    },
+    cropGuidelineLabelWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 4,
+      marginRight: SPACING.sm,
+    },
+    cropGuidelineLabelText: {
+      fontSize: 9,
+      fontWeight: '700',
+      color: '#FFFFFF',
+    },
+    cropBottomLabelWrap: {
+      position: 'absolute',
+      bottom: SPACING.xl + 8,
+      left: 0,
+      right: 0,
+      alignItems: 'center',
+    },
+    cropBottomLabelText: {
+      fontSize: 9,
+      fontWeight: '600',
+      color: 'rgba(255,255,255,0.7)',
     },
 
     // Logo

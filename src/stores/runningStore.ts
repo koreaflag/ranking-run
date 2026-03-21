@@ -10,6 +10,11 @@ const LOOP_PROXIMITY_RADIUS_M = 30;   // "Near start" radius
 const LOOP_APPROACH_RADIUS_M = 100;   // "Approaching start" radius (pre-warning)
 const LOOP_COOLDOWN_MS = 60_000;      // Don't re-trigger for 60s after detection
 
+// Speed anomaly detection: if speed exceeds this for N consecutive updates, flag the run
+const SPEED_ANOMALY_THRESHOLD_MS = 6.9;    // ~25 km/h — well above sprint speed
+const SPEED_ANOMALY_CONSECUTIVE = 10;      // 10 consecutive readings (~10s at 1Hz GPS)
+const SPEED_ANOMALY_MIN_DISTANCE_M = 200;  // Don't trigger in first 200m (GPS warmup)
+
 // Memory cap for filteredLocations (raw GPS data for chunk uploads).
 // When exceeded, drop oldest 20% to prevent unbounded memory growth on ultra-long runs.
 const MAX_FILTERED_LOCATIONS = 50_000;
@@ -37,6 +42,7 @@ interface RunningState {
   // GPS
   gpsStatus: GPSStatus;
   gpsAccuracy: number | null;
+  distanceSource: 'gps' | 'pedometer';
   currentLocation: LocationUpdateEvent | null;
   routePoints: Array<{ latitude: number; longitude: number }>;
   filteredLocations: FilteredLocation[];
@@ -86,6 +92,10 @@ interface RunningState {
 
   // Auto-pause (timer frozen while stationary, phase stays "running")
   isAutoPaused: boolean;
+
+  // Speed anomaly detection
+  speedAnomalyDetected: boolean;
+  highSpeedCount: number;
 
   // Run goal
   runGoal: {
@@ -164,6 +174,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
 
   gpsStatus: 'searching',
   gpsAccuracy: null,
+  distanceSource: 'gps',
   currentLocation: null,
   routePoints: [],
   filteredLocations: [],
@@ -198,6 +209,8 @@ export const useRunningStore = create<RunningState>((set, get) => ({
   startTime: null,
   elapsedBeforePause: 0,
   isAutoPaused: false,
+  speedAnomalyDetected: false,
+  highSpeedCount: 0,
   runGoal: { type: null, value: null, targetTime: null, cadenceBPM: null },
 
   startSession: (sessionId, courseId) => {
@@ -243,6 +256,8 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       checkpointPasses: [],
       stopLocation: null,
       isAutoPaused: false,
+      speedAnomalyDetected: false,
+      highSpeedCount: 0,
       // runGoal is intentionally NOT reset here — it's set before startSession
     });
   },
@@ -410,6 +425,20 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       }
     }
 
+    // --- Speed anomaly detection ---
+    let highSpeedCount = state.highSpeedCount;
+    let speedAnomalyDetected = state.speedAnomalyDetected;
+    if (!speedAnomalyDetected && distance > SPEED_ANOMALY_MIN_DISTANCE_M) {
+      if (event.speed > SPEED_ANOMALY_THRESHOLD_MS) {
+        highSpeedCount += 1;
+        if (highSpeedCount >= SPEED_ANOMALY_CONSECUTIVE) {
+          speedAnomalyDetected = true;
+        }
+      } else {
+        highSpeedCount = 0;
+      }
+    }
+
     set({
       currentLocation: event,
       distanceMeters: distance,
@@ -420,6 +449,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       filteredLocations: newFilteredLocations,
       calories: caloriesBurned,
       cadence: event.cadence ?? state.cadence,
+      distanceSource: event.distanceSource ?? 'gps',
       elevationGainMeters: event.elevationGain ?? state.elevationGainMeters,
       elevationLossMeters: event.elevationLoss ?? state.elevationLossMeters,
       startPoint,
@@ -428,6 +458,8 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       isNearStart,
       loopDetected,
       loopDetectedAt,
+      highSpeedCount,
+      speedAnomalyDetected,
       // Auto-pause timer state
       isAutoPaused,
       startTime,
@@ -531,6 +563,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       calories: 0,
       cadence: 0,
       gpsStatus: 'searching',
+      distanceSource: 'gps',
       currentLocation: null,
       routePoints: [],
       filteredLocations: [],
@@ -556,6 +589,8 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       startTime: null,
       elapsedBeforePause: 0,
       isAutoPaused: false,
+      speedAnomalyDetected: false,
+      highSpeedCount: 0,
       runGoal: { type: null, value: null, targetTime: null, cadenceBPM: null },
       gpsAccuracy: null,
       snappedRoutePoints: [],

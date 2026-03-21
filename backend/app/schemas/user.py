@@ -33,6 +33,7 @@ class ProfileSetupRequest(BaseModel):
     """Initial profile setup after first login."""
     nickname: str = Field(..., min_length=2, max_length=12)
     avatar_url: str | None = None
+    country: str | None = Field(None, max_length=50)
     activity_region: str | None = Field(None, max_length=100)
 
 

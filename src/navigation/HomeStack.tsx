@@ -23,6 +23,7 @@ import WorldScreen from '../screens/world/WorldScreen';
 import CourseListScreen from '../screens/course/CourseListScreen';
 import FollowListScreen from '../screens/profile/FollowListScreen';
 import FriendsScreen from '../screens/profile/FriendsScreen';
+import CrewMemberSettingsScreen from '../screens/crew/CrewMemberSettingsScreen';
 import { useTheme } from '../hooks/useTheme';
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -59,6 +60,7 @@ export default function HomeStack() {
       <Stack.Screen name="CourseList" component={CourseListScreen} />
       <Stack.Screen name="FollowList" component={FollowListScreen} />
       <Stack.Screen name="Friends" component={FriendsScreen} />
+      <Stack.Screen name="CrewMemberSettings" component={CrewMemberSettingsScreen} />
     </Stack.Navigator>
   );
 }

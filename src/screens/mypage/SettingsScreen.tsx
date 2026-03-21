@@ -1,21 +1,27 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Switch,
   TouchableOpacity,
   Alert,
+  Platform,
+  StatusBar,
+  Dimensions,
+  FlatList,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
 import type { MyPageStackParamList } from '../../types/navigation';
 import { useSettingsStore } from '../../stores/settingsStore';
+import type { AppLanguage } from '../../stores/settingsStore';
 import { useAuthStore } from '../../stores/authStore';
+import i18n from '../../i18n';
 import { useTheme } from '../../hooks/useTheme';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import ScreenHeader from '../../components/common/ScreenHeader';
@@ -28,6 +34,8 @@ export default function SettingsScreen() {
   const { t } = useTranslation();
   const { logout } = useAuthStore();
   const {
+    language,
+    setLanguage,
     darkMode,
     setDarkMode,
     voiceGuidance,
@@ -37,6 +45,18 @@ export default function SettingsScreen() {
     map3DStyle,
     setMap3DStyle,
   } = useSettingsStore();
+
+  const LANGUAGES: { key: AppLanguage; label: string; flag: string }[] = [
+    { key: 'ko', label: '한국어', flag: '🇰🇷' },
+    { key: 'en', label: 'English', flag: '🇺🇸' },
+    { key: 'ja', label: '日本語', flag: '🇯🇵' },
+  ];
+
+  const handleLanguageChange = (lang: AppLanguage) => {
+    setLanguage(lang);
+    i18n.changeLanguage(lang);
+  };
+
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const handleLogout = () => {
@@ -103,6 +123,34 @@ export default function SettingsScreen() {
                   thumbColor="#FFFFFF"
                 />
               </View>
+            </View>
+          </View>
+
+          {/* Language Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('settings.language')}</Text>
+            <View style={styles.card}>
+              {LANGUAGES.map((lang, idx) => (
+                <React.Fragment key={lang.key}>
+                  {idx > 0 && <View style={styles.divider} />}
+                  <TouchableOpacity
+                    style={styles.langOptionRow}
+                    onPress={() => handleLanguageChange(lang.key)}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={styles.langOptionFlag}>{lang.flag}</Text>
+                    <Text style={[
+                      styles.langOptionLabel,
+                      language === lang.key && { color: colors.primary, fontWeight: '700' as const },
+                    ]}>
+                      {lang.label}
+                    </Text>
+                    {language === lang.key && (
+                      <Ionicons name="checkmark" size={20} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                </React.Fragment>
+              ))}
             </View>
           </View>
 
@@ -364,6 +412,24 @@ const createStyles = (c: ThemeColors) =>
     toggleDescription: {
       fontSize: FONT_SIZES.sm,
       color: c.textTertiary,
+    },
+
+    // Language
+    langOptionRow: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      paddingVertical: SPACING.lg,
+      paddingHorizontal: SPACING.xl,
+      gap: SPACING.md,
+    },
+    langOptionFlag: {
+      fontSize: 22,
+    },
+    langOptionLabel: {
+      flex: 1,
+      fontSize: FONT_SIZES.md,
+      fontWeight: '500' as const,
+      color: c.text,
     },
 
     // Divider

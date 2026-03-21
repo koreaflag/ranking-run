@@ -17,6 +17,7 @@ from app.schemas.course import (
     CourseListItem,
     CourseListResponse,
     CourseMarker,
+    CourseRouteCorrectRequest,
     CourseStatsInfo,
     CourseStatsResponse,
     CourseUpdateRequest,
@@ -237,6 +238,33 @@ async def update_course(
     update_data = body.model_dump(exclude_unset=True)
     course = await course_service.update_course(db=db, course_id=course_id, user_id=current_user.id, update_data=update_data)
     return {"id": str(course.id), "title": course.title, "updated": True}
+
+
+@router.patch("/{course_id}/route", status_code=status.HTTP_200_OK)
+@inject
+async def correct_course_route(
+    course_id: UUID,
+    body: CourseRouteCorrectRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+    course_service: CourseService = Depends(Provide[Container.course_service]),
+) -> dict:
+    """Correct a course route (owner only). Each point must be within 50m of original."""
+    try:
+        course = await course_service.correct_route(
+            db=db,
+            course_id=course_id,
+            user_id=current_user.id,
+            new_coordinates=body.route_geometry.coordinates,
+        )
+        return {
+            "id": str(course.id),
+            "distance_meters": course.distance_meters,
+            "corrected": True,
+        }
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)

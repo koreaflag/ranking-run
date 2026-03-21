@@ -193,6 +193,8 @@ async def setup_profile(
     current_user.nickname = body.nickname
     if body.avatar_url is not None:
         current_user.avatar_url = body.avatar_url
+    if body.country is not None:
+        current_user.country = body.country
     if body.activity_region is not None:
         current_user.activity_region = body.activity_region
     await db.flush()
@@ -417,8 +419,11 @@ async def get_my_runs(
             RunRecord,
             RunSession.device_info,
             ST_AsGeoJSON(RunRecord.route_geometry).label("route_geojson"),
+            ST_AsGeoJSON(RunRecord.raw_route_geometry).label("raw_route_geojson"),
+            ST_AsGeoJSON(Course.route_geometry).label("course_route_geojson"),
         )
         .outerjoin(RunSession, RunRecord.session_id == RunSession.id)
+        .outerjoin(Course, RunRecord.course_id == Course.id)
         .where(RunRecord.user_id == current_user.id)
         .order_by(order_column)
         .offset(page * actual_limit)
@@ -427,7 +432,7 @@ async def get_my_runs(
     rows = result.all()
 
     data = []
-    for record, device_info, route_geojson in rows:
+    for record, device_info, route_geojson, raw_route_geojson, course_route_geojson in rows:
         course_info = None
         if record.course is not None:
             course_info = RunCourseInfo(
@@ -439,10 +444,30 @@ async def get_my_runs(
             device_model = device_info.get("device_model")
 
         # Build simplified route preview (every Nth point, max ~30 points)
+        # For course runs: prefer the course's clean route line (corrected/clean)
+        # For free runs: use run's route_geometry, fallback to raw_route_geometry
         route_preview = None
-        if route_geojson:
+
+        # Determine which geometry to use for preview
+        if course_route_geojson and record.course_id is not None:
+            # Course run → use the course's clean route (same as course tab)
+            best_geojson = course_route_geojson
+        else:
+            best_geojson = route_geojson
+            if best_geojson:
+                try:
+                    geo = json.loads(best_geojson)
+                    coords = geo.get("coordinates", [])
+                    if len(coords) < 5 and raw_route_geojson:
+                        best_geojson = raw_route_geojson
+                except (json.JSONDecodeError, KeyError):
+                    best_geojson = raw_route_geojson
+            elif raw_route_geojson:
+                best_geojson = raw_route_geojson
+
+        if best_geojson:
             try:
-                geo = json.loads(route_geojson)
+                geo = json.loads(best_geojson)
                 coords = geo.get("coordinates", [])
                 if len(coords) >= 2:
                     step = max(1, len(coords) // 30)
