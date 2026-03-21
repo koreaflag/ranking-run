@@ -230,7 +230,7 @@ class LocationEngine(
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval)
             .setMinUpdateIntervalMillis(fastest)
             .setMinUpdateDistanceMeters(0f)
-            .setWaitForAccurateLocation(true)
+            .setWaitForAccurateLocation(false)
             .build()
 
         try {
@@ -255,7 +255,7 @@ class LocationEngine(
         )
             .setMinUpdateIntervalMillis(BatteryOptimizer.FASTEST_INTERVAL_MOVING_MS)
             .setMinUpdateDistanceMeters(0f)
-            .setWaitForAccurateLocation(true)
+            .setWaitForAccurateLocation(false)
             .build()
 
         locationCallback = object : LocationCallback() {

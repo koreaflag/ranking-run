@@ -9,9 +9,10 @@ import {
   Dimensions,
   Platform,
   StatusBar,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, CommonActions, useIsFocused } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '../../lib/icons';
 import { useTheme } from '../../hooks/useTheme';
@@ -32,10 +33,81 @@ import {
 } from '../../utils/format';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
+import { MAPBOX_ACCESS_TOKEN } from '../../config/env';
 
 type DetailRoute = RouteProp<MyPageStackParamList, 'RunDetail'>;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// ---- Static map helpers (Mapbox Static Images API) ----
+
+/** Downsample points array to at most maxPts, keeping first and last. */
+function downsample(pts: number[][], maxPts: number): number[][] {
+  if (pts.length <= maxPts) return pts;
+  const step = (pts.length - 1) / (maxPts - 1);
+  const result: number[][] = [];
+  for (let i = 0; i < maxPts - 1; i++) {
+    result.push(pts[Math.round(i * step)]);
+  }
+  result.push(pts[pts.length - 1]);
+  return result;
+}
+
+function buildDetailStaticMapUrl(
+  coordinates: number[][],
+  styleId: string,
+  pixelW: number,
+  pixelH: number,
+): string | null {
+  if (!MAPBOX_ACCESS_TOKEN || coordinates.length < 2) return null;
+
+  // Downsample to keep URL under limits; 120 points gives good detail for large maps
+  let pts = downsample(coordinates, 120);
+  const geojson = JSON.stringify({
+    type: 'Feature',
+    properties: {
+      stroke: '#FFC800',
+      'stroke-width': 4,
+      'stroke-opacity': 1,
+    },
+    geometry: {
+      type: 'LineString',
+      coordinates: pts.map(([lng, lat]) => [
+        parseFloat(lng.toFixed(5)),
+        parseFloat(lat.toFixed(5)),
+      ]),
+    },
+  });
+
+  let encoded = encodeURIComponent(geojson);
+  let url =
+    `https://api.mapbox.com/styles/v1/${styleId}/static/` +
+    `geojson(${encoded})/auto/${pixelW}x${pixelH}@2x` +
+    `?padding=30&access_token=${MAPBOX_ACCESS_TOKEN}`;
+
+  // If URL too long, reduce points
+  if (url.length > 8000) {
+    pts = downsample(coordinates, 60);
+    const geojson2 = JSON.stringify({
+      type: 'Feature',
+      properties: { stroke: '#FFC800', 'stroke-width': 4, 'stroke-opacity': 1 },
+      geometry: {
+        type: 'LineString',
+        coordinates: pts.map(([lng, lat]) => [
+          parseFloat(lng.toFixed(4)),
+          parseFloat(lat.toFixed(4)),
+        ]),
+      },
+    });
+    encoded = encodeURIComponent(geojson2);
+    url =
+      `https://api.mapbox.com/styles/v1/${styleId}/static/` +
+      `geojson(${encoded})/auto/${pixelW}x${pixelH}@2x` +
+      `?padding=30&access_token=${MAPBOX_ACCESS_TOKEN}`;
+  }
+
+  return url;
+}
 
 function getTimeLabel(iso: string): string {
   const d = new Date(iso);
@@ -54,10 +126,12 @@ export default function RunDetailScreen() {
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const mapRef = useRef<RouteMapViewHandle>(null);
+  const isFocused = useIsFocused();
 
   const [detail, setDetail] = useState<RunRecordDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -115,6 +189,31 @@ export default function RunDetailScreen() {
     }
     return markers;
   }, [routePoints, detail]);
+
+  // Build static map URL for lightweight preview (avoids heavy MapView)
+  const staticMapUrl = useMemo(() => {
+    if (!detail?.route_geometry?.coordinates || detail.route_geometry.coordinates.length < 2) {
+      return null;
+    }
+    const isDark = colors.statusBar === 'light-content';
+    const styleId = isDark
+      ? 'runsvs/cmlt12hqy001d01r49zt66z85'
+      : 'runsvs/cmlt0wpwv001e01sq8mg39xas';
+
+    const mapW = Math.round(SCREEN_WIDTH - SPACING.xxl * 2);
+    const pixelW = Math.min(mapW, 640);
+    const pixelH = Math.min(mapW, 640);
+
+    return buildDetailStaticMapUrl(
+      detail.route_geometry.coordinates,
+      styleId,
+      pixelW,
+      pixelH,
+    );
+  }, [detail, colors]);
+
+  // Unmount the interactive map when navigating away to free GPU memory
+  const showInteractiveMap = mapExpanded && isFocused;
 
   const headerLabel = useMemo(() => {
     if (!detail) return '';
@@ -261,16 +360,44 @@ export default function RunDetailScreen() {
             </View>
           )}
 
-          {/* Route Map */}
+          {/* Route Map — static image by default, interactive on tap */}
           {routePoints.length >= 2 && (
             <View style={styles.mapContainer}>
-              <RouteMapView
-                ref={mapRef}
-                routePoints={routePoints}
-                splitMarkers={splitMapMarkers.length > 0 ? splitMapMarkers : undefined}
-                interactive={false}
-                style={styles.mapPreview}
-              />
+              {showInteractiveMap ? (
+                <RouteMapView
+                  ref={mapRef}
+                  routePoints={routePoints}
+                  splitMarkers={splitMapMarkers.length > 0 ? splitMapMarkers : undefined}
+                  interactive={false}
+                  style={styles.mapPreview}
+                />
+              ) : staticMapUrl ? (
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => setMapExpanded(true)}
+                >
+                  <Image
+                    source={{ uri: staticMapUrl }}
+                    style={styles.mapPreview}
+                    resizeMode="cover"
+                  />
+                  <View style={styles.mapExpandHint}>
+                    <Ionicons name="expand-outline" size={16} color="#FFFFFF" />
+                    <Text style={styles.mapExpandText}>{t('common.tapToExpand')}</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => setMapExpanded(true)}
+                  style={styles.mapPreview}
+                >
+                  <View style={styles.mapPlaceholder}>
+                    <Ionicons name="map-outline" size={32} color={colors.textTertiary} />
+                    <Text style={styles.mapPlaceholderText}>{t('common.tapToExpand')}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
@@ -591,6 +718,36 @@ const createStyles = (c: ThemeColors) =>
     mapPreview: {
       height: SCREEN_WIDTH - SPACING.xxl * 2,
       width: '100%',
+      backgroundColor: '#1C1C1E',
+    },
+    mapExpandHint: {
+      position: 'absolute',
+      bottom: SPACING.sm,
+      right: SPACING.sm,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: 4,
+      borderRadius: BORDER_RADIUS.sm,
+    },
+    mapExpandText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '600',
+      color: '#FFFFFF',
+    },
+    mapPlaceholder: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: SPACING.sm,
+      backgroundColor: c.surface,
+    },
+    mapPlaceholderText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '500',
+      color: c.textTertiary,
     },
 
     // Route Correction

@@ -514,6 +514,23 @@ class StandaloneRunManager {
         // Keep isStandaloneMode = true until user taps "확인" in CompletedView
         standaloneStartTime = nil
         standalonePausedDuration = 0
+        standalonePauseStart = nil
+    }
+
+    /// Reset all internal state for a clean slate. Called when transitioning to idle
+    /// to prevent any stale data from the previous run bleeding into the next one.
+    func resetForNewRun() {
+        standaloneStartTime = nil
+        standalonePausedDuration = 0
+        standalonePauseStart = nil
+        standaloneIsIndoor = false
+        isAutoPaused = false
+        lastMilestoneKm = 0
+        splitStartTime = nil
+        splitStartDuration = 0
+        splits = []
+        lastPhoneStatusUpdate = .distantPast
+        print("[StandaloneRunManager] resetForNewRun: internal state cleared")
     }
 
     // MARK: - Standalone Duration Timer

@@ -46,7 +46,7 @@ import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import RunnerLevelBadge from '../../components/runner/RunnerLevelBadge';
 import MyPageSkeleton from '../../components/skeleton/MyPageSkeleton';
-import { getRunnerTier, getRunnerXpProgress } from '../../utils/runnerLevelConfig';
+import { calcRunnerLevel, getRunnerTier, getRunnerXpProgress } from '../../utils/runnerLevelConfig';
 import { getCache, setCache } from '../../utils/apiCache';
 
 // Period option values (labels resolved via t() inside component)
@@ -86,10 +86,12 @@ export default function MyPageScreen() {
   const [isSavingGoal, setIsSavingGoal] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(_cachedStats === null);
 
-  // Runner level info
-  const runnerLv = user?.runner_level ?? 1;
+  // Runner level info — compute from actual distance so the gauge stays accurate
+  // even when the server-stored runner_level is stale / not yet synced.
+  const totalDist = stats?.total_distance_meters ?? 0;
+  const runnerLv = totalDist > 0 ? calcRunnerLevel(totalDist) : (user?.runner_level ?? 1);
   const runnerTier = getRunnerTier(runnerLv);
-  const runnerXp = getRunnerXpProgress(runnerLv, stats?.total_distance_meters ?? 0);
+  const runnerXp = getRunnerXpProgress(runnerLv, totalDist);
 
   // Animated XP bar
   const xpAnim = useRef(new Animated.Value(0)).current;
@@ -366,7 +368,7 @@ export default function MyPageScreen() {
           <View style={styles.playerCardMeta}>
             <View style={styles.nameRow}>
               <Text style={styles.playerCardName} numberOfLines={1}>{user?.nickname ?? t('mypage.defaultNickname')}</Text>
-              <RunnerLevelBadge level={user?.runner_level} size="sm" />
+              <RunnerLevelBadge level={runnerLv} size="sm" />
             </View>
             {user?.crew_name ? (
               <View style={styles.crewTag}>

@@ -391,6 +391,27 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         }
     }
 
+    /// Send result dismissed notification to Watch.
+    /// Called when the user closes the run result screen on the phone.
+    /// The watch should also dismiss its CompletedView and return to idle.
+    func sendResultDismissedToWatch() {
+        guard session.activationState == .activated, session.isPaired else { return }
+        NSLog("[WatchSessionMgr] Sending resultDismissed to watch")
+
+        let message: [String: Any] = [
+            "type": "resultDismissed",
+            "timestamp": Date().timeIntervalSince1970 * 1000
+        ]
+
+        // sendMessage for immediate delivery when reachable
+        if session.isReachable {
+            session.sendMessage(message, replyHandler: nil, errorHandler: nil)
+        }
+
+        // Also send via transferUserInfo for guaranteed delivery
+        session.transferUserInfo(message)
+    }
+
     /// Send km milestone to Watch
     func sendMilestone(km: Int, splitPace: Int, totalTime: Int) {
         guard session.activationState == .activated, session.isPaired else { return }

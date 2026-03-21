@@ -25,7 +25,8 @@
     "permissionPhoto": "사진에 접근하려면 권한을 허용해 주세요.",
     "social": "소셜",
     "preparing": "준비중입니다",
-    "endOfList": "모든 항목을 확인했습니다"
+    "endOfList": "모든 항목을 확인했습니다",
+    "tapToExpand": "탭하여 지도 열기"
   },
   "tabs": {
     "home": "홈",

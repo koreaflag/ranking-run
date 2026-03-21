@@ -224,6 +224,15 @@ class RunSessionViewModel: ObservableObject {
             }
         }
 
+        service.onResultDismissed = { [weak self] in
+            guard let self = self else { return }
+            // Phone dismissed the result screen — dismiss watch result too
+            if self.state.phase == "completed" {
+                print("[RunSessionVM] Phone dismissed result → resetting watch to idle")
+                self.resetToIdle()
+            }
+        }
+
         service.onReachabilityChange = { [weak self] reachable in
             self?.isPhoneReachable = reachable
             if reachable {
@@ -325,7 +334,8 @@ class RunSessionViewModel: ObservableObject {
             state.programRequiredPace = 0
             state.programStatus = ""
             state.metronomeBPM = 0
-            // Reset companion manager internal state (haptic tracking, session tracking)
+            // Reset all manager internal state (haptic tracking, session tracking, standalone splits)
+            standaloneManager.resetForNewRun()
             companionManager.resetForNewRun()
             // Clean up previous run's mirroring session (e.g., completed → countdown
             // without going through idle — user starts new run while result screen is showing)
@@ -404,12 +414,14 @@ class RunSessionViewModel: ObservableObject {
             // Force-stop any running standalone tracking
             WatchLocationManager.shared.stopTracking()
             WatchPedometerManager.shared.stopTracking()
-            // IMPORTANT: cleanup and reset companion BEFORE state reset.
+            // IMPORTANT: cleanup and reset ALL managers BEFORE state reset.
             // This blocks stale callbacks from the old session writing data
             // into the reset state. Order matters:
-            // 1. Reset companion (clears session ID → rejects stale location updates)
-            // 2. Cleanup mirroring (nils delegate → blocks stale phase callbacks)
-            // 3. Reset state (fresh WatchRunState)
+            // 1. Reset standalone (clears start time, splits, callbacks → rejects stale updates)
+            // 2. Reset companion (clears session ID → rejects stale location updates)
+            // 3. Cleanup mirroring (nils delegate → blocks stale phase callbacks)
+            // 4. Reset state (fresh WatchRunState)
+            standaloneManager.resetForNewRun()
             companionManager.resetForNewRun()
             if #available(watchOS 10, *) {
                 let mgr = WorkoutMirroringManager.shared

@@ -99,6 +99,6 @@ export function getRunnerXpProgress(level: number, totalDistanceMeters: number) 
   const nextThreshold = RUNNER_LEVEL_THRESHOLDS[lv] ?? currentThreshold;
   const range = nextThreshold - currentThreshold;
   const progress = totalDistanceMeters - currentThreshold;
-  const ratio = range > 0 ? Math.min(progress / range, 1) : 0;
+  const ratio = range > 0 ? Math.max(0, Math.min(progress / range, 1)) : 0;
   return { current: totalDistanceMeters, next: nextThreshold, ratio, isMax: false };
 }

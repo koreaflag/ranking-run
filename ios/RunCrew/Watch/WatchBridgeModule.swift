@@ -120,6 +120,13 @@ class WatchBridgeModule: RCTEventEmitter {
     }
 
     @objc
+    func sendResultDismissed(_ resolve: @escaping RCTPromiseResolveBlock,
+                             rejecter reject: @escaping RCTPromiseRejectBlock) {
+        WatchSessionManager.shared.sendResultDismissedToWatch()
+        resolve(nil)
+    }
+
+    @objc
     func getWatchStatus(_ resolve: @escaping RCTPromiseResolveBlock,
                         rejecter reject: @escaping RCTPromiseRejectBlock) {
         resolve([

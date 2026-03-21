@@ -10,6 +10,7 @@ import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.runcrew.gps.model.FilteredLocation
 import com.runcrew.gps.model.RunSession
+import com.runcrew.gps.sensor.HeadingTracker
 
 /**
  * React Native native module exposing GPS tracking functionality to JavaScript.
@@ -45,6 +46,7 @@ class GPSTrackerModule(
         private const val EVENT_RUNNING_STATE_CHANGE = "GPSTracker_onRunningStateChange"
 
         private const val EVENT_MILESTONE_REACHED = "GPSTracker_onMilestoneReached"
+        private const val EVENT_HEADING_UPDATE = "GPSTracker_onHeadingUpdate"
 
         // Error codes matching shared-interfaces.md
         private const val ERROR_PERMISSION_DENIED = "PERMISSION_DENIED"
@@ -55,6 +57,7 @@ class GPSTrackerModule(
     }
 
     private var locationEngine: LocationEngine? = null
+    private var headingTracker: HeadingTracker? = null
     private var listenerCount = 0
     private var notificationUpdateCounter = 0
     private val trackingLock = Any()
@@ -81,6 +84,8 @@ class GPSTrackerModule(
     override fun canOverrideExistingModule(): Boolean = false
 
     override fun onCatalystInstanceDestroy() {
+        headingTracker?.stop()
+        headingTracker = null
         locationEngine?.stop()
         locationEngine = null
         super.onCatalystInstanceDestroy()
@@ -329,6 +334,51 @@ class GPSTrackerModule(
         } catch (e: Exception) {
             Log.e(TAG, "Error getting current status", e)
             promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to get status: ${e.message}", e)
+        }
+    }
+
+    // --- Heading tracking (magnetometer/rotation vector) ---
+
+    @ReactMethod
+    fun startHeadingUpdates(promise: Promise) {
+        try {
+            if (headingTracker != null) {
+                promise.resolve(null)
+                return
+            }
+
+            val sensorManager = reactApplicationContext.getSystemService(
+                android.content.Context.SENSOR_SERVICE
+            ) as android.hardware.SensorManager
+
+            val tracker = HeadingTracker(sensorManager)
+            tracker.setListener(object : HeadingTracker.Listener {
+                override fun onHeadingUpdate(heading: Double) {
+                    if (listenerCount <= 0) return
+                    val params = Arguments.createMap().apply {
+                        putDouble("heading", heading)
+                    }
+                    sendEvent(EVENT_HEADING_UPDATE, params)
+                }
+            })
+            tracker.start()
+            headingTracker = tracker
+            promise.resolve(null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting heading updates", e)
+            promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to start heading: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
+    fun stopHeadingUpdates(promise: Promise) {
+        try {
+            headingTracker?.stop()
+            headingTracker = null
+            promise.resolve(null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping heading updates", e)
+            promise.reject(ERROR_SERVICE_UNAVAILABLE, "Failed to stop heading: ${e.message}", e)
         }
     }
 

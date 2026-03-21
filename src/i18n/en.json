@@ -25,7 +25,8 @@
     "permissionPhoto": "Please allow access to your photos.",
     "social": "Social",
     "preparing": "Coming Soon",
-    "endOfList": "You've seen everything"
+    "endOfList": "You've seen everything",
+    "tapToExpand": "Tap to view map"
   },
   "tabs": {
     "home": "Home",

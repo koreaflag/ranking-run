@@ -412,7 +412,8 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         zoomLevel,
         heading: headingToUse,
         pitch: followPitchProp ?? 0,
-        animationDuration: 150,
+        // 800ms easeTo bridges 1Hz GPS updates smoothly (vs 150ms which looked choppy)
+        animationDuration: Platform.OS === 'android' ? 800 : 500,
         animationMode: 'easeTo',
       };
       // Apply padding so the camera centers the user in the visible area.

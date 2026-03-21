@@ -12,6 +12,7 @@ class WatchSessionService: NSObject, WCSessionDelegate {
     var onMilestone: (([String: Any]) -> Void)?
     var onReachabilityChange: ((Bool) -> Void)?
     var onWeeklyGoalUpdate: ((Double) -> Void)?
+    var onResultDismissed: (() -> Void)?
 
     private let healthStore = HKHealthStore()
     private var isHealthKitAuthorized = false
@@ -454,6 +455,8 @@ class WatchSessionService: NSObject, WCSessionDelegate {
                 self?.onStateUpdate?(message)
             case WatchMessageType.milestone.rawValue:
                 self?.onMilestone?(message)
+            case "resultDismissed":
+                self?.onResultDismissed?()
             default:
                 break
             }

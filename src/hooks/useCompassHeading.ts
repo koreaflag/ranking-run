@@ -1,5 +1,8 @@
 /**
- * Compass heading hook — GPS bearing priority with native iOS heading fallback.
+ * Compass heading hook — GPS bearing priority with native heading fallback.
+ *
+ * iOS: CLHeading.trueHeading (calibrated magnetometer)
+ * Android: Rotation vector sensor (magnetometer + gyro fusion)
  *
  * Returns a plain number (degrees 0-360) that updates via useState.
  * No Animated.Value — Mapbox.MarkerView does not support Animated transforms.
@@ -59,14 +62,16 @@ export function useCompassHeading(
     }
   }, [gpsBearing]);
 
-  // ---- Native iOS heading (calibrated CLHeading.trueHeading) ----
+  // ---- Native heading (iOS: CLHeading, Android: rotation vector sensor) ----
   useEffect(() => {
-    if (Platform.OS !== 'ios' || !GPSTrackerModule) return;
+    if (!GPSTrackerModule) return;
 
     let subscription: { remove: () => void } | null = null;
 
     try {
-      const emitter = new NativeEventEmitter(GPSTrackerModule);
+      const emitter = new NativeEventEmitter(
+        Platform.OS === 'ios' ? GPSTrackerModule : undefined,
+      );
 
       // Register listener FIRST so hasListeners=true before events fire
       subscription = emitter.addListener(

@@ -46,10 +46,10 @@ export default function SettingsScreen() {
     setMap3DStyle,
   } = useSettingsStore();
 
-  const LANGUAGES: { key: AppLanguage; label: string; flag: string }[] = [
-    { key: 'ko', label: '한국어', flag: '🇰🇷' },
-    { key: 'en', label: 'English', flag: '🇺🇸' },
-    { key: 'ja', label: '日本語', flag: '🇯🇵' },
+  const LANGUAGES: { key: AppLanguage; label: string }[] = [
+    { key: 'ko', label: '한국어' },
+    { key: 'en', label: 'English' },
+    { key: 'ja', label: '日本語' },
   ];
 
   const handleLanguageChange = (lang: AppLanguage) => {
@@ -138,7 +138,6 @@ export default function SettingsScreen() {
                     onPress={() => handleLanguageChange(lang.key)}
                     activeOpacity={0.6}
                   >
-                    <Text style={styles.langOptionFlag}>{lang.flag}</Text>
                     <Text style={[
                       styles.langOptionLabel,
                       language === lang.key && { color: colors.primary, fontWeight: '700' as const },
@@ -421,9 +420,6 @@ const createStyles = (c: ThemeColors) =>
       paddingVertical: SPACING.lg,
       paddingHorizontal: SPACING.xl,
       gap: SPACING.md,
-    },
-    langOptionFlag: {
-      fontSize: 22,
     },
     langOptionLabel: {
       flex: 1,

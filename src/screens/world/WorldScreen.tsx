@@ -598,6 +598,12 @@ export default function WorldScreen() {
     setCourseCheckpoints(null);
     resetTracker();
     setPanelHeight(0);
+    // Notify watch to dismiss result screen
+    if (Platform.OS === 'ios' && NativeModules.WatchBridgeModule) {
+      NativeModules.WatchBridgeModule.sendResultDismissed().catch((err: any) => {
+        console.warn('[WorldScreen] 워치 결과 닫기 전송 실패:', err);
+      });
+    }
     // Clear navigate-to-start state
     setNavigatingToStart(false);
     setStartCheckpoint(null);
@@ -677,6 +683,17 @@ export default function WorldScreen() {
       setMyLocation({ latitude: currentLocation.latitude, longitude: currentLocation.longitude });
     }
   }, [currentLocation, isInRun]);
+
+  // Re-enable follow when auto-pause ends (moving again)
+  // This ensures the map resumes tracking after auto-pause, even if follow
+  // was somehow disengaged during the pause period.
+  const prevAutoPausedRef = useRef(isAutoPaused);
+  useEffect(() => {
+    if (prevAutoPausedRef.current && !isAutoPaused && phase === 'running') {
+      setFollowUser(true);
+    }
+    prevAutoPausedRef.current = isAutoPaused;
+  }, [isAutoPaused, phase]);
 
   // Use GPS course heading when moving during running
   const isMoving = isInRun && (currentLocation?.speed ?? 0) > 0.5;

@@ -25,7 +25,8 @@
     "permissionPhoto": "写真へのアクセスを許可してください。",
     "social": "ソーシャル",
     "preparing": "準備中です",
-    "endOfList": "すべて確認しました"
+    "endOfList": "すべて確認しました",
+    "tapToExpand": "タップして地図を表示"
   },
   "tabs": {
     "home": "ホーム",
