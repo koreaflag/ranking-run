@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Platform, StatusBar } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTranslation } from 'react-i18next';
@@ -10,14 +10,14 @@ import BlurredBackground from '../../components/common/BlurredBackground';
 import ScreenHeader from '../../components/common/ScreenHeader';
 import { getLegalHtml } from '../../utils/legalHtml';
 
-export default function TermsOfServiceScreen() {
+export default function LocationConsentScreen() {
   const navigation = useNavigation();
   const { i18n, t } = useTranslation();
   const colors = useTheme();
   const darkMode = useSettingsStore((s) => s.darkMode);
 
   const html = useMemo(
-    () => getLegalHtml('terms', i18n.language, darkMode),
+    () => getLegalHtml('locationConsent', i18n.language, darkMode),
     [i18n.language, darkMode],
   );
 
@@ -25,7 +25,7 @@ export default function TermsOfServiceScreen() {
     <BlurredBackground>
       <SafeAreaView style={styles.container}>
         <ScreenHeader
-          title={t('auth.consent.terms')}
+          title={t('auth.consent.location')}
           onBack={() => navigation.goBack()}
         />
         <WebView

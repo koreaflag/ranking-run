@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '../../lib/icons';
 import { useTheme } from '../../hooks/useTheme';
 import { FONT_SIZES, SPACING } from '../../utils/constants';
@@ -16,7 +17,9 @@ const BANNER_HEIGHT = 30;
  */
 export default function OfflineBanner({ isOnline }: OfflineBannerProps) {
   const colors = useTheme();
-  const translateY = useRef(new Animated.Value(-BANNER_HEIGHT)).current;
+  const insets = useSafeAreaInsets();
+  const topOffset = insets.top + 4;
+  const translateY = useRef(new Animated.Value(-(BANNER_HEIGHT + topOffset + 10))).current;
   const isVisible = useRef(false);
 
   useEffect(() => {
@@ -24,14 +27,14 @@ export default function OfflineBanner({ isOnline }: OfflineBannerProps) {
       // Slide in
       isVisible.current = true;
       Animated.timing(translateY, {
-        toValue: 0,
+        toValue: topOffset,
         duration: 300,
         useNativeDriver: true,
       }).start();
     } else if (isOnline && isVisible.current) {
       // Slide out
       Animated.timing(translateY, {
-        toValue: -BANNER_HEIGHT,
+        toValue: -(BANNER_HEIGHT + topOffset + 10),
         duration: 250,
         useNativeDriver: true,
       }).start(() => {
@@ -69,9 +72,10 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     top: 0,
-    left: 0,
-    right: 0,
+    left: 16,
+    right: 16,
     height: BANNER_HEIGHT,
+    borderRadius: 8,
     zIndex: 9999,
     justifyContent: 'center',
     alignItems: 'center',

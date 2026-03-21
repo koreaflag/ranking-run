@@ -178,4 +178,8 @@ export const userService = {
   async updateWeeklyGoal(goalKm: number): Promise<{ weekly_goal_km: number }> {
     return api.patch<{ weekly_goal_km: number }>('/users/me/weekly-goal', { goal_km: goalKm });
   },
+
+  async deleteAccount(): Promise<void> {
+    await api.delete('/users/me/account');
+  },
 };

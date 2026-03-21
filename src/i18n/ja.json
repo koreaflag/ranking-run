@@ -83,6 +83,17 @@
     "errors": {
       "loginFailed": "ログインに失敗しました。",
       "profileSetupFailed": "プロフィール設定に失敗しました。"
+    },
+    "ban": {
+      "title": "アカウント利用制限",
+      "message": "以下の理由によりサービスの利用が制限されています。",
+      "reason": "制限理由",
+      "appealTitle": "異議申し立て",
+      "appealPlaceholder": "ご意見をご記入ください（最大2,000文字）",
+      "appealSubmit": "意見を送信",
+      "appealSuccess": "ご意見が送信されました。確認後ご案内いたします。",
+      "appealFailed": "送信に失敗しました。もう一度お試しください。",
+      "close": "確認"
     }
   },
   "running": {
@@ -234,7 +245,22 @@
     "startCompetition": "競争スタート",
     "arrivedAtStart": "スタート地点に到着！",
     "goToStart": "スタートへ移動",
-    "distanceToStart": "スタートまで{{distance}}km（5km以内でチャレンジ可能）"
+    "distanceToStart": "スタートまで{{distance}}km（5km以内でチャレンジ可能）",
+    "welcome": {
+      "greetingMorning": "おはようございます",
+      "greetingAfternoon": "こんにちは",
+      "greetingEvening": "こんばんは",
+      "greetingNight": "夜のランニング",
+      "subtitle": "今日も一歩先へ進みましょう！",
+      "letsRun": "ランニング準備",
+      "runner": "ランナー",
+      "settings": "設定",
+      "goal": "目標",
+      "noGoal": "フリーラン",
+      "readyToGo": "準備完了",
+      "tour": "コースを見る",
+      "tourBack": "ランニング準備"
+    }
   },
   "course": {
     "title": "コース",
@@ -533,6 +559,7 @@
     "deleteAccount": "アカウント削除",
     "deleteAccountMsg": "退会するとすべてのランニング記録、コース、プロフィール情報が\n永久に削除され、復元できません。",
     "withdraw": "削除",
+    "deleteAccountFailed": "アカウント削除に失敗しました。しばらくしてからもう一度お試しください。",
     "language": "言語",
     "languageDesc": "アプリの表示言語を変更します",
     "langKo": "한국어",

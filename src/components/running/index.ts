@@ -7,3 +7,4 @@ export type { RunGoal } from './RunGoalSheet';
 export { default as RunningHUD } from './RunningHUD';
 export { default as RunSettingsSheet } from './RunSettingsSheet';
 export { default as SplitHistoryPanel } from './SplitHistoryPanel';
+export { default as WelcomeOverlay } from './WelcomeOverlay';

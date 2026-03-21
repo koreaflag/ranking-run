@@ -70,7 +70,8 @@ export default function TabNavigator() {
       initialRouteName="WorldTab"
       screenOptions={{
         headerShown: false,
-        lazy: true,
+        lazy: false,
+        freezeOnBlur: true,
         tabBarStyle: [
           styles.tabBar,
           {
@@ -229,13 +230,14 @@ const styles = StyleSheet.create({
   tabIconContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    maxWidth: 64,
+    gap: 3,
+    width: 60,
   },
   tabLabel: {
-    fontSize: FONT_SIZES.xs,
+    fontSize: 10,
     fontWeight: '600',
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
+    textAlign: 'center',
   },
 
 });

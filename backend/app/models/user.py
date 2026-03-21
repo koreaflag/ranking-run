@@ -59,6 +59,11 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     runner_level: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     weekly_goal_km: Mapped[float] = mapped_column(Float, default=20.0, server_default="20.0", nullable=False)
 
+    # Ban
+    is_banned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    banned_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    banned_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Relationships
     social_accounts: Mapped[list["SocialAccount"]] = relationship(
         back_populates="user",

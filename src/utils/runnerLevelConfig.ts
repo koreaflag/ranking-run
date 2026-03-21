@@ -39,36 +39,39 @@ export type RunnerTierConfig = {
   descKey: string;       // i18n key for description
   animal: string;        // animal icon identifier
   color: string;         // primary accent color
-  bgColor: string;       // badge background
-  borderColor: string;   // badge border
-  textColor: string;     // badge text
+  bgColor: string;       // badge background (dark)
+  borderColor: string;   // badge border (dark)
+  textColor: string;     // badge text (dark)
+  bgColorLight: string;  // badge background (light)
+  borderColorLight: string; // badge border (light)
+  textColorLight: string;   // badge text (light)
 };
 
 export const RUNNER_TIERS: RunnerTierConfig[] = [
   // Tier 1: Lv.1-8
-  { nameKey: 'runnerLevel.tier1.name', descKey: 'runnerLevel.tier1.desc', animal: 'turtle', color: '#E8985A', bgColor: '#3A2510', borderColor: '#E8985A', textColor: '#F0B888' },
+  { nameKey: 'runnerLevel.tier1.name', descKey: 'runnerLevel.tier1.desc', animal: 'turtle', color: '#E8985A', bgColor: '#3A2510', borderColor: '#E8985A', textColor: '#F0B888', bgColorLight: '#FFF0E3', borderColorLight: '#E8985A50', textColorLight: '#A0612A' },
   // Tier 2: Lv.9-16
-  { nameKey: 'runnerLevel.tier2.name', descKey: 'runnerLevel.tier2.desc', animal: 'squirrel', color: '#4CAF50', bgColor: '#1B3A1B', borderColor: '#4CAF50', textColor: '#81C784' },
+  { nameKey: 'runnerLevel.tier2.name', descKey: 'runnerLevel.tier2.desc', animal: 'squirrel', color: '#4CAF50', bgColor: '#1B3A1B', borderColor: '#4CAF50', textColor: '#81C784', bgColorLight: '#E8F5E9', borderColorLight: '#4CAF5050', textColorLight: '#2E7D32' },
   // Tier 3: Lv.17-24
-  { nameKey: 'runnerLevel.tier3.name', descKey: 'runnerLevel.tier3.desc', animal: 'rabbit', color: '#03A9F4', bgColor: '#0D2B3E', borderColor: '#03A9F4', textColor: '#4FC3F7' },
+  { nameKey: 'runnerLevel.tier3.name', descKey: 'runnerLevel.tier3.desc', animal: 'rabbit', color: '#03A9F4', bgColor: '#0D2B3E', borderColor: '#03A9F4', textColor: '#4FC3F7', bgColorLight: '#E1F5FE', borderColorLight: '#03A9F450', textColorLight: '#0277BD' },
   // Tier 4: Lv.25-32
-  { nameKey: 'runnerLevel.tier4.name', descKey: 'runnerLevel.tier4.desc', animal: 'horse', color: '#1565C0', bgColor: '#0A1F3A', borderColor: '#1565C0', textColor: '#42A5F5' },
+  { nameKey: 'runnerLevel.tier4.name', descKey: 'runnerLevel.tier4.desc', animal: 'horse', color: '#1565C0', bgColor: '#0A1F3A', borderColor: '#1565C0', textColor: '#42A5F5', bgColorLight: '#E3F2FD', borderColorLight: '#1565C050', textColorLight: '#0D47A1' },
   // Tier 5: Lv.33-40
-  { nameKey: 'runnerLevel.tier5.name', descKey: 'runnerLevel.tier5.desc', animal: 'wolf', color: '#7E57C2', bgColor: '#1F153A', borderColor: '#7E57C2', textColor: '#B39DDB' },
+  { nameKey: 'runnerLevel.tier5.name', descKey: 'runnerLevel.tier5.desc', animal: 'wolf', color: '#7E57C2', bgColor: '#1F153A', borderColor: '#7E57C2', textColor: '#B39DDB', bgColorLight: '#EDE7F6', borderColorLight: '#7E57C250', textColorLight: '#4527A0' },
   // Tier 6: Lv.41-48
-  { nameKey: 'runnerLevel.tier6.name', descKey: 'runnerLevel.tier6.desc', animal: 'cheetah', color: '#FF8F00', bgColor: '#3A2800', borderColor: '#FF8F00', textColor: '#FFB74D' },
+  { nameKey: 'runnerLevel.tier6.name', descKey: 'runnerLevel.tier6.desc', animal: 'cheetah', color: '#FF8F00', bgColor: '#3A2800', borderColor: '#FF8F00', textColor: '#FFB74D', bgColorLight: '#FFF3E0', borderColorLight: '#FF8F0050', textColorLight: '#E65100' },
   // Tier 7: Lv.49-56
-  { nameKey: 'runnerLevel.tier7.name', descKey: 'runnerLevel.tier7.desc', animal: 'eagle', color: '#D32F2F', bgColor: '#3A0D0D', borderColor: '#D32F2F', textColor: '#EF9A9A' },
+  { nameKey: 'runnerLevel.tier7.name', descKey: 'runnerLevel.tier7.desc', animal: 'eagle', color: '#D32F2F', bgColor: '#3A0D0D', borderColor: '#D32F2F', textColor: '#EF9A9A', bgColorLight: '#FFEBEE', borderColorLight: '#D32F2F50', textColorLight: '#B71C1C' },
   // Tier 8: Lv.57-64
-  { nameKey: 'runnerLevel.tier8.name', descKey: 'runnerLevel.tier8.desc', animal: 'panther', color: '#FFD700', bgColor: '#3A3000', borderColor: '#FFD700', textColor: '#FFE082' },
+  { nameKey: 'runnerLevel.tier8.name', descKey: 'runnerLevel.tier8.desc', animal: 'panther', color: '#FFD700', bgColor: '#3A3000', borderColor: '#FFD700', textColor: '#FFE082', bgColorLight: '#FFFDE7', borderColorLight: '#FFD70050', textColorLight: '#F57F17' },
   // Tier 9: Lv.65-72
-  { nameKey: 'runnerLevel.tier9.name', descKey: 'runnerLevel.tier9.desc', animal: 'dragon', color: '#B0BEC5', bgColor: '#1E2A30', borderColor: '#B0BEC5', textColor: '#E0E0E0' },
+  { nameKey: 'runnerLevel.tier9.name', descKey: 'runnerLevel.tier9.desc', animal: 'dragon', color: '#B0BEC5', bgColor: '#1E2A30', borderColor: '#B0BEC5', textColor: '#E0E0E0', bgColorLight: '#ECEFF1', borderColorLight: '#B0BEC550', textColorLight: '#455A64' },
   // Tier 10: Lv.73-80
-  { nameKey: 'runnerLevel.tier10.name', descKey: 'runnerLevel.tier10.desc', animal: 'phoenix', color: '#E91E63', bgColor: '#3A0A1F', borderColor: '#E91E63', textColor: '#F48FB1' },
+  { nameKey: 'runnerLevel.tier10.name', descKey: 'runnerLevel.tier10.desc', animal: 'phoenix', color: '#E91E63', bgColor: '#3A0A1F', borderColor: '#E91E63', textColor: '#F48FB1', bgColorLight: '#FCE4EC', borderColorLight: '#E91E6350', textColorLight: '#AD1457' },
   // Tier 11: Lv.81-88
-  { nameKey: 'runnerLevel.tier11.name', descKey: 'runnerLevel.tier11.desc', animal: 'unicorn', color: '#AB47BC', bgColor: '#2A1030', borderColor: '#AB47BC', textColor: '#CE93D8' },
+  { nameKey: 'runnerLevel.tier11.name', descKey: 'runnerLevel.tier11.desc', animal: 'unicorn', color: '#AB47BC', bgColor: '#2A1030', borderColor: '#AB47BC', textColor: '#CE93D8', bgColorLight: '#F3E5F5', borderColorLight: '#AB47BC50', textColorLight: '#7B1FA2' },
   // Tier 12: Lv.89-96
-  { nameKey: 'runnerLevel.tier12.name', descKey: 'runnerLevel.tier12.desc', animal: 'qilin', color: '#FFD700', bgColor: '#1A1A1A', borderColor: '#FFD700', textColor: '#FFD700' },
+  { nameKey: 'runnerLevel.tier12.name', descKey: 'runnerLevel.tier12.desc', animal: 'qilin', color: '#FFD700', bgColor: '#1A1A1A', borderColor: '#FFD700', textColor: '#FFD700', bgColorLight: '#FFFDE7', borderColorLight: '#FFD70050', textColorLight: '#F57F17' },
 ];
 
 // ============================================================

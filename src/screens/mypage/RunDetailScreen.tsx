@@ -83,7 +83,7 @@ function buildDetailStaticMapUrl(
   let url =
     `https://api.mapbox.com/styles/v1/${styleId}/static/` +
     `geojson(${encoded})/auto/${pixelW}x${pixelH}@2x` +
-    `?padding=30&access_token=${MAPBOX_ACCESS_TOKEN}`;
+    `?padding=30&logo=false&attribution=false&access_token=${MAPBOX_ACCESS_TOKEN}`;
 
   // If URL too long, reduce points
   if (url.length > 8000) {
@@ -103,7 +103,7 @@ function buildDetailStaticMapUrl(
     url =
       `https://api.mapbox.com/styles/v1/${styleId}/static/` +
       `geojson(${encoded})/auto/${pixelW}x${pixelH}@2x` +
-      `?padding=30&access_token=${MAPBOX_ACCESS_TOKEN}`;
+      `?padding=30&logo=false&attribution=false&access_token=${MAPBOX_ACCESS_TOKEN}`;
   }
 
   return url;
@@ -131,13 +131,12 @@ export default function RunDetailScreen() {
   const [detail, setDetail] = useState<RunRecordDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [mapExpanded, setMapExpanded] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
         const data = await userService.getRunDetail(runId);
-        if (__DEV__) console.log('[RunDetail] loaded:', runId, 'distance:', data.distance_meters, 'splits:', data.splits?.length ?? 0, 'route:', data.route_geometry?.coordinates?.length ?? 0, 'course:', !!data.course);
         setDetail(data);
       } catch (e) {
         console.warn('[RunDetail] API error:', e);
@@ -197,8 +196,8 @@ export default function RunDetailScreen() {
     }
     const isDark = colors.statusBar === 'light-content';
     const styleId = isDark
-      ? 'runsvs/cmlt12hqy001d01r49zt66z85'
-      : 'runsvs/cmlt0wpwv001e01sq8mg39xas';
+      ? 'mapbox/dark-v11'
+      : 'mapbox/light-v11';
 
     const mapW = Math.round(SCREEN_WIDTH - SPACING.xxl * 2);
     const pixelW = Math.min(mapW, 640);
@@ -372,32 +371,12 @@ export default function RunDetailScreen() {
                   style={styles.mapPreview}
                 />
               ) : staticMapUrl ? (
-                <TouchableOpacity
-                  activeOpacity={0.9}
-                  onPress={() => setMapExpanded(true)}
-                >
-                  <Image
-                    source={{ uri: staticMapUrl }}
-                    style={styles.mapPreview}
-                    resizeMode="cover"
-                  />
-                  <View style={styles.mapExpandHint}>
-                    <Ionicons name="expand-outline" size={16} color="#FFFFFF" />
-                    <Text style={styles.mapExpandText}>{t('common.tapToExpand')}</Text>
-                  </View>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  activeOpacity={0.9}
-                  onPress={() => setMapExpanded(true)}
+                <Image
+                  source={{ uri: staticMapUrl }}
                   style={styles.mapPreview}
-                >
-                  <View style={styles.mapPlaceholder}>
-                    <Ionicons name="map-outline" size={32} color={colors.textTertiary} />
-                    <Text style={styles.mapPlaceholderText}>{t('common.tapToExpand')}</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
+                  resizeMode="cover"
+                />
+              ) : null}
             </View>
           )}
 
@@ -720,35 +699,8 @@ const createStyles = (c: ThemeColors) =>
       width: '100%',
       backgroundColor: '#1C1C1E',
     },
-    mapExpandHint: {
-      position: 'absolute',
-      bottom: SPACING.sm,
-      right: SPACING.sm,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      backgroundColor: 'rgba(0,0,0,0.55)',
-      paddingHorizontal: SPACING.sm,
-      paddingVertical: 4,
-      borderRadius: BORDER_RADIUS.sm,
-    },
-    mapExpandText: {
-      fontSize: FONT_SIZES.xs,
-      fontWeight: '600',
-      color: '#FFFFFF',
-    },
-    mapPlaceholder: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      gap: SPACING.sm,
-      backgroundColor: c.surface,
-    },
-    mapPlaceholderText: {
-      fontSize: FONT_SIZES.xs,
-      fontWeight: '500',
-      color: c.textTertiary,
-    },
+
+
 
     // Route Correction
     routeCorrectBtn: {

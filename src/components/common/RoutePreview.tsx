@@ -50,10 +50,8 @@ function buildStaticMapUrl(
 ): string | null {
   if (!MAPBOX_ACCESS_TOKEN || coordinates.length < 2) return null;
 
-  // Parse mapbox://styles/{user}/{id}
-  const m = MAPBOX_DARK_STYLE.match(/mapbox:\/\/styles\/(.+)/);
-  if (!m) return null;
-  const stylePath = m[1];
+  // Use default Mapbox style for Static API (custom styles don't render tiles)
+  const stylePath = 'mapbox/dark-v11';
 
   const color = strokeColor.replace('#', '');
   const poly = encodeURIComponent(encodePolyline(coordinates));

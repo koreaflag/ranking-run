@@ -83,6 +83,17 @@
     "errors": {
       "loginFailed": "로그인에 실패했습니다.",
       "profileSetupFailed": "프로필 설정에 실패했습니다."
+    },
+    "ban": {
+      "title": "계정 이용 제한",
+      "message": "아래의 사유로 서비스 이용이 제한되었습니다.",
+      "reason": "제한 사유",
+      "appealTitle": "이의 신청",
+      "appealPlaceholder": "의견을 작성해 주세요 (최대 2,000자)",
+      "appealSubmit": "의견 전달하기",
+      "appealSuccess": "의견이 전달되었습니다. 검토 후 안내드리겠습니다.",
+      "appealFailed": "전송에 실패했습니다. 다시 시도해 주세요.",
+      "close": "확인"
     }
   },
   "running": {
@@ -234,7 +245,22 @@
     "startCompetition": "경쟁 시작하기",
     "arrivedAtStart": "출발점에 도착했어요!",
     "goToStart": "출발지로 이동",
-    "distanceToStart": "출발지까지 {{distance}}km (5km 이내에서 도전 가능)"
+    "distanceToStart": "출발지까지 {{distance}}km (5km 이내에서 도전 가능)",
+    "welcome": {
+      "greetingMorning": "좋은 아침이에요",
+      "greetingAfternoon": "좋은 오후예요",
+      "greetingEvening": "좋은 저녁이에요",
+      "greetingNight": "늦은 밤이에요",
+      "subtitle": "오늘도 한 걸음 더 나아가볼까요?",
+      "letsRun": "러닝 준비",
+      "runner": "러너",
+      "settings": "설정",
+      "goal": "목표",
+      "noGoal": "자유 러닝",
+      "readyToGo": "준비 완료",
+      "tour": "코스 둘러보기",
+      "tourBack": "러닝 준비"
+    }
   },
   "course": {
     "title": "코스",
@@ -496,6 +522,7 @@
     "deleteAccount": "회원 탈퇴",
     "deleteAccountMsg": "탈퇴 시 모든 러닝 기록, 코스, 프로필 정보가\n영구적으로 삭제되며 복구할 수 없습니다.",
     "withdraw": "탈퇴",
+    "deleteAccountFailed": "회원 탈퇴에 실패했습니다. 잠시 후 다시 시도해주세요.",
     "language": "언어",
     "languageDesc": "앱 표시 언어를 변경합니다",
     "langKo": "한국어",

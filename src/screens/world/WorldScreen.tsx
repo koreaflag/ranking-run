@@ -15,7 +15,7 @@ import {
   Dimensions,
   Easing,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '../../lib/icons';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
@@ -31,7 +31,7 @@ import type { RouteMapViewHandle, CourseMarkerData, Region } from '../../compone
 import type { WorldStackParamList } from '../../types/navigation';
 import type { GeoJSONLineString, CourseCheckpoint, RankingEntry } from '../../types/api';
 import type { CheckpointMarkerData } from '../../components/map/RouteMapView';
-import { RunStartOverlay, RunGoalSheet, RunSettingsSheet } from '../../components/running';
+import { RunStartOverlay, RunGoalSheet, RunSettingsSheet, WelcomeOverlay } from '../../components/running';
 import type { RunGoal } from '../../components/running/RunGoalSheet';
 
 // Running hooks
@@ -54,6 +54,7 @@ import { haversineDistance, bearing as geoBearing } from '../../utils/geo';
 import { savePendingRunRecord, removePendingRunRecord } from '../../services/pendingSyncService';
 import api from '../../services/api';
 import { useTranslation } from 'react-i18next';
+import { useAuthStore } from '../../stores/authStore';
 import { MAPBOX_ACCESS_TOKEN } from '../../config/env';
 
 type WorldNav = NativeStackNavigationProp<WorldStackParamList, 'World'>;
@@ -230,6 +231,7 @@ function getGoalProgress(
 export default function WorldScreen() {
   const navigation = useNavigation<WorldNav>();
   const colors = useTheme();
+  const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { mapMarkers, fetchMapMarkers, pendingFocusCourseId, pendingStartCourseId } = useCourseListStore();
@@ -254,6 +256,11 @@ export default function WorldScreen() {
   const [hudRankingVisible, setHudRankingVisible] = useState(true);
   const [distanceToMarkerM, setDistanceToMarkerM] = useState<number | null>(null);
   const rankingAnim = useRef(new Animated.Value(1)).current;
+
+  // Welcome overlay & tour mode
+  const [welcomeVisible, setWelcomeVisible] = useState(true);
+  const [touring, setTouring] = useState(false);
+  const userNickname = useAuthStore((s) => s.user?.nickname);
 
   // Run start controls
   const [runGoal, setRunGoal] = useState<RunGoal>({ type: null, value: null });
@@ -351,6 +358,7 @@ export default function WorldScreen() {
 
   // Countdown state
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [showCountdownOverlay, setShowCountdownOverlay] = useState(false);
 
   // Goal reached banner
   const [goalReachedShown, setGoalReachedShown] = useState(false);
@@ -543,6 +551,7 @@ export default function WorldScreen() {
   const worldOverlayOpacity = useRef(new Animated.Value(1)).current;
   const runPanelTranslateY = useRef(new Animated.Value(500)).current;
   const countdownOpacity = useRef(new Animated.Value(0)).current;
+  const countdownTranslateY = useRef(new Animated.Value(0)).current;
 
   // Animate world overlays out / running panel in based on phase
   useEffect(() => {
@@ -552,6 +561,8 @@ export default function WorldScreen() {
         Animated.timing(runPanelTranslateY, { toValue: 500, duration: 350, useNativeDriver: true }),
         Animated.timing(countdownOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
       ]).start();
+      countdownTranslateY.setValue(0);
+      setShowCountdownOverlay(false);
       // Reset running panel padding so GPS centers properly
       setPanelHeight(0);
       // Re-center map on user location when returning to idle (e.g. after RunResult dismiss)
@@ -569,26 +580,39 @@ export default function WorldScreen() {
         Animated.timing(runPanelTranslateY, { toValue: 0, duration: 200, useNativeDriver: true }),
       ]).start();
     } else if (phase === 'countdown') {
+      countdownTranslateY.setValue(0);
+      setShowCountdownOverlay(true);
       Animated.parallel([
         Animated.timing(worldOverlayOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
         Animated.timing(countdownOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
       ]).start();
     } else if (phase === 'running' || phase === 'paused') {
-      // Countdown fades out while panel glides up simultaneously
+      // Fade out countdown, then smoothly slide in run panel
       Animated.parallel([
-        Animated.timing(countdownOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
-        Animated.timing(runPanelTranslateY, {
-          toValue: 0,
-          duration: 500,
-          easing: Easing.out(Easing.cubic),
+        Animated.timing(countdownTranslateY, {
+          toValue: -300,
+          duration: 350,
+          easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
         }),
+        Animated.timing(countdownOpacity, { toValue: 0, duration: 250, useNativeDriver: true }),
       ]).start();
+      // Slide up run panel after countdown fades
+      setTimeout(() => {
+        Animated.spring(runPanelTranslateY, {
+          toValue: 0,
+          damping: 20,
+          stiffness: 180,
+          useNativeDriver: true,
+        }).start();
+      }, 200);
+      setTimeout(() => setShowCountdownOverlay(false), 350);
     }
-  }, [phase, worldOverlayOpacity, runPanelTranslateY, countdownOpacity]);
+  }, [phase, worldOverlayOpacity, runPanelTranslateY, countdownOpacity, countdownTranslateY]);
 
   // Close result and return to world mode
   const handleCloseResult = useCallback(() => {
+    setWelcomeVisible(true); // Show welcome overlay again
     setResultUploading(false);
     setResultRunRecordId(null);
     setResultSavedLocally(false);
@@ -705,30 +729,7 @@ export default function WorldScreen() {
 
   // Begin countdown + start running (extracted so it can be called after navigating to start)
   const beginCountdownAndRun = useCallback(async (courseId?: string | null) => {
-    // Ensure location permission before starting (critical for Android)
-    try {
-      const permResult = await Promise.race([
-        Location.getForegroundPermissionsAsync(),
-        new Promise<{ status: 'granted' }>((resolve) => setTimeout(() => resolve({ status: 'granted' }), 2000)),
-      ]);
-      if (permResult.status !== 'granted') {
-        const { status } = await Promise.race([
-          Location.requestForegroundPermissionsAsync(),
-          new Promise<{ status: string }>((resolve) => setTimeout(() => resolve({ status: 'timeout' }), 3000)),
-        ]);
-        if (status !== 'granted' && status !== 'timeout') {
-          Alert.alert(
-            t('common.error'),
-            '위치 권한이 필요합니다. 설정에서 위치 권한을 허용해주세요.',
-          );
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn('[WorldScreen] 위치 권한 확인 실패:', err);
-    }
-
-    // Clear any 3D preview
+    // Clear any 3D preview first — don't block on permission check
     if (selectedMarker) {
       setSelectedMarker(null);
       setIs3DMode(false);
@@ -756,6 +757,21 @@ export default function WorldScreen() {
     setPhase('countdown');
     setCountdown(countdownSeconds);
 
+    // Ensure location permission during countdown (runs in parallel, not blocking)
+    const permissionCheck = (async () => {
+      try {
+        const permResult = await Location.getForegroundPermissionsAsync();
+        if (permResult.status !== 'granted') {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert(t('common.error'), '위치 권한이 필요합니다. 설정에서 위치 권한을 허용해주세요.');
+          }
+        }
+      } catch (err) {
+        console.warn('[WorldScreen] 위치 권한 확인 실패:', err);
+      }
+    })();
+
     // Notify native for Watch countdown sync
     const countdownStartedAt = Date.now();
     try {
@@ -776,6 +792,9 @@ export default function WorldScreen() {
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
+    // Wait for permission check to complete before proceeding
+    await permissionCheck;
+
     setCountdown(null);
 
     // Capture current position before session reset (for seeding first route point)
@@ -794,8 +813,18 @@ export default function WorldScreen() {
       });
     }
 
+    // Switch map to follow user immediately (before GPS init to avoid freeze)
+    setFollowUser(true);
+
+    if (hapticFeedback) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+
+    // Start GPS tracking in background — don't await to prevent UI freeze
     if (!trackingStartedRef.current) {
-      await startTracking();
+      startTracking().catch((err) => {
+        console.warn('[WorldScreen] GPS 트래킹 시작 실패:', err);
+      });
     } else {
       // Tracking already started (e.g. navigate-to-start flow) — startTracking() skipped,
       // but Watch needs the "running" phase notification that startTracking() normally sends.
@@ -810,13 +839,6 @@ export default function WorldScreen() {
       }
     }
     trackingStartedRef.current = true;
-
-    // Switch map to follow user
-    setFollowUser(true);
-
-    if (hapticFeedback) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
 
     // Register session on server in background
     runService.createSession({
@@ -1671,40 +1693,50 @@ export default function WorldScreen() {
         style={styles.map}
       />
 
+      {/* Weather + Tour back — always visible above WelcomeOverlay */}
+      {!selectedMarker && !isInRun && (weather || (touring && phase === 'idle')) && (
+        <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
+          <View style={styles.topBar}>
+            {weather ? (
+              <View style={styles.weatherWidget}>
+                <Ionicons
+                  name={getWeatherIconName(weather.icon)}
+                  size={14}
+                  color={colors.textSecondary}
+                />
+                <Text style={styles.weatherTemp}>{Math.round(weather.temp)}°</Text>
+                <Text style={styles.weatherDesc}>{weather.description}</Text>
+                <View style={styles.weatherDivider} />
+                <Ionicons name="water" size={12} color={colors.textTertiary} />
+                <Text style={styles.weatherDetail}>{weather.humidity}%</Text>
+                {weather.aqi_label && (
+                    <>
+                        <View style={styles.weatherDivider} />
+                        <Ionicons name="leaf" size={12} color={getAqiColor(weather.aqi)} />
+                        <Text style={[styles.weatherDetail, { color: getAqiColor(weather.aqi) }]}>{weather.aqi_label}</Text>
+                    </>
+                )}
+              </View>
+            ) : <View />}
+            {touring && phase === 'idle' && (
+              <TouchableOpacity
+                style={styles.tourBackBtn}
+                onPress={() => { setTouring(false); setWelcomeVisible(true); }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-back" size={16} color={colors.text} />
+                <Text style={styles.tourBackText}>{t('world.welcome.tourBack')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </SafeAreaView>
+      )}
+
       {/* ===== WORLD MODE OVERLAYS (fade out during running) ===== */}
       <Animated.View
         style={[StyleSheet.absoluteFill, { opacity: worldOverlayOpacity }]}
         pointerEvents={isInRun ? 'none' : 'box-none'}
       >
-        {/* Top overlay */}
-        {!selectedMarker && (
-          <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
-            <View style={styles.topBar}>
-              {weather && (
-                <View style={styles.weatherWidget}>
-                  <Ionicons
-                    name={getWeatherIconName(weather.icon)}
-                    size={14}
-                    color={colors.textSecondary}
-                  />
-                  <Text style={styles.weatherTemp}>{Math.round(weather.temp)}°</Text>
-                  <Text style={styles.weatherDesc}>{weather.description}</Text>
-                  <View style={styles.weatherDivider} />
-                  <Ionicons name="water" size={12} color={colors.textTertiary} />
-                  <Text style={styles.weatherDetail}>{weather.humidity}%</Text>
-                  {weather.aqi_label && (
-                      <>
-                          <View style={styles.weatherDivider} />
-                          <Ionicons name="leaf" size={12} color={getAqiColor(weather.aqi)} />
-                          <Text style={[styles.weatherDetail, { color: getAqiColor(weather.aqi) }]}>{weather.aqi_label}</Text>
-                      </>
-                  )}
-                </View>
-              )}
-            </View>
-          </SafeAreaView>
-        )}
-
         {/* ===== Unified recenter button (always visible) ===== */}
         <View style={styles.recenterContainer} pointerEvents="box-none">
           <TouchableOpacity style={styles.recenterBtn} onPress={handleRecenter} activeOpacity={0.7}>
@@ -1852,18 +1884,27 @@ export default function WorldScreen() {
 
       </Animated.View>
 
-      {/* Run Start Overlay (has its own animation via visible prop) */}
+      {/* Run Start Overlay — hidden during tour mode */}
       <RunStartOverlay
-        visible={phase === 'idle' && !selectedMarker && !is3DMode && !navigatingToStart}
+        visible={phase === 'idle' && !selectedMarker && !is3DMode && !navigatingToStart && !touring}
         onStart={handleStartFreeRun}
         onGoalPress={() => setGoalSheetVisible(true)}
         onSettingsPress={() => setSettingsSheetVisible(true)}
         goalLabel={formatGoalLabel(runGoal, t)}
       />
 
+      {/* Welcome overlay — hidden during tour mode */}
+      <WelcomeOverlay
+        visible={welcomeVisible && phase === 'idle' && !selectedMarker && !navigatingToStart && !touring}
+        nickname={userNickname ?? undefined}
+        runGoal={runGoal}
+        onTour={() => { setTouring(true); setWelcomeVisible(false); }}
+      />
+
+
       {/* ===== COUNTDOWN OVERLAY ===== */}
-      {phase === 'countdown' && (
-        <Animated.View style={[styles.countdownOverlay, { opacity: countdownOpacity }]} pointerEvents="none">
+      {showCountdownOverlay && (
+        <Animated.View style={[styles.countdownOverlay, { opacity: countdownOpacity, transform: [{ translateY: countdownTranslateY }] }]} pointerEvents="none">
           <View style={styles.countdownContent}>
             <Text style={styles.countdownLabel}>준비하세요</Text>
             <Text style={styles.countdownNumber}>{countdown ?? countdownSeconds}</Text>
@@ -1879,11 +1920,8 @@ export default function WorldScreen() {
         </Animated.View>
       )}
 
-      {/* ===== RUNNING / PAUSED / COMPLETED OVERLAYS ===== */}
-      {(phase === 'running' || phase === 'paused' || phase === 'completed') && (
-        <>
-          {/* Top status bar — only during active run */}
-          {(phase === 'running' || phase === 'paused') && (
+      {/* ===== RUNNING / PAUSED / COMPLETED OVERLAYS — Top status bar ===== */}
+      {(phase === 'running' || phase === 'paused') && (
             <>
               <SafeAreaView style={styles.runTopOverlay} pointerEvents="box-none">
                 <View style={styles.runTopBar}>
@@ -1958,17 +1996,21 @@ export default function WorldScreen() {
             </>
           )}
 
-          {/* Bottom panel — single Animated.View, content swaps inside */}
-          <Animated.View
-            style={[styles.runPanel, { transform: [{ translateY: runPanelTranslateY }] }]}
-            onLayout={(e) => {
-              const h = e.nativeEvent.layout.height;
-              if (Math.abs(h - panelHeight) > 2) {
-                LayoutAnimation.configureNext(LayoutAnimation.create(250, 'easeInEaseOut', 'opacity'));
-                setPanelHeight(h);
-              }
-            }}
-          >
+      {/* Bottom panel — always rendered (starts offscreen at translateY:500), content conditional */}
+      <Animated.View
+        style={[styles.runPanel, { transform: [{ translateY: runPanelTranslateY }] }]}
+        pointerEvents={phase === 'idle' || phase === 'countdown' ? 'none' : 'auto'}
+        onLayout={(e) => {
+          if (phase === 'idle' || phase === 'countdown') return;
+          const h = e.nativeEvent.layout.height;
+          if (Math.abs(h - panelHeight) > 2) {
+            LayoutAnimation.configureNext(LayoutAnimation.create(250, 'easeInEaseOut', 'opacity'));
+            setPanelHeight(h);
+          }
+        }}
+      >
+        {(phase === 'running' || phase === 'paused' || phase === 'completed') && (<>
+
             {/* Lock button — top-right corner of panel */}
             {!navigatingToStart && (phase === 'running' || phase === 'paused') && (
               <TouchableOpacity
@@ -2249,9 +2291,8 @@ export default function WorldScreen() {
                 </View>
               </>
             )}
-          </Animated.View>
-        </>
-      )}
+        </>)}
+      </Animated.View>
 
       {/* ===== Navigate-to-start floating card ===== */}
       {navigatingToStart && startCheckpoint && (
@@ -2359,7 +2400,6 @@ export default function WorldScreen() {
       <RunSettingsSheet
         visible={settingsSheetVisible}
         onClose={() => setSettingsSheetVisible(false)}
-        onNavigateHeartRate={() => navigation.navigate('HeartRateSettings')}
         onNavigateWatch={() => navigation.navigate('WatchSettings')}
       />
     </View>
@@ -2386,6 +2426,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
+    zIndex: 100,
   },
   topBar: {
     flexDirection: 'row',
@@ -3323,6 +3364,21 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.border,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  tourBackBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: c.card,
+    ...SHADOWS.sm,
+  },
+  tourBackText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: c.text,
   },
 });
 

@@ -92,6 +92,10 @@ export default function MyPageScreen() {
   const runnerLv = totalDist > 0 ? calcRunnerLevel(totalDist) : (user?.runner_level ?? 1);
   const runnerTier = getRunnerTier(runnerLv);
   const runnerXp = getRunnerXpProgress(runnerLv, totalDist);
+  const isDark = colors.statusBar === 'light-content';
+  const tierBg = isDark ? runnerTier.bgColor : runnerTier.bgColorLight;
+  const tierText = isDark ? runnerTier.textColor : runnerTier.textColorLight;
+  const tierBorder = isDark ? runnerTier.borderColor : runnerTier.borderColorLight;
 
   // Animated XP bar
   const xpAnim = useRef(new Animated.Value(0)).current;
@@ -401,10 +405,10 @@ export default function MyPageScreen() {
         </View>
 
         {/* Runner Level Banner — separate section */}
-        <View style={[styles.runnerBanner, { backgroundColor: runnerTier.bgColor, borderColor: runnerTier.color + '30' }]}>
+        <View style={[styles.runnerBanner, { backgroundColor: tierBg, borderColor: tierBorder }]}>
           <View style={styles.runnerBannerText}>
             <View style={styles.runnerBannerTitleRow}>
-              <Text style={[styles.runnerBannerTitle, { color: runnerTier.textColor }]}>{t(runnerTier.nameKey)}</Text>
+              <Text style={[styles.runnerBannerTitle, { color: tierText }]}>{t(runnerTier.nameKey)}</Text>
               <Text style={[styles.runnerBannerLv, { color: runnerTier.color }]}>Lv.{runnerLv}</Text>
             </View>
             <View style={styles.xpBarRow}>
@@ -414,7 +418,7 @@ export default function MyPageScreen() {
                   backgroundColor: runnerTier.color,
                 }]} />
               </View>
-              <Text style={[styles.xpBarLabel, { color: runnerTier.textColor }]}>
+              <Text style={[styles.xpBarLabel, { color: tierText }]}>
                 {runnerXp.isMax ? 'MAX' : `${metersToKm(runnerXp.current, 1)} / ${metersToKm(runnerXp.next, 0)}km`}
               </Text>
             </View>

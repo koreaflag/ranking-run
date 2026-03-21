@@ -733,7 +733,7 @@ export default function CourseDetailScreen() {
 
       {/* Edit Modal */}
       <Modal visible={showEditModal} animationType="slide">
-        <SafeAreaView style={styles.modalContainer}>
+        <View style={[styles.modalContainer, { paddingTop: insets.top }]}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowEditModal(false)} activeOpacity={0.7}>
               <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
@@ -843,11 +843,11 @@ export default function CourseDetailScreen() {
               <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </TouchableOpacity>
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </Modal>
 
       {/* Bottom CTA: Raid or Competition challenge */}
-      <Animated.View style={[styles.bottomCta, { paddingBottom: Math.max(insets.bottom, 4) + 4, transform: [{ translateY: bottomCtaTranslateY }] }]}>
+      <Animated.View style={[styles.bottomCta, { paddingBottom: Math.max(insets.bottom, 4), transform: [{ translateY: bottomCtaTranslateY }] }]}>
         {pendingSelectForRaid ? (
           <TouchableOpacity
             style={styles.startRaidBtn}
@@ -1508,12 +1508,12 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: SPACING.xxl,
-    paddingTop: SPACING.lg,
+    paddingHorizontal: SPACING.xl,
+    paddingTop: SPACING.md,
     backgroundColor: c.card,
     borderTopWidth: 1,
     borderTopColor: c.divider,
-    gap: SPACING.sm,
+    gap: SPACING.xs,
   },
   ctaButtonDisabled: {
     backgroundColor: c.surfaceLight,
@@ -1546,17 +1546,17 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   ctaButton: {
     flexDirection: 'row',
     backgroundColor: c.primary,
-    borderRadius: BORDER_RADIUS.lg,
-    paddingVertical: SPACING.lg + 2,
+    borderRadius: BORDER_RADIUS.md,
+    paddingVertical: SPACING.md + 2,
     alignItems: 'center',
     justifyContent: 'center',
-    ...SHADOWS.md,
+    ...SHADOWS.sm,
   },
   ctaButtonText: {
-    fontSize: FONT_SIZES.xl,
-    fontWeight: '800',
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
     color: c.white,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   tooFarBanner: {
     flexDirection: 'row',

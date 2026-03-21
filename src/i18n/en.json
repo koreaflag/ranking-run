@@ -83,6 +83,17 @@
     "errors": {
       "loginFailed": "Login failed.",
       "profileSetupFailed": "Profile setup failed."
+    },
+    "ban": {
+      "title": "Account Suspended",
+      "message": "Your account has been suspended for the following reason.",
+      "reason": "Reason",
+      "appealTitle": "Appeal",
+      "appealPlaceholder": "Write your appeal message (max 2,000 characters)",
+      "appealSubmit": "Submit Appeal",
+      "appealSuccess": "Your appeal has been submitted. We will review and get back to you.",
+      "appealFailed": "Failed to submit. Please try again.",
+      "close": "OK"
     }
   },
   "running": {
@@ -234,7 +245,22 @@
     "startCompetition": "Start Competition",
     "arrivedAtStart": "Arrived at start!",
     "goToStart": "Go to Start",
-    "distanceToStart": "{{distance}}km to start (available within 5km)"
+    "distanceToStart": "{{distance}}km to start (available within 5km)",
+    "welcome": {
+      "greetingMorning": "Good Morning",
+      "greetingAfternoon": "Good Afternoon",
+      "greetingEvening": "Good Evening",
+      "greetingNight": "Late Night Run",
+      "subtitle": "Ready to push your limits today?",
+      "letsRun": "Let's Run",
+      "runner": "Runner",
+      "settings": "Settings",
+      "goal": "Goal",
+      "noGoal": "Free Run",
+      "readyToGo": "Ready to go",
+      "tour": "Explore Courses",
+      "tourBack": "Ready to Run"
+    }
   },
   "course": {
     "title": "Courses",
@@ -533,6 +559,7 @@
     "deleteAccount": "Delete Account",
     "deleteAccountMsg": "All running records, courses, and profile data\nwill be permanently deleted and cannot be recovered.",
     "withdraw": "Delete",
+    "deleteAccountFailed": "Failed to delete account. Please try again later.",
     "language": "Language",
     "languageDesc": "Change the app display language",
     "langKo": "한국어",

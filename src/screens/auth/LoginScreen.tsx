@@ -21,6 +21,7 @@ import type { AuthStackParamList } from '../../types/navigation';
 import { useAuthStore } from '../../stores/authStore';
 import { useTheme } from '../../hooks/useTheme';
 import BlurredBackground from '../../components/common/BlurredBackground';
+import BanModal from '../../components/auth/BanModal';
 import type { ThemeColors } from '../../utils/constants';
 import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 
@@ -32,7 +33,7 @@ GoogleSignin.configure({
 export default function LoginScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const { t } = useTranslation();
-  const { login, devLogin, isLoading, error } = useAuthStore();
+  const { login, isLoading, banInfo, clearBan } = useAuthStore();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
@@ -96,20 +97,8 @@ export default function LoginScreen() {
     } catch (e: any) {
       // statusCodes.SIGN_IN_CANCELLED = '12501'
       if (e.code === '12501' || e.code === 'SIGN_IN_CANCELLED') return;
-      Alert.alert(t('common.error'), t('auth.login.googleError'));
-    } finally {
-      setLoadingProvider(null);
-    }
-  };
-
-  // ── Dev Login ──────────────────────────────────────────────
-  const handleDevLogin = async () => {
-    try {
-      setLoadingProvider('dev');
-      await devLogin('dev_runner', 'dev@runcrew.test');
-      // Dev login skips consent for convenience
-    } catch {
-      Alert.alert(t('common.error'), error ?? t('common.errorRetry'));
+      console.error('[Login] Google error:', JSON.stringify({ code: e.code, message: e.message, status: e.status }));
+      Alert.alert(t('common.error'), `${e.code ?? 'UNKNOWN'}: ${e.message ?? t('auth.login.googleError')}`);
     } finally {
       setLoadingProvider(null);
     }
@@ -178,26 +167,19 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            {/* Dev Login (only in development) */}
-            {__DEV__ && (
-              <TouchableOpacity
-                style={[styles.devButton, disabled && styles.buttonDisabled]}
-                onPress={handleDevLogin}
-                disabled={disabled}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.devButtonText}>
-                  {loadingProvider === 'dev' ? t('auth.login.connecting') : 'DEV LOGIN'}
-                </Text>
-              </TouchableOpacity>
-            )}
-
             <Text style={styles.footerNote}>
               {t('auth.login.footer')}
             </Text>
           </View>
         </View>
       </SafeAreaView>
+
+      {/* Ban Modal */}
+      <BanModal
+        visible={banInfo !== null}
+        reason={banInfo?.reason ?? ''}
+        onClose={clearBan}
+      />
     </BlurredBackground>
   );
 }
@@ -285,21 +267,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   googleText: {
     color: '#333',
-  },
-
-  // Dev
-  devButton: {
-    marginTop: SPACING.sm,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.xl,
-    borderRadius: BORDER_RADIUS.md,
-    borderWidth: 1,
-    borderColor: c.border,
-  },
-  devButtonText: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: c.textSecondary,
   },
 
   footerNote: {

@@ -12,8 +12,8 @@ from geoalchemy2.functions import ST_AsGeoJSON
 from sqlalchemy import desc, func, select, update
 
 from app.core.container import Container
-from app.core.deps import CurrentUser, DbSession
-from app.core.exceptions import AuthenticationError, ConflictError, NotFoundError
+from app.core.deps import CurrentUser, CurrentUserAllowBanned, DbSession
+from app.core.exceptions import AuthenticationError, BadRequestError, ConflictError, NotFoundError
 from app.models.course import Course, CourseStats
 from app.models.like import CourseLike
 from app.models.ranking import Ranking
@@ -832,3 +832,55 @@ async def get_public_profile(
         primary_gear=primary_gear,
         gear_items=gear_items,
     )
+
+
+@router.post("/me/ban-appeal", status_code=status.HTTP_201_CREATED)
+async def submit_ban_appeal(
+    current_user: CurrentUserAllowBanned,
+    db: DbSession,
+    message: str = Body(..., min_length=1, max_length=2000, embed=True),
+):
+    """Submit a ban appeal message. Only accessible to banned users."""
+    from app.models.ban_appeal import BanAppeal
+
+    if not current_user.is_banned:
+        raise BadRequestError(code="NOT_BANNED", message="User is not banned")
+
+    appeal = BanAppeal(
+        user_id=current_user.id,
+        message=message,
+    )
+    db.add(appeal)
+    await db.flush()
+
+    return {"submitted": True}
+
+
+@router.delete("/me/account", status_code=status.HTTP_200_OK)
+async def delete_account(
+    current_user: CurrentUser,
+    db: DbSession,
+):
+    """Permanently delete the current user's account and all associated data."""
+    user_id = current_user.id
+
+    # Nullify user references in run records/sessions (don't delete running data)
+    await db.execute(
+        update(RunRecord).where(RunRecord.user_id == user_id).values(user_id=None)
+    )
+    await db.execute(
+        update(RunSession).where(RunSession.user_id == user_id).values(user_id=None)
+    )
+
+    # Nullify course creator references (keep courses alive)
+    await db.execute(
+        update(Course).where(Course.creator_id == user_id).values(creator_id=None)
+    )
+
+    # Delete the user — cascading FKs handle:
+    # social_accounts, refresh_tokens, gear_items, follows, rankings,
+    # community_posts, notifications, ban_appeals, device_tokens, etc.
+    await db.delete(current_user)
+    await db.commit()
+
+    return {"deleted": True}

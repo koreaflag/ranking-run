@@ -56,6 +56,7 @@ function getConsentItems(t: TFunction): ConsentItem[] {
       key: 'location',
       label: t('auth.consent.location'),
       required: true,
+      navigateTo: 'LocationDetail',
       expandable: true,
       expandedText: t('auth.consent.locationDesc'),
     },

@@ -25,7 +25,6 @@ const DISMISS_THRESHOLD = 120;
 interface RunSettingsSheetProps {
   visible: boolean;
   onClose: () => void;
-  onNavigateHeartRate?: () => void;
   onNavigateWatch?: () => void;
 }
 
@@ -39,7 +38,7 @@ interface SettingTile {
   onTap: () => void;
 }
 
-export default function RunSettingsSheet({ visible, onClose, onNavigateHeartRate, onNavigateWatch }: RunSettingsSheetProps) {
+export default function RunSettingsSheet({ visible, onClose, onNavigateWatch }: RunSettingsSheetProps) {
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -180,11 +179,10 @@ export default function RunSettingsSheet({ visible, onClose, onNavigateHeartRate
     setCountdownSeconds(opts[(idx + 1) % opts.length]);
   }, [countdownSeconds, setCountdownSeconds, tap]);
 
-  const openHeartRate = useCallback(() => {
+  const toggleHeartRate = useCallback(() => {
     tap();
-    onClose();
-    setTimeout(() => onNavigateHeartRate?.(), 300);
-  }, [tap, onClose, onNavigateHeartRate]);
+    setShowHeartRate(!showHeartRate);
+  }, [tap, showHeartRate, setShowHeartRate]);
 
   const openWatch = useCallback(() => {
     tap();
@@ -236,7 +234,7 @@ export default function RunSettingsSheet({ visible, onClose, onNavigateHeartRate
       icon: 'heart',
       label: '심박수',
       getValue: () => showHeartRate ? '켜기' : '끄기',
-      onTap: openHeartRate,
+      onTap: toggleHeartRate,
     },
     {
       key: 'watch',
@@ -245,7 +243,7 @@ export default function RunSettingsSheet({ visible, onClose, onNavigateHeartRate
       getValue: () => '설정',
       onTap: openWatch,
     },
-  ], [showHeartRate, openHeartRate, openWatch]);
+  ], [showHeartRate, toggleHeartRate, openWatch]);
 
   const renderTile = (tile: SettingTile) => (
     <TouchableOpacity

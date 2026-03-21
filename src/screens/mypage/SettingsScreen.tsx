@@ -32,7 +32,7 @@ export default function SettingsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<MyPageStackParamList>>();
   const colors = useTheme();
   const { t } = useTranslation();
-  const { logout } = useAuthStore();
+  const { logout, deleteAccount } = useAuthStore();
   const {
     language,
     setLanguage,
@@ -40,8 +40,6 @@ export default function SettingsScreen() {
     setDarkMode,
     voiceGuidance,
     setVoiceGuidance,
-    autoPause,
-    setAutoPause,
     map3DStyle,
     setMap3DStyle,
   } = useSettingsStore();
@@ -79,9 +77,11 @@ export default function SettingsScreen() {
         {
           text: t('settings.withdraw'),
           style: 'destructive',
-          onPress: () => {
-            // TODO: 실제 회원 탈퇴 API 연동
-            logout();
+          onPress: async () => {
+            const success = await deleteAccount();
+            if (!success) {
+              Alert.alert(t('common.error'), t('settings.deleteAccountFailed'));
+            }
           },
         },
       ],
@@ -100,32 +100,6 @@ export default function SettingsScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          {/* Running Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('settings.running')}</Text>
-            <View style={styles.card}>
-              <View style={styles.toggleRow}>
-                <View style={styles.toggleLeft}>
-                  <View style={styles.iconCircle}>
-                    <Ionicons name="pause-circle-outline" size={20} color={colors.primary} />
-                  </View>
-                  <View style={styles.toggleInfo}>
-                    <Text style={styles.toggleLabel}>{t('settings.autoPause')}</Text>
-                    <Text style={styles.toggleDescription}>
-                      {autoPause ? t('settings.autoPauseOnDesc') : t('settings.autoPauseOffDesc')}
-                    </Text>
-                  </View>
-                </View>
-                <Switch
-                  value={autoPause}
-                  onValueChange={setAutoPause}
-                  trackColor={{ false: '#D1D5DB', true: '#FF7A33' }}
-                  thumbColor="#FFFFFF"
-                />
-              </View>
-            </View>
-          </View>
-
           {/* Language Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t('settings.language')}</Text>

@@ -6,6 +6,7 @@ import ConsentScreen from '../screens/auth/ConsentScreen';
 import OnboardingScreen from '../screens/auth/OnboardingScreen';
 import TermsOfServiceScreen from '../screens/mypage/TermsOfServiceScreen';
 import PrivacyPolicyScreen from '../screens/mypage/PrivacyPolicyScreen';
+import LocationConsentScreen from '../screens/auth/LocationConsentScreen';
 import { useTheme } from '../hooks/useTheme';
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
@@ -24,6 +25,7 @@ export default function AuthStack() {
       <Stack.Screen name="Consent" component={ConsentScreen} />
       <Stack.Screen name="TermsDetail" component={TermsOfServiceScreen} />
       <Stack.Screen name="PrivacyDetail" component={PrivacyPolicyScreen} />
+      <Stack.Screen name="LocationDetail" component={LocationConsentScreen} />
       <Stack.Screen name="Onboarding" component={OnboardingScreen} />
     </Stack.Navigator>
   );

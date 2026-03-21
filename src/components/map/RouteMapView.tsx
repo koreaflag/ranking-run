@@ -594,8 +594,8 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             paddingLeft: followPadding?.paddingLeft ?? 0,
             paddingRight: followPadding?.paddingRight ?? 0,
           }}
-          animationMode="flyTo"
-          animationDuration={0}
+          animationMode="easeTo"
+          animationDuration={1000}
         />
 
         {/* ---- Route display mode ---- */}
@@ -745,11 +745,11 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             );
           })}
 
-        {/* User location — get coordinates only, NO visual puck */}
+        {/* User location — show native puck when no custom marker, hide when custom is active */}
         {(showUserLocation || onUserLocationChange) && (
           <Mapbox.UserLocation
-            visible={false}
-            showsUserHeadingIndicator={false}
+            visible={showUserLocation && !customUserLocation}
+            showsUserHeadingIndicator={showUserLocation && !customUserLocation}
             onUpdate={handleUserLocationUpdate}
           />
         )}
@@ -770,7 +770,8 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
                     ...(customUserHeading != null
                       ? [{ rotate: `${((customUserHeading - mapBearingRef.current) % 360 + 360) % 360}deg` }]
                       : []),
-                    { scale: currentZoom >= 14 ? 1 : Math.min(2.2, 1 + (14 - currentZoom) * 0.15) },
+                    // Smooth continuous scale: 1.0 at zoom ≥16, gradually up to 2.0 at zoom ≤8
+                    { scale: currentZoom >= 16 ? 1 : Math.min(2, 1 + (16 - Math.max(currentZoom, 8)) * 0.125) },
                   ],
                 },
               ]}
@@ -1010,33 +1011,33 @@ const styles = StyleSheet.create({
   // ---- User location marker + heading chevron ----
   userLocationWrapper: {
     alignItems: 'center',
-    width: 30,
-    height: 30,
+    width: 40,
+    height: 40,
     justifyContent: 'center',
   },
   headingChevron: {
     width: 0,
     height: 0,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderBottomWidth: 7,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderBottomWidth: 10,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderBottomColor: '#FF5F00',
     position: 'absolute',
-    top: 0,
+    top: -2,
   },
   userLocationInner: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#FF5F00',
-    borderWidth: 3,
+    borderWidth: 3.5,
     borderColor: COLORS.white,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
     elevation: 10,
   },
   userLocationDot: {

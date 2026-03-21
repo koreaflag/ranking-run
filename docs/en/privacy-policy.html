@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RUNVS Privacy Policy</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 720px; margin: 0 auto; padding: 24px 16px; line-height: 1.7; color: #222; background: #fff; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  h2 { font-size: 17px; margin-top: 32px; border-bottom: 1px solid #eee; padding-bottom: 6px; }
+  h3 { font-size: 15px; margin-top: 20px; }
+  .date { color: #888; font-size: 14px; margin-bottom: 32px; }
+  ul, ol { padding-left: 20px; }
+  li { margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; }
+  th { background: #f8f8f8; }
+  .contact { background: #f9f9f9; padding: 16px; border-radius: 8px; margin-top: 24px; }
+  .lang-switch { text-align: right; margin-bottom: 16px; font-size: 13px; }
+  .lang-switch a { color: #666; text-decoration: none; margin-left: 8px; }
+  .lang-switch a:hover { color: #FF7A33; }
+  .lang-switch a.active { color: #FF7A33; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div class="lang-switch">
+  <a href="../ko/privacy-policy.html">한국어</a>
+  <a href="../en/privacy-policy.html" class="active">English</a>
+  <a href="../ja/privacy-policy.html">日本語</a>
+</div>
+
+<h1>RUNVS Privacy Policy</h1>
+<p class="date">Effective Date: March 22, 2026</p>
+
+<p>FLAG ("Company," "we," "us," or "our") operates the RUNVS mobile application ("Service"). This Privacy Policy explains how we collect, use, store, and protect your personal information when you use our Service.</p>
+
+<h2>1. Information We Collect</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Category</th>
+      <th>Data Items</th>
+      <th>Collection Method</th>
+      <th>Required / Optional</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Account</td>
+      <td>Email, social login identifiers (Apple / Google)</td>
+      <td>Automatic via social login</td>
+      <td>Required</td>
+    </tr>
+    <tr>
+      <td>Profile</td>
+      <td>Nickname, profile photo, date of birth, height, weight, bio, Instagram ID, activity region, country</td>
+      <td>User input</td>
+      <td>Optional</td>
+    </tr>
+    <tr>
+      <td>Running Data</td>
+      <td>GPS location (route), distance, pace, time, elevation</td>
+      <td>Automatic during running</td>
+      <td>Required (during runs)</td>
+    </tr>
+    <tr>
+      <td>Health Data</td>
+      <td>Heart rate, calories burned (via Apple Watch or Galaxy Watch)</td>
+      <td>HealthKit / Samsung Health integration</td>
+      <td>Optional</td>
+    </tr>
+    <tr>
+      <td>Device Info</td>
+      <td>Device model, OS version, app version, push notification token</td>
+      <td>Automatic</td>
+      <td>Required</td>
+    </tr>
+    <tr>
+      <td>Contact Hash</td>
+      <td>Phone number SHA-256 hash (for friend-finding feature)</td>
+      <td>With user consent</td>
+      <td>Optional</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>2. How We Use Your Information</h2>
+
+<ul>
+  <li><strong>Service delivery:</strong> Store and analyze running records, course creation and sharing, rankings, crew features</li>
+  <li><strong>Account management:</strong> Identity verification, account administration, fraud prevention</li>
+  <li><strong>Social features:</strong> Following, community, friend-finding, activity feed</li>
+  <li><strong>Service improvement:</strong> Usage analytics, GPS accuracy improvement, algorithm optimization</li>
+  <li><strong>Notifications:</strong> Running results, crew activities, announcements</li>
+</ul>
+
+<h2>3. Data Retention</h2>
+
+<p>We retain your personal data for the duration of your use of the Service. Upon account deletion, we destroy your data within 5 days except where retention is required by law.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Legal Basis</th>
+      <th>Data</th>
+      <th>Period</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Communications Privacy Act (Korea)</td>
+      <td>Login records</td>
+      <td>3 months</td>
+    </tr>
+    <tr>
+      <td>Location Information Act (Korea)</td>
+      <td>Location data collection/use confirmation records</td>
+      <td>6 months</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Phone number hashes are deleted immediately after friend matching is complete, or within 24 hours if no match is found.</p>
+
+<h2>4. Disclosure to Third Parties</h2>
+
+<p>We do not share your personal information with third parties without your consent, except:</p>
+<ul>
+  <li>When you set a course to "public," route data is visible to other users</li>
+  <li>When required by law</li>
+  <li>Service providers (see Section 6)</li>
+</ul>
+
+<h2>5. Location Data</h2>
+
+<p>RUNVS collects GPS location data to provide its core running tracking service. We are registered as a Location-Based Service Provider under Korean law.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Details</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Data collected</td>
+      <td>Real-time GPS coordinates (latitude/longitude)</td>
+    </tr>
+    <tr>
+      <td>When collected</td>
+      <td>Only during active running sessions; collection stops immediately when session ends</td>
+    </tr>
+    <tr>
+      <td>Collection method</td>
+      <td>Fused Location Provider (Android), Core Location (iOS)</td>
+    </tr>
+    <tr>
+      <td>Purpose</td>
+      <td>Running route recording, course creation, distance/pace calculation, course navigation, ranking</td>
+    </tr>
+    <tr>
+      <td>Retention</td>
+      <td>Until account deletion or user deletion request</td>
+    </tr>
+    <tr>
+      <td>Notification</td>
+      <td>App displays an active indicator when location is being collected</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>You can revoke location permissions at any time in your device settings. Without location access, running recording features will be unavailable.</p>
+
+<h2>6. Service Providers (Data Processors)</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Provider</th>
+      <th>Purpose</th>
+      <th>Data Location</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Amazon Web Services (AWS)</td>
+      <td>Cloud hosting, data storage</td>
+      <td>Seoul, South Korea (ap-northeast-2)</td>
+    </tr>
+    <tr>
+      <td>Apple Inc.</td>
+      <td>Social login (Apple Sign In), push notifications (APNs)</td>
+      <td>United States</td>
+    </tr>
+    <tr>
+      <td>Google LLC</td>
+      <td>Social login (Google Sign In), push notifications (FCM)</td>
+      <td>United States</td>
+    </tr>
+    <tr>
+      <td>Mapbox Inc.</td>
+      <td>Map services, route display</td>
+      <td>United States</td>
+    </tr>
+    <tr>
+      <td>Samsung Electronics</td>
+      <td>Galaxy Watch health data integration (Samsung Health)</td>
+      <td>South Korea / United States</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>7. Data Deletion</h2>
+
+<p>When retention periods expire or processing purposes are fulfilled, we promptly destroy the data. Upon account deletion, destruction is completed within 5 days.</p>
+<ul>
+  <li><strong>Electronic files:</strong> Permanently deleted using irreversible methods</li>
+  <li><strong>Account deletion:</strong> Personal identifiers deleted immediately; running records anonymized</li>
+</ul>
+
+<h2>8. Your Rights</h2>
+
+<p>You may exercise the following rights at any time:</p>
+<ul>
+  <li>Access, correct, or delete your personal information</li>
+  <li>Request restriction of processing</li>
+  <li>Request suspension of location data collection</li>
+  <li>Delete your account (Settings &rarr; Delete Account in the app)</li>
+</ul>
+<p>To exercise your rights, contact us at <a href="mailto:support@runvs.run">support@runvs.run</a>. We will respond within 10 days.</p>
+
+<h2>9. Automated Decision-Making</h2>
+
+<p>The Service automatically calculates rankings based on running data. You may contest automated decisions by contacting <a href="mailto:support@runvs.run">support@runvs.run</a>.</p>
+
+<h2>10. Health Data (HealthKit / Samsung Health)</h2>
+
+<p>Heart rate and calorie data collected via Apple Watch or Galaxy Watch are used solely to display your personal exercise statistics. We do not use health data for advertising, marketing, data mining, or sharing with third parties. Health data collection occurs only when Apple Watch or Galaxy Watch integration is enabled and stops immediately when integration is disabled.</p>
+
+<h2>11. For Users in the European Economic Area (GDPR)</h2>
+
+<h3>11.1 Legal Basis for Processing</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Purpose</th>
+      <th>Legal Basis (GDPR Art. 6)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Service provision (running records, courses, rankings)</td>
+      <td>Performance of contract (Art. 6(1)(b))</td>
+    </tr>
+    <tr>
+      <td>Location data collection</td>
+      <td>Explicit consent (Art. 6(1)(a))</td>
+    </tr>
+    <tr>
+      <td>Health data (heart rate, calories)</td>
+      <td>Explicit consent (Art. 9(2)(a))</td>
+    </tr>
+    <tr>
+      <td>Service improvement, analytics</td>
+      <td>Legitimate interest (Art. 6(1)(f)) &mdash; limited to anonymized statistical processing to improve service quality, balanced against your rights</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>11.2 Your GDPR Rights</h3>
+
+<ul>
+  <li><strong>Right of Access:</strong> You may request a copy of the personal data we hold about you.</li>
+  <li><strong>Right to Rectification:</strong> You may request correction of inaccurate personal data.</li>
+  <li><strong>Right to Erasure ("Right to be Forgotten"):</strong> You may request deletion of your personal data.</li>
+  <li><strong>Right to Restriction of Processing:</strong> You may request that we limit how we use your data.</li>
+  <li><strong>Right to Data Portability:</strong> Upon request, we will provide your data in a structured, machine-readable format (JSON) within 30 days.</li>
+  <li><strong>Right to Object:</strong> You may object to processing based on legitimate interests.</li>
+  <li><strong>Right to Withdraw Consent:</strong> You can withdraw consent at any time through the app settings; withdrawal does not affect the lawfulness of prior processing.</li>
+</ul>
+
+<h3>11.3 International Data Transfers</h3>
+
+<p>Your data is primarily processed on servers in Seoul, South Korea (AWS ap-northeast-2). Some processors (Apple, Google, Mapbox) are based in the United States. For transfers of EEA data outside the EU, we apply appropriate safeguards under GDPR Article 46, including Standard Contractual Clauses.</p>
+
+<h3>11.4 EU Representative</h3>
+
+<p>We have not currently designated an EU representative under Article 27 of the GDPR. As our EEA user base grows, we will designate an EU representative and update this policy accordingly.</p>
+
+<h3>11.5 Data Breach Notification</h3>
+
+<p>In the event of a personal data breach, we will notify the relevant supervisory authority within 72 hours of becoming aware. If the breach poses a high risk to your rights and freedoms, we will also notify affected users without undue delay.</p>
+
+<h3>11.6 Supervisory Authority</h3>
+
+<p>EEA users have the right to lodge a complaint with their local data protection supervisory authority.</p>
+<p>For GDPR inquiries: <a href="mailto:support@runvs.run">support@runvs.run</a></p>
+
+<h2>12. For California Residents (CCPA/CPRA)</h2>
+
+<p>If you are a California resident, you have the following rights under the California Consumer Privacy Act:</p>
+<ul>
+  <li><strong>Right to Know:</strong> You may request disclosure of the categories and specific pieces of personal information we have collected.</li>
+  <li><strong>Right to Delete:</strong> You may request deletion of your personal information.</li>
+  <li><strong>Right to Opt-Out:</strong> We do not sell or share personal information for cross-context behavioral advertising.</li>
+  <li><strong>Right to Non-Discrimination:</strong> We will not discriminate against you for exercising your CCPA rights.</li>
+</ul>
+<p>To exercise these rights, contact <a href="mailto:support@runvs.run">support@runvs.run</a>. We will respond within 45 days.</p>
+
+<h2>13. Children's Privacy</h2>
+
+<p>The Service is not intended for children under 14 years of age (16 in the EEA, or as specified by local law). We do not knowingly collect personal information from children below these age thresholds. If we learn that a child has provided personal information, we will delete it immediately.</p>
+
+<h2>14. Data Security</h2>
+
+<ul>
+  <li><strong>Encryption:</strong> Sensitive data (passwords, tokens) stored encrypted</li>
+  <li><strong>Access controls:</strong> Personal data access limited to minimum necessary personnel</li>
+  <li><strong>Security systems:</strong> Protection against unauthorized access and cyberattacks</li>
+  <li><strong>Transport encryption:</strong> All data transmitted via HTTPS (TLS)</li>
+</ul>
+
+<h2>15. Contact Us</h2>
+
+<div class="contact">
+  <p><strong>Company:</strong> FLAG</p>
+  <p><strong>Operated by:</strong> FLAG</p>
+  <p><strong>Email:</strong> <a href="mailto:support@runvs.run">support@runvs.run</a></p>
+  <p><strong>Phone:</strong> +82-10-3935-3430</p>
+  <p>For inquiries about personal data, access/correction/deletion requests, or complaints, please contact us at the email above. We will respond within 10 days.</p>
+</div>
+
+<h2>16. Changes to This Policy</h2>
+
+<p>We may update this policy due to changes in law or our services. For material changes, we will provide 30 days' notice; for minor changes, 7 days' notice via in-app notification. Changes take effect after the notice period ends.</p>
+
+</body>
+</html>

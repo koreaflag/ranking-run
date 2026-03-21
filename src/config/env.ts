@@ -15,9 +15,10 @@ export const API_BASE_URL: string =
   extra.API_BASE_URL ?? 'https://runvs.run/api/v1';
 
 // ---- Mapbox ----
-// Token MUST be provided via EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN env var
 export const MAPBOX_ACCESS_TOKEN: string =
-  extra.MAPBOX_ACCESS_TOKEN ?? process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '';
+  extra.MAPBOX_ACCESS_TOKEN
+  || process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN
+  || 'REMOVED_MAPBOX_TOKEN';
 
 export const MAPBOX_DARK_STYLE: string =
   extra.MAPBOX_DARK_STYLE || 'mapbox://styles/runsvs/cmlt12hqy001d01r49zt66z85';

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { getRunnerTier } from '../../utils/runnerLevelConfig';
+import { useTheme } from '../../hooks/useTheme';
 
 type Size = 'sm' | 'md' | 'lg';
 
@@ -18,7 +19,13 @@ type Props = {
 export default function RunnerLevelBadge({ level, size = 'md' }: Props) {
   const lv = level ?? 1;
   const tier = getRunnerTier(lv);
+  const colors = useTheme();
+  const isDark = colors.statusBar === 'light-content';
   const s = SIZES[size];
+
+  const bg = isDark ? tier.bgColor : tier.bgColorLight;
+  const border = isDark ? tier.borderColor : tier.borderColorLight;
+  const text = isDark ? tier.textColor : tier.textColorLight;
 
   return (
     <View
@@ -28,15 +35,15 @@ export default function RunnerLevelBadge({ level, size = 'md' }: Props) {
           height: s.height,
           paddingHorizontal: s.px,
           borderRadius: s.radius,
-          backgroundColor: tier.bgColor,
-          borderColor: tier.borderColor,
+          backgroundColor: bg,
+          borderColor: border,
         },
       ]}
     >
       <Text
         style={[
           styles.text,
-          { fontSize: s.fontSize, color: tier.textColor },
+          { fontSize: s.fontSize, color: text },
         ]}
       >
         Lv.{lv}

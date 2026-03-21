@@ -3,8 +3,23 @@ import * as SecureStore from 'expo-secure-store';
 import type { AuthProvider, AuthResponse, UserProfile } from '../types/api';
 import { SECURE_STORE_KEYS } from '../utils/constants';
 import { authService } from '../services/authService';
-import { performTokenRefresh } from '../services/api';
+import api, { ApiError, performTokenRefresh } from '../services/api';
 import i18n from '../i18n';
+
+interface BanInfo {
+  reason: string;
+}
+
+/** Check if an error is a USER_BANNED 403 response */
+function isBanError(error: unknown): string | null {
+  if (error instanceof ApiError && error.status === 403) {
+    const data = error.data as Record<string, unknown> | null;
+    if (data?.code === 'USER_BANNED') {
+      return (data.message as string) || '';
+    }
+  }
+  return null;
+}
 
 interface AuthState {
   user: UserProfile | null;
@@ -14,14 +29,17 @@ interface AuthState {
   isLoading: boolean;
   isNewUser: boolean;
   error: string | null;
+  banInfo: BanInfo | null;
 
   login: (provider: AuthProvider, token: string, nonce?: string) => Promise<boolean>;
-  devLogin: (nickname?: string, email?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<boolean>;
   loadStoredAuth: () => Promise<void>;
   setUser: (user: UserProfile) => void;
   clearError: () => void;
+  clearBan: () => void;
+  deleteAccount: () => Promise<boolean>;
+  submitBanAppeal: (message: string) => Promise<boolean>;
   completeOnboarding: (nickname: string, avatarUrl?: string, country?: string) => Promise<void>;
 }
 
@@ -33,6 +51,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading: false,
   isNewUser: false,
   error: null,
+  banInfo: null,
 
   login: async (provider, token, nonce): Promise<boolean> => {
     set({ error: null });
@@ -62,7 +81,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         let profile = null;
         try {
           profile = await authService.getProfile();
-        } catch {
+        } catch (profileError) {
+          const banReason = isBanError(profileError);
+          if (banReason !== null) {
+            set({
+              accessToken: response.access_token,
+              refreshToken: response.refresh_token,
+              banInfo: { reason: banReason },
+              isAuthenticated: false,
+            });
+            return false;
+          }
           // Profile fetch failed — set authenticated anyway so the user isn't stuck
         }
         set({
@@ -83,55 +112,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  devLogin: async (nickname, email) => {
-    if (!__DEV__) {
-      console.warn('[Auth] devLogin is disabled in production');
-      return;
-    }
-    set({ error: null });
-    try {
-      const response = await authService.devLogin(nickname, email);
-
-      await SecureStore.setItemAsync(
-        SECURE_STORE_KEYS.ACCESS_TOKEN,
-        response.access_token,
-      );
-      await SecureStore.setItemAsync(
-        SECURE_STORE_KEYS.REFRESH_TOKEN,
-        response.refresh_token,
-      );
-
-      set({
-        accessToken: response.access_token,
-        refreshToken: response.refresh_token,
-        user: {
-          id: response.user.id,
-          user_code: response.user.user_code ?? '',
-          email: response.user.email ?? '',
-          nickname: response.user.nickname ?? nickname ?? 'dev_user',
-          avatar_url: null,
-          birthday: null,
-          height_cm: null,
-          weight_kg: null,
-          bio: null,
-          instagram_username: null,
-          country: null,
-          total_distance_meters: 0,
-          total_runs: 0,
-          total_points: 0,
-          created_at: new Date().toISOString(),
-        },
-        isAuthenticated: true,
-        isNewUser: false,
-      });
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : i18n.t('auth.errors.loginFailed');
-      set({ error: message });
-      throw error;
-    }
-  },
-
   logout: async () => {
     await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
     await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
@@ -142,6 +122,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       isAuthenticated: false,
       isNewUser: false,
       error: null,
+      banInfo: null,
     });
   },
 
@@ -210,7 +191,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isNewUser: needsOnboarding,
           isLoading: false,
         });
-      } catch {
+      } catch (profileError) {
+        const banReason = isBanError(profileError);
+        if (banReason !== null) {
+          set({ banInfo: { reason: banReason }, isLoading: false });
+          return;
+        }
         // Access token expired or server unreachable, try refresh
         try {
           const refreshed = await get().refreshAuth();
@@ -256,6 +242,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearError: () => {
     set({ error: null });
+  },
+
+  clearBan: () => {
+    set({ banInfo: null });
+  },
+
+  deleteAccount: async (): Promise<boolean> => {
+    try {
+      await api.delete('/users/me/account');
+      await get().logout();
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  submitBanAppeal: async (message: string): Promise<boolean> => {
+    try {
+      await api.post('/users/me/ban-appeal', { message });
+      return true;
+    } catch {
+      return false;
+    }
   },
 
   completeOnboarding: async (nickname, avatarUrl, country) => {

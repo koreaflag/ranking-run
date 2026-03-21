@@ -106,9 +106,10 @@ const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     container: {
       position: 'absolute',
-      bottom: 90,
+      bottom: 50,
       left: 0,
       right: 0,
+      zIndex: 100,
       alignItems: 'center',
       gap: SPACING.md,
     },

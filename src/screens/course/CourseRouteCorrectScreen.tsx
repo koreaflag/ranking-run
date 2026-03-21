@@ -349,14 +349,14 @@ export default function CourseRouteCorrectScreen() {
 
   if (!selectedCourse || originalRoute.length === 0) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 100 }} />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={safeGoBack} style={styles.backBtn} activeOpacity={0.7}>

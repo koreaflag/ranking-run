@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Image, StyleSheet } from 'react-native';
 import { useTheme } from '../../hooks/useTheme';
 import { MAPBOX_ACCESS_TOKEN } from '../../config/env';
+
 
 interface CourseThumbnailMapProps {
   routePreview: number[][]; // [[lng, lat], ...]
@@ -45,7 +46,7 @@ function buildStaticMapUrl(
       ]),
     },
   }));
-  return `https://api.mapbox.com/styles/v1/${styleId}/static/geojson(${geojson})/auto/${pixelW}x${pixelH}@2x?padding=20&access_token=${MAPBOX_ACCESS_TOKEN}`;
+  return `https://api.mapbox.com/styles/v1/${styleId}/static/geojson(${geojson})/auto/${pixelW}x${pixelH}@2x?padding=20&logo=false&attribution=false&access_token=${MAPBOX_ACCESS_TOKEN}`;
 }
 
 /**
@@ -67,8 +68,8 @@ export default React.memo(function CourseThumbnailMap({
     if (!routePreview || routePreview.length < 2 || !MAPBOX_ACCESS_TOKEN) return null;
 
     const styleId = isDark
-      ? 'runsvs/cmlt12hqy001d01r49zt66z85'
-      : 'runsvs/cmlt0wpwv001e01sq8mg39xas';
+      ? 'mapbox/dark-v11'
+      : 'mapbox/light-v11';
 
     const pixelW = Math.min(Math.round(width * 2), 640);
     const pixelH = Math.min(Math.round(height * 2), 640);
@@ -86,7 +87,9 @@ export default React.memo(function CourseThumbnailMap({
     return url;
   }, [routePreview, width, height, isDark]);
 
-  if (!imageUri) {
+  const [failed, setFailed] = useState(false);
+
+  if (!imageUri || failed) {
     return <View style={[styles.container, { width, height, borderRadius, backgroundColor: bgColor }]} />;
   }
 
@@ -96,6 +99,7 @@ export default React.memo(function CourseThumbnailMap({
         source={{ uri: imageUri }}
         style={{ width, height }}
         resizeMode="cover"
+        onError={() => setFailed(true)}
       />
     </View>
   );

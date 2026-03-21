@@ -13,6 +13,7 @@ export type AuthStackParamList = {
   Consent: undefined;
   TermsDetail: undefined;
   PrivacyDetail: undefined;
+  LocationDetail: undefined;
   Onboarding: undefined;
 };
 

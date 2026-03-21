@@ -298,7 +298,7 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
                 print("[WorkoutMirror] Builder has \(String(format: "%.0f", builderKcal))kcal — skipping manual energy sample")
             } else {
                 // Fall back to distance-based estimate
-                let bodyMassKg: Double = 65.0  // TODO: read from HKQuantityType(.bodyMass) if authorized
+                let bodyMassKg: Double = fetchBodyMassSync() ?? 65.0
                 let estimatedKcal = (accumulatedDistanceMeters / 1000.0) * bodyMassKg
                 let energyQuantity = HKQuantity(unit: .kilocalorie(), doubleValue: estimatedKcal)
                 let energySample = HKQuantitySample(
@@ -398,6 +398,27 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
         suppressInitialCallback = false
         isStopping = false
         print("[WorkoutMirror] cleanup complete")
+    }
+
+    // MARK: - HealthKit Helpers
+
+    /// Synchronously fetch the most recent body mass from HealthKit.
+    /// Returns nil if not authorized or no data available.
+    private func fetchBodyMassSync() -> Double? {
+        guard let massType = HKQuantityType.quantityType(forIdentifier: .bodyMass) else { return nil }
+
+        var result: Double?
+        let semaphore = DispatchSemaphore(value: 0)
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+        let query = HKSampleQuery(sampleType: massType, predicate: nil, limit: 1, sortDescriptors: [sortDescriptor]) { _, samples, _ in
+            if let sample = samples?.first as? HKQuantitySample {
+                result = sample.quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo))
+            }
+            semaphore.signal()
+        }
+        healthStore.execute(query)
+        _ = semaphore.wait(timeout: .now() + 2.0)
+        return result
     }
 
     // MARK: - State Mapping
