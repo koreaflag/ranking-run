@@ -27,10 +27,30 @@ runvs.run {
 	}
 }
 
+# Admin API — Vercel frontend calls this
+admin.runvs.run {
+	reverse_proxy admin-backend:8001
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	encode gzip
+
+	log {
+		output stdout
+		format json
+	}
+}
+
 # Health check / fallback on port 80
 :80 {
 	respond /health "OK" 200
 
 	# Also proxy API requests over HTTP (for initial setup / debugging)
 	reverse_proxy /api/* backend:8000
+	reverse_proxy /admin-api/* admin-backend:8001
 }

@@ -15,6 +15,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - runvs-net
 
   backend:
     build:
@@ -36,6 +38,8 @@ services:
         condition: service_healthy
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     restart: unless-stopped
+    networks:
+      - runvs-net
 
   caddy:
     image: caddy:2-alpine
@@ -51,6 +55,12 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    networks:
+      - runvs-net
+
+networks:
+  runvs-net:
+    name: runvs-net
 
 volumes:
   pgdata:
