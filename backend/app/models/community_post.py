@@ -58,6 +58,12 @@ class CommunityPost(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true"
     )
+    admin_deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    admin_delete_reason: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User", lazy="joined")
@@ -91,6 +97,12 @@ class CommunityComment(Base, UUIDPrimaryKeyMixin):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+    )
+    admin_deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    admin_delete_reason: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
     )
 
     # Relationships
