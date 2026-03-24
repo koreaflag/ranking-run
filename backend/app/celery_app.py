@@ -32,5 +32,5 @@ app.conf.update(
     result_expires=86400,
 )
 
-# Auto-discover tasks in app.tasks package
-app.autodiscover_tasks(["app.tasks"])
+# Explicitly include task modules so they register with this app
+app.conf.include = ["app.tasks.celery_tasks"]
