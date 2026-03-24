@@ -794,8 +794,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
                     ...(customUserHeading != null
                       ? [{ rotate: `${((customUserHeading - mapBearingRef.current) % 360 + 360) % 360}deg` }]
                       : []),
-                    // Smooth continuous scale: 1.0 at zoom ≥16, gradually up to 2.0 at zoom ≤8
-                    { scale: currentZoom >= 16 ? 1 : Math.min(2, 1 + (16 - Math.max(currentZoom, 8)) * 0.125) },
+                    { scale: 1 },
                   ],
                 },
               ]}

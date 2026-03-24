@@ -611,9 +611,11 @@ export default function RunningScreen() {
     return cpMarkerData.length > 0 ? cpMarkerData : undefined;
   }, [cpMarkerData]);
 
-  const mapFollowsUser = followUser && phase !== 'completed';
-  const mapFollowMode = phase === 'completed' ? undefined : "course" as const;
-  const mapFollowPitch = phase === 'completed' ? undefined : 30;
+  // Don't change camera when phase='completed' — screen replaces immediately,
+  // changing follow/pitch causes visible zoom/tilt jerk during transition.
+  const mapFollowsUser = followUser;
+  const mapFollowMode = "course" as const;
+  const mapFollowPitch = 30;
 
   // During running, show live GPS accuracy instead of binary status
   const isIndoorMode = distanceSource === 'pedometer';
