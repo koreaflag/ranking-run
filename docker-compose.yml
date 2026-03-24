@@ -1,4 +1,20 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: runvs-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - runvs-net
+
   db:
     image: postgis/postgis:16-3.4
     container_name: runvs-db
@@ -30,11 +46,14 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-runcrew}:${POSTGRES_PASSWORD:-runcrew_password}@db:5432/${POSTGRES_DB:-runcrew}
       UPLOAD_DIR: /app/uploads
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ./backend:/app
       - uploads:/app/uploads
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     restart: unless-stopped
@@ -58,12 +77,35 @@ services:
     networks:
       - runvs-net
 
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: runvs-celery-worker
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-runcrew}:${POSTGRES_PASSWORD:-runcrew_password}@db:5432/${POSTGRES_DB:-runcrew}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    restart: unless-stopped
+    networks:
+      - runvs-net
+
 networks:
   runvs-net:
     name: runvs-net
 
 volumes:
   pgdata:
+  redis_data:
   uploads:
   caddy_data:
   caddy_config:

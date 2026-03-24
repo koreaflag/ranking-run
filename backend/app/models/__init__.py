@@ -26,6 +26,7 @@ from app.models.group_ranking import GroupRanking
 from app.models.crew_challenge import CrewChallenge, CrewChallengeRecord, CrewCourseRanking
 from app.models.point_transaction import PointTransaction
 from app.models.course_streak import CourseStreak
+from app.models.challenge import Challenge, ChallengeParticipant
 
 __all__ = [
     "Base",
@@ -67,4 +68,6 @@ __all__ = [
     "CrewCourseRanking",
     "PointTransaction",
     "CourseStreak",
+    "Challenge",
+    "ChallengeParticipant",
 ]

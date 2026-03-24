@@ -25,6 +25,7 @@ from app.services.announcement_service import AnnouncementService
 from app.services.crew_join_request_service import CrewJoinRequestService
 from app.services.group_ranking_service import GroupRankingService
 from app.services.group_run_service import GroupRunService
+from app.services.challenge_service import ChallengeService
 from app.services.crew_challenge_service import CrewChallengeService
 from app.services.crew_ranking_service import CrewRankingService
 from app.services.strava_service import StravaService
@@ -60,6 +61,7 @@ class Container(containers.DeclarativeContainer):
             "app.api.v1.crew_join_requests",
             "app.api.v1.group_runs",
             "app.api.v1.crew_challenges",
+            "app.api.v1.challenges",
             "app.api.v1.strava",
             "app.api.v1.leaderboard",
             "app.api.v1.users",
@@ -71,6 +73,7 @@ class Container(containers.DeclarativeContainer):
 
     # Services
     announcement_service = providers.Factory(AnnouncementService)
+    challenge_service = providers.Factory(ChallengeService)
     auth_service = providers.Factory(AuthService, settings=settings)
     community_service = providers.Factory(CommunityService)
     contact_service = providers.Factory(ContactService)
