@@ -61,6 +61,8 @@ export type HomeStackParamList = {
   Friends: undefined;
   CrewMemberSettings: { crewId: string; crewName: string };
   CrewActiveCourses: { crewId: string; crewName: string };
+  ChallengeList: undefined;
+  ChallengeDetail: { challengeId: string };
 };
 
 export type CourseStackParamList = {

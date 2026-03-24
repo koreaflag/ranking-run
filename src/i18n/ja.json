@@ -1166,6 +1166,38 @@
     "tier11": { "name": "ユニコーン", "desc": "存在そのものが伝説" },
     "tier12": { "name": "神獣キリン", "desc": "神話の領域に到達" }
   },
+  "challenge": {
+    "title": "チャレンジ",
+    "filterAll": "すべて",
+    "filterIndividual": "個人",
+    "filterCrew": "クルー",
+    "empty": "進行中のチャレンジがありません",
+    "emptyDesc": "新しいチャレンジが始まったらお知らせします",
+    "joined": "参加中",
+    "participants": "{{count}}人参加",
+    "daysLeft": "残り{{count}}日",
+    "rewardPoints": "{{points}}P",
+    "detail": "チャレンジ詳細",
+    "individual": "個人",
+    "crew": "クルー",
+    "goalSection": "目標",
+    "goalType": {
+      "total_distance": "総距離",
+      "total_runs": "総ラン数",
+      "total_duration": "総ランニング時間",
+      "streak_days": "連続ランニング日数"
+    },
+    "minutes": "分",
+    "timesUnit": "回",
+    "daysUnit": "日",
+    "myProgress": "進捗",
+    "completed": "目標達成！",
+    "participantsLabel": "参加者",
+    "rewardLabel": "報酬ポイント",
+    "joinTitle": "チャレンジに参加",
+    "joinConfirm": "このチャレンジに参加しますか？",
+    "joinBtn": "参加する"
+  },
   "crewLevel": {
     "guideTitle": "クルーレベルガイド",
     "current": "現在",

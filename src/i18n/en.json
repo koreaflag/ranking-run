@@ -1166,6 +1166,38 @@
     "tier11": { "name": "Unicorn", "desc": "A living legend" },
     "tier12": { "name": "Divine Qilin", "desc": "Realm of the mythical" }
   },
+  "challenge": {
+    "title": "Challenges",
+    "filterAll": "All",
+    "filterIndividual": "Individual",
+    "filterCrew": "Crew",
+    "empty": "No active challenges",
+    "emptyDesc": "We'll let you know when new challenges start",
+    "joined": "Joined",
+    "participants": "{{count}} joined",
+    "daysLeft": "{{count}}d left",
+    "rewardPoints": "{{points}}P",
+    "detail": "Challenge Detail",
+    "individual": "Individual",
+    "crew": "Crew",
+    "goalSection": "Goal",
+    "goalType": {
+      "total_distance": "Total Distance",
+      "total_runs": "Total Runs",
+      "total_duration": "Total Duration",
+      "streak_days": "Streak Days"
+    },
+    "minutes": "min",
+    "timesUnit": "runs",
+    "daysUnit": "days",
+    "myProgress": "My Progress",
+    "completed": "Goal Achieved!",
+    "participantsLabel": "Participants",
+    "rewardLabel": "Reward Points",
+    "joinTitle": "Join Challenge",
+    "joinConfirm": "Do you want to join this challenge?",
+    "joinBtn": "Join"
+  },
   "crewLevel": {
     "guideTitle": "Crew Level Guide",
     "current": "Current",

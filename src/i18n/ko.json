@@ -1166,6 +1166,38 @@
     "tier11": { "name": "유니콘", "desc": "존재 자체가 전설" },
     "tier12": { "name": "신수 기린", "desc": "신화의 영역에 도달하다" }
   },
+  "challenge": {
+    "title": "챌린지",
+    "filterAll": "전체",
+    "filterIndividual": "개인",
+    "filterCrew": "크루",
+    "empty": "진행 중인 챌린지가 없습니다",
+    "emptyDesc": "새로운 챌린지가 시작되면 알려드릴게요",
+    "joined": "참여중",
+    "participants": "{{count}}명 참여",
+    "daysLeft": "{{count}}일 남음",
+    "rewardPoints": "{{points}}P",
+    "detail": "챌린지 상세",
+    "individual": "개인",
+    "crew": "크루",
+    "goalSection": "목표",
+    "goalType": {
+      "total_distance": "총 거리",
+      "total_runs": "총 러닝 횟수",
+      "total_duration": "총 러닝 시간",
+      "streak_days": "연속 러닝 일수"
+    },
+    "minutes": "분",
+    "timesUnit": "회",
+    "daysUnit": "일",
+    "myProgress": "내 진행률",
+    "completed": "목표 달성!",
+    "participantsLabel": "참가자",
+    "rewardLabel": "보상 포인트",
+    "joinTitle": "챌린지 참가",
+    "joinConfirm": "이 챌린지에 참가하시겠습니까?",
+    "joinBtn": "참가하기"
+  },
   "crewLevel": {
     "guideTitle": "크루 레벨 가이드",
     "current": "현재",

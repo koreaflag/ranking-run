@@ -25,3 +25,9 @@ export const MAPBOX_DARK_STYLE: string =
 
 export const MAPBOX_LIGHT_STYLE: string =
   extra.MAPBOX_LIGHT_STYLE || 'mapbox://styles/runsvs/cmlt0wpwv001e01sq8mg39xas';
+
+// ---- Sentry ----
+export const SENTRY_DSN: string =
+  extra.SENTRY_DSN
+  || process.env.EXPO_PUBLIC_SENTRY_DSN
+  || '';

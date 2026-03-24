@@ -28,6 +28,7 @@ from app.services.group_run_service import GroupRunService
 from app.services.challenge_service import ChallengeService
 from app.services.crew_challenge_service import CrewChallengeService
 from app.services.crew_ranking_service import CrewRankingService
+from app.services.live_group_run_service import LiveGroupRunService
 from app.services.strava_service import StravaService
 
 
@@ -64,6 +65,7 @@ class Container(containers.DeclarativeContainer):
             "app.api.v1.challenges",
             "app.api.v1.strava",
             "app.api.v1.leaderboard",
+            "app.api.v1.live_group_runs",
             "app.api.v1.users",
         ],
     )
@@ -89,6 +91,7 @@ class Container(containers.DeclarativeContainer):
     crew_ranking_service = providers.Factory(CrewRankingService)
     group_ranking_service = providers.Factory(GroupRankingService)
     group_run_service = providers.Factory(GroupRunService)
+    live_group_run_service = providers.Factory(LiveGroupRunService)
     import_service = providers.Factory(ImportService)
     like_service = providers.Factory(LikeService)
     map_matching_service = providers.Singleton(MapMatchingService)

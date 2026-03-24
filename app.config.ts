@@ -41,7 +41,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'FOREGROUND_SERVICE',
     ],
   },
-  plugins: ['expo-secure-store', 'expo-asset', 'expo-font'],
+  plugins: ['expo-secure-store', 'expo-asset', 'expo-font', '@sentry/react-native/expo'],
   extra: {
     eas: {
       projectId: '7aad7550-6886-4154-affa-f92894d374dd',
@@ -51,6 +51,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     MAPBOX_ACCESS_TOKEN: process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN,
     MAPBOX_DARK_STYLE: process.env.EXPO_PUBLIC_MAPBOX_DARK_STYLE,
     MAPBOX_LIGHT_STYLE: process.env.EXPO_PUBLIC_MAPBOX_LIGHT_STYLE,
+    SENTRY_DSN: process.env.EXPO_PUBLIC_SENTRY_DSN,
   },
   owner: 'flagproject',
 });
