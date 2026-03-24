@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import {
   View,
-  ImageBackground,
+  Image,
   StyleSheet,
   Platform,
   type ViewStyle,
@@ -18,32 +18,28 @@ interface BlurredBackgroundProps {
   imageUri?: string | null;
 }
 
-export default function BlurredBackground({
-  children,
-  intensity = 80,
-  style,
-  imageUri,
-}: BlurredBackgroundProps) {
-  const colors = useTheme();
-  const storedUri = useSettingsStore((s) => s.backgroundImageUri);
-  const uri = imageUri !== undefined ? imageUri : storedUri;
-  const isDark = colors.statusBar === 'light-content';
-
-  if (!uri) {
-    // No background image — plain background fallback
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }, style]}>
-        {children}
-      </View>
-    );
-  }
-
+/**
+ * Static blur layer — only re-renders when uri/intensity/theme changes.
+ * Children changes do NOT cause this layer to re-render.
+ */
+const BlurLayer = React.memo(function BlurLayer({
+  uri,
+  intensity,
+  isDark,
+  glassOverlay,
+}: {
+  uri: string;
+  intensity: number;
+  isDark: boolean;
+  glassOverlay: string;
+}) {
   return (
-    <ImageBackground
-      source={{ uri }}
-      style={[styles.container, style]}
-      resizeMode="cover"
-    >
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Image
+        source={{ uri }}
+        style={StyleSheet.absoluteFill}
+        resizeMode="cover"
+      />
       {/* Blur layer */}
       {Platform.OS === 'ios' ? (
         <BlurView
@@ -68,14 +64,47 @@ export default function BlurredBackground({
       <View
         style={[
           StyleSheet.absoluteFill,
-          { backgroundColor: colors.glassOverlay },
+          { backgroundColor: glassOverlay },
         ]}
       />
+    </View>
+  );
+});
 
+function BlurredBackground({
+  children,
+  intensity = 80,
+  style,
+  imageUri,
+}: BlurredBackgroundProps) {
+  const colors = useTheme();
+  const storedUri = useSettingsStore((s) => s.backgroundImageUri);
+  const uri = imageUri !== undefined ? imageUri : storedUri;
+  const isDark = colors.statusBar === 'light-content';
+
+  if (!uri) {
+    // No background image — plain background fallback
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }, style]}>
+        {children}
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, style]}>
+      <BlurLayer
+        uri={uri}
+        intensity={intensity}
+        isDark={isDark}
+        glassOverlay={colors.glassOverlay}
+      />
       {children}
-    </ImageBackground>
+    </View>
   );
 }
+
+export default React.memo(BlurredBackground);
 
 const styles = StyleSheet.create({
   container: {

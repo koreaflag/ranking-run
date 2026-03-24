@@ -12,17 +12,11 @@ import {
   RefreshControl,
   Image,
   Dimensions,
-  LayoutAnimation,
-  UIManager,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 import { Ionicons } from '../../lib/icons';
 import { useNavigation, useRoute, useFocusEffect, type RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -297,6 +291,12 @@ export default function CrewDetailScreen() {
   const handleManage = useCallback(() => {
     navigation.navigate('CrewManage', { crewId });
   }, [navigation, crewId]);
+
+  const handlePostPress = useCallback((postId: string) => {
+    navigation.navigate('CommunityPostDetail', { postId });
+  }, [navigation]);
+
+  const weeklyRankingSlice = useMemo(() => weeklyRanking.slice(0, 5), [weeklyRanking]);
 
   const handleMoreMenu = useCallback(() => {
     const options = [t('crew.leave'), t('common.cancel')];
@@ -583,10 +583,7 @@ export default function CrewDetailScreen() {
                   <TouchableOpacity
                     style={styles.raidCard}
                     activeOpacity={0.85}
-                    onPress={() => {
-                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                      setRaidExpanded(prev => !prev);
-                    }}
+                    onPress={() => setRaidExpanded(prev => !prev)}
                   >
                     {/* Slim header — always visible */}
                     <View style={styles.raidSlimRow}>
@@ -735,52 +732,14 @@ export default function CrewDetailScreen() {
                 </View>
                 {recentPosts.length > 0 ? (
                   <View style={styles.postsCard}>
-                    {recentPosts.map((post, postIdx) => {
-                      const initial = (post.author.nickname ?? '?').charAt(0).toUpperCase();
-                      return (
-                        <TouchableOpacity
-                          key={post.id}
-                          style={[styles.postItem, postIdx > 0 && styles.postItemBorder]}
-                          onPress={() => navigation.navigate('CommunityPostDetail', { postId: post.id })}
-                          activeOpacity={0.6}
-                        >
-                          {/* Author row */}
-                          <View style={styles.postAuthorRow}>
-                            {post.author.avatar_url ? (
-                              <Image source={{ uri: post.author.avatar_url }} style={styles.postAvatar} />
-                            ) : (
-                              <View style={styles.postAvatarPlaceholder}>
-                                <Text style={styles.postAvatarText}>{initial}</Text>
-                              </View>
-                            )}
-                            <Text style={styles.postNickname} numberOfLines={1}>{post.author.nickname ?? '?'}</Text>
-                            <Text style={styles.postDot}>&middot;</Text>
-                            <Text style={styles.postTime}>{formatRelativeTime(post.created_at)}</Text>
-                          </View>
-                          {/* Body */}
-                          <Text style={styles.postBody} numberOfLines={3}>
-                            {post.title ? <><Text style={styles.postTitleInline}>{post.title}  </Text>{post.content}</> : post.content}
-                          </Text>
-                          {post.image_url && (
-                            <Image source={{ uri: post.image_url }} style={styles.postImagePreview} resizeMode="cover" />
-                          )}
-                          <View style={styles.postActions}>
-                            {post.like_count > 0 && (
-                              <View style={styles.postActionItem}>
-                                <Ionicons name={post.is_liked ? 'heart' : 'heart-outline'} size={14} color={post.is_liked ? '#EF4444' : colors.textTertiary} />
-                                <Text style={[styles.postActionText, post.is_liked && { color: '#EF4444' }]}>{post.like_count}</Text>
-                              </View>
-                            )}
-                            {post.comment_count > 0 && (
-                              <View style={styles.postActionItem}>
-                                <Ionicons name="chatbubble-outline" size={13} color={colors.textTertiary} />
-                                <Text style={styles.postActionText}>{post.comment_count}</Text>
-                              </View>
-                            )}
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    })}
+                    {recentPosts.map((post, postIdx) => (
+                      <PostItem
+                        key={post.id}
+                        post={post}
+                        isFirst={postIdx === 0}
+                        onPress={handlePostPress}
+                      />
+                    ))}
                     {/* See all button */}
                     <TouchableOpacity
                       style={styles.seeAllBtn}
@@ -811,22 +770,14 @@ export default function CrewDetailScreen() {
                   <Text style={styles.sectionHeaderTitle}>{t('crew.weeklyRanking')}</Text>
                 </View>
                 <View style={styles.weeklyCard}>
-                  {weeklyRanking.slice(0, 5).map((item, idx) => {
-                    const total = Math.min(weeklyRanking.length, 5);
-                    return (
-                      <View key={item.user_id} style={[styles.weeklyRow, idx < total - 1 && styles.weeklyRowBorder]}>
-                        <Text style={[styles.weeklyRank, idx === 0 && styles.weeklyRankGold]}>
-                          #{item.rank}
-                        </Text>
-                        <Text style={styles.weeklyName} numberOfLines={1}>
-                          {item.nickname ?? '-'}
-                        </Text>
-                        <Text style={styles.weeklyDistance}>
-                          {(item.weekly_distance / 1000).toFixed(1)}km
-                        </Text>
-                      </View>
-                    );
-                  })}
+                  {weeklyRankingSlice.map((item, idx) => (
+                    <WeeklyRankingItem
+                      key={item.user_id}
+                      item={item}
+                      isFirst={idx === 0}
+                      isLast={idx === weeklyRankingSlice.length - 1}
+                    />
+                  ))}
                 </View>
               </View>
             )}
@@ -845,7 +796,91 @@ export default function CrewDetailScreen() {
   );
 }
 
-// ---- Sub-components ----
+// ---- Sub-components (memoized to avoid re-renders during scroll) ----
+
+const PostItem = React.memo(function PostItem({
+  post,
+  isFirst,
+  onPress,
+}: {
+  post: CommunityPostItem;
+  isFirst: boolean;
+  onPress: (postId: string) => void;
+}) {
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const initial = (post.author.nickname ?? '?').charAt(0).toUpperCase();
+
+  return (
+    <TouchableOpacity
+      style={[styles.postItem, !isFirst && styles.postItemBorder]}
+      onPress={() => onPress(post.id)}
+      activeOpacity={0.6}
+    >
+      {/* Author row */}
+      <View style={styles.postAuthorRow}>
+        {post.author.avatar_url ? (
+          <Image source={{ uri: post.author.avatar_url }} style={styles.postAvatar} />
+        ) : (
+          <View style={styles.postAvatarPlaceholder}>
+            <Text style={styles.postAvatarText}>{initial}</Text>
+          </View>
+        )}
+        <Text style={styles.postNickname} numberOfLines={1}>{post.author.nickname ?? '?'}</Text>
+        <Text style={styles.postDot}>&middot;</Text>
+        <Text style={styles.postTime}>{formatRelativeTime(post.created_at)}</Text>
+      </View>
+      {/* Body */}
+      <Text style={styles.postBody} numberOfLines={3}>
+        {post.title ? <><Text style={styles.postTitleInline}>{post.title}  </Text>{post.content}</> : post.content}
+      </Text>
+      {post.image_url && (
+        <Image source={{ uri: post.image_url }} style={styles.postImagePreview} resizeMode="cover" />
+      )}
+      <View style={styles.postActions}>
+        {post.like_count > 0 && (
+          <View style={styles.postActionItem}>
+            <Ionicons name={post.is_liked ? 'heart' : 'heart-outline'} size={14} color={post.is_liked ? '#EF4444' : colors.textTertiary} />
+            <Text style={[styles.postActionText, post.is_liked && { color: '#EF4444' }]}>{post.like_count}</Text>
+          </View>
+        )}
+        {post.comment_count > 0 && (
+          <View style={styles.postActionItem}>
+            <Ionicons name="chatbubble-outline" size={13} color={colors.textTertiary} />
+            <Text style={styles.postActionText}>{post.comment_count}</Text>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+});
+
+const WeeklyRankingItem = React.memo(function WeeklyRankingItem({
+  item,
+  isFirst,
+  isLast,
+}: {
+  item: CrewWeeklyRankingItem;
+  isFirst: boolean;
+  isLast: boolean;
+}) {
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  return (
+    <View style={[styles.weeklyRow, !isLast && styles.weeklyRowBorder]}>
+      <Text style={[styles.weeklyRank, isFirst && styles.weeklyRankGold]}>
+        #{item.rank}
+      </Text>
+      <Text style={styles.weeklyName} numberOfLines={1}>
+        {item.nickname ?? '-'}
+      </Text>
+      <Text style={styles.weeklyDistance}>
+        {(item.weekly_distance / 1000).toFixed(1)}km
+      </Text>
+    </View>
+  );
+});
 
 function MemberRow({
   member,
