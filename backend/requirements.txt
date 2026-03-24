@@ -143,3 +143,5 @@ sentry-sdk[fastapi]==2.19.2
 slowapi==0.1.9
 boto3==1.37.0
 firebase-admin==6.6.0
+celery[redis]>=5.4.0
+redis>=5.0.0
