@@ -50,7 +50,8 @@ export const useChallengeStore = create<ChallengeState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const response = await challengeService.getChallenges();
-      set({ challenges: response.items, isLoading: false });
+      const items = response.data ?? [];
+      set({ challenges: Array.isArray(items) ? items : [], isLoading: false });
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : 'Failed to load challenges';

@@ -20,7 +20,8 @@ export interface ChallengeListItem {
 }
 
 export interface ChallengeListResponse {
-  items: ChallengeListItem[];
+  data: ChallengeListItem[];
+  total: number;
 }
 
 export interface ChallengeProgress {
