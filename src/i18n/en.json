@@ -762,7 +762,15 @@
     "rejectFailed": "Failed to reject request.",
     "weeklyRanking": "This Week's Ranking",
     "level": "Lv.{{level}}",
-    "xpProgress": "{{current}} / {{next}} XP"
+    "xpProgress": "{{current}} / {{next}} XP",
+    "weeklyStats": "This Week's Activity",
+    "totalDistance": "Total Distance",
+    "totalRuns": "Total Runs",
+    "activeMembers": "Active Members",
+    "avgPace": "Avg Pace",
+    "activeCourses": "Active Courses",
+    "memberRuns": " runs",
+    "noActiveCourses": "No recent course activity"
   },
   "format": {
     "justNow": "Just now",
@@ -1086,9 +1094,26 @@
     "tabLabel": "Ranking",
     "myRanking": "My Ranking",
     "allCountries": "All",
+    "selectCountry": "Select Country",
     "southKorea": "South Korea",
     "japan": "Japan",
-    "usa": "USA"
+    "usa": "USA",
+    "allTime": "All Time",
+    "season": "Season",
+    "allGenders": "All",
+    "male": "Male",
+    "female": "Female",
+    "top": "Top",
+    "rankChange": "places",
+    "runners": " runners"
+  },
+  "dominion": {
+    "title": "Course Dominion",
+    "dominatedBy": "Dominated by",
+    "noDominion": "No crew has conquered this course yet",
+    "since": "Since",
+    "avgTime": "Top 3 Avg.",
+    "territory": "Territory"
   },
   "points": {
     "history": "Point History",

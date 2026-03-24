@@ -19,8 +19,10 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import BlurredBackground from '../../components/common/BlurredBackground';
 import RegionPickerModal from '../../components/crew/RegionPickerModal';
+import CountryPickerModal from '../../components/common/CountryPickerModal';
 import RunningAvatarIndicator from '../../components/common/RunningAvatarIndicator';
 import { shortProvinceName } from '../../data/koreaRegions';
+import { getCountryFlag, getCountryName } from '../../data/countries';
 import type { CommunityStackParamList } from '../../types/navigation';
 import type { CrewItem, WeeklyRunnerEntry, FriendRunning } from '../../types/api';
 import { crewService } from '../../services/crewService';
@@ -323,6 +325,10 @@ export default function CommunityFeedScreen() {
   const [regionFilter, setRegionFilter] = useState<string | null>(null);
   const [regionPickerVisible, setRegionPickerVisible] = useState(false);
 
+  // Country filter (ranking tab)
+  const [countryFilter, setCountryFilter] = useState<string | null>(null);
+  const [countryPickerVisible, setCountryPickerVisible] = useState(false);
+
   // Explore tab state (initialized from module cache)
   const [exploreCrews, setExploreCrews] = useState<CrewItem[]>(_cachedExplore);
   const [explorePage, setExplorePage] = useState(0);
@@ -387,12 +393,13 @@ export default function CommunityFeedScreen() {
     }
   }, []);
 
-  const loadWeeklyRunners = useCallback(async (region?: string | null, refresh = false) => {
+  const loadWeeklyRunners = useCallback(async (region?: string | null, country?: string | null, refresh = false) => {
     if (refresh) setRankingRefreshing(true);
     else setRankingLoading(true);
     try {
       const res = await rankingService.getWeeklyLeaderboard({
         region: region || undefined,
+        country: country || undefined,
         limit: 20,
       });
       setWeeklyRunners(res.data);
@@ -437,9 +444,12 @@ export default function CommunityFeedScreen() {
 
   useEffect(() => {
     loadExplore(0, false, regionFilter);
-    loadWeeklyRunners(regionFilter);
     loadMyCrews();
-  }, [loadExplore, loadWeeklyRunners, loadMyCrews, regionFilter]);
+  }, [loadExplore, loadMyCrews, regionFilter]);
+
+  useEffect(() => {
+    loadWeeklyRunners(regionFilter, countryFilter);
+  }, [loadWeeklyRunners, regionFilter, countryFilter]);
 
   const handleExploreEndReached = useCallback(() => {
     if (!exploreHasMore || exploreLoadingMore.current) return;
@@ -537,8 +547,8 @@ export default function CommunityFeedScreen() {
   }, [loadExplore, regionFilter]);
 
   const handleRankingRefresh = useCallback(() => {
-    loadWeeklyRunners(regionFilter, true);
-  }, [loadWeeklyRunners, regionFilter]);
+    loadWeeklyRunners(regionFilter, countryFilter, true);
+  }, [loadWeeklyRunners, regionFilter, countryFilter]);
 
   const handleMyCrewsRefresh = useCallback(() => {
     loadMyCrews(true);
@@ -736,30 +746,56 @@ export default function CommunityFeedScreen() {
                 </Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              style={[styles.filterChip, regionFilter ? styles.filterChipActive : null]}
-              onPress={() => setRegionPickerVisible(true)}
-              activeOpacity={0.6}
-            >
-              <Ionicons
-                name="location-outline"
-                size={14}
-                color={regionFilter ? '#FFF' : colors.textSecondary}
-              />
-              <Text style={[styles.filterChipText, regionFilter ? styles.filterChipTextActive : null]}>
-                {regionFilter ? shortProvinceName(regionFilter) : t('crew.selectRegion')}
-              </Text>
-              {regionFilter ? (
-                <TouchableOpacity
-                  onPress={() => setRegionFilter(null)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons name="close-circle" size={15} color="rgba(255,255,255,0.8)" />
-                </TouchableOpacity>
-              ) : (
-                <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
-              )}
-            </TouchableOpacity>
+            {activeTab === 'ranking' && (
+              <TouchableOpacity
+                style={[styles.filterChip, countryFilter ? styles.filterChipActive : null]}
+                onPress={() => setCountryPickerVisible(true)}
+                activeOpacity={0.6}
+              >
+                <Text style={{ fontSize: 14 }}>
+                  {countryFilter ? getCountryFlag(countryFilter) : '🌍'}
+                </Text>
+                <Text style={[styles.filterChipText, countryFilter ? styles.filterChipTextActive : null]}>
+                  {countryFilter ? getCountryName(countryFilter) : t('ranking.allCountries')}
+                </Text>
+                {countryFilter ? (
+                  <TouchableOpacity
+                    onPress={() => setCountryFilter(null)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="close-circle" size={15} color="rgba(255,255,255,0.8)" />
+                  </TouchableOpacity>
+                ) : (
+                  <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+                )}
+              </TouchableOpacity>
+            )}
+            {activeTab === 'explore' && (
+              <TouchableOpacity
+                style={[styles.filterChip, regionFilter ? styles.filterChipActive : null]}
+                onPress={() => setRegionPickerVisible(true)}
+                activeOpacity={0.6}
+              >
+                <Ionicons
+                  name="location-outline"
+                  size={14}
+                  color={regionFilter ? '#FFF' : colors.textSecondary}
+                />
+                <Text style={[styles.filterChipText, regionFilter ? styles.filterChipTextActive : null]}>
+                  {regionFilter ? shortProvinceName(regionFilter) : t('crew.selectRegion')}
+                </Text>
+                {regionFilter ? (
+                  <TouchableOpacity
+                    onPress={() => setRegionFilter(null)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="close-circle" size={15} color="rgba(255,255,255,0.8)" />
+                  </TouchableOpacity>
+                ) : (
+                  <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -769,6 +805,12 @@ export default function CommunityFeedScreen() {
           onSelect={handleRegionSelect}
           selectedRegion={regionFilter}
           provinceOnly
+        />
+        <CountryPickerModal
+          visible={countryPickerVisible}
+          onClose={() => setCountryPickerVisible(false)}
+          onSelect={(code) => setCountryFilter(code)}
+          selectedCountry={countryFilter}
         />
 
         {/* Explore Tab */}
@@ -1251,6 +1293,7 @@ const createStyles = (c: ThemeColors) =>
       flexDirection: 'row',
       paddingHorizontal: SPACING.xl,
       marginBottom: SPACING.sm,
+      gap: SPACING.sm,
     },
     filterChip: {
       flexDirection: 'row',

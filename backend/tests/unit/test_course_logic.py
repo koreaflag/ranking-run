@@ -122,4 +122,4 @@ class TestGenerateThumbnailUrl:
         geometry = {"coordinates": [[0.0, 0.0], [1.0, 1.0]]}
         url = generate_thumbnail_url(geometry, "pk.test")
         assert "outdoors-v12" in url
-        assert "400x200@2x" in url
+        assert "600x300@2x" in url

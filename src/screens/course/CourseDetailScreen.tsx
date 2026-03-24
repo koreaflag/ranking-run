@@ -30,14 +30,17 @@ import { useRunningStore } from '../../stores/runningStore';
 import StatItem from '../../components/common/StatItem';
 import ScreenHeader from '../../components/common/ScreenHeader';
 import RouteMapView from '../../components/map/RouteMapView';
-import ReviewSection from '../../components/course/ReviewSection';
+import CourseCommentSection from '../../components/course/CourseCommentSection';
 import DifficultyBadge from '../../components/course/DifficultyBadge';
 import RunnerLevelBadge from '../../components/runner/RunnerLevelBadge';
 import ElevationProfileChart from '../../components/charts/ElevationProfileChart';
+import PodiumView from '../../components/ranking/PodiumView';
+import FilterChipBar, { type FilterGroup } from '../../components/ranking/FilterChipBar';
+import GpsVerifiedBadge from '../../components/ranking/GpsVerifiedBadge';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import type { CourseStackParamList } from '../../types/navigation';
-import type { RankingEntry, CourseCheckpoint, CrewCourseRankingEntry } from '../../types/api';
+import type { RankingEntry, RankingFilterParams, CourseCheckpoint, CrewCourseRankingEntry } from '../../types/api';
 import { crewChallengeService } from '../../services/crewChallengeService';
 import type { CheckpointMarkerData } from '../../components/map/RouteMapView';
 import {
@@ -100,28 +103,71 @@ export default function CourseDetailScreen() {
   const selectedCourseIsLiked = useCourseDetailStore(s => s.selectedCourseIsLiked);
   const toggleLike = useCourseDetailStore(s => s.toggleLike);
   const deleteMyCourse = useCourseListStore(s => s.deleteMyCourse);
-  const fetchRankingsWithCountry = useCourseDetailStore(s => s.fetchRankingsWithCountry);
-  const rankingCountry = useCourseDetailStore(s => s.rankingCountry);
+  const fetchRankingsWithFilters = useCourseDetailStore(s => s.fetchRankingsWithFilters);
+  const rankingFilters = useCourseDetailStore(s => s.rankingFilters);
+  const rankingTotalRunners = useCourseDetailStore(s => s.rankingTotalRunners);
+  const courseDominion = useCourseDetailStore(s => s.selectedCourseDominion);
 
   // Ranking tab state: 'individual' or 'crew'
   const [rankingTab, setRankingTab] = useState<'individual' | 'crew'>('individual');
 
-  // Country filter options for rankings
-  const COUNTRY_FILTERS = useMemo(() => [
-    { label: t('ranking.allCountries'), value: null },
-    { label: t('ranking.southKorea'), value: '대한민국' },
-    { label: t('ranking.japan'), value: '日本' },
-    { label: t('ranking.usa'), value: 'United States' },
-  ], [t]);
+  // Filter handler: merges new filter key into existing filters
+  const handleFilterChange = useCallback((key: keyof RankingFilterParams, value: string | null) => {
+    const next = { ...rankingFilters, [key]: value ?? undefined };
+    // Clear undefined keys
+    Object.keys(next).forEach((k) => {
+      if (next[k as keyof RankingFilterParams] === undefined) {
+        delete next[k as keyof RankingFilterParams];
+      }
+    });
+    fetchRankingsWithFilters(courseId, next);
+  }, [rankingFilters, courseId, fetchRankingsWithFilters]);
 
-  // Default to user's country on initial load
-  const hasSetDefaultCountry = useRef(false);
-  useEffect(() => {
-    if (!hasSetDefaultCountry.current && currentUser?.country && courseId) {
-      hasSetDefaultCountry.current = true;
-      fetchRankingsWithCountry(courseId, currentUser.country);
-    }
-  }, [currentUser?.country, courseId, fetchRankingsWithCountry]);
+  // Build filter groups for FilterChipBar
+  const filterGroups: FilterGroup[] = useMemo(() => [
+    {
+      key: 'scope',
+      chips: [
+        { label: t('ranking.allTime'), value: null },
+        { label: t('ranking.season'), value: 'season' },
+      ],
+      selected: rankingFilters.scope === 'season' ? 'season' : null,
+      onSelect: (v) => handleFilterChange('scope', v === 'season' ? 'season' : null),
+    },
+    {
+      key: 'gender',
+      chips: [
+        { label: t('ranking.allGenders'), value: null },
+        { label: t('ranking.male'), value: 'male' },
+        { label: t('ranking.female'), value: 'female' },
+      ],
+      selected: rankingFilters.gender ?? null,
+      onSelect: (v) => handleFilterChange('gender', v),
+    },
+    {
+      key: 'country',
+      chips: [
+        { label: t('ranking.allCountries'), value: null },
+        { label: '🇰🇷 ' + t('ranking.southKorea'), value: 'KR' },
+        { label: '🇯🇵 ' + t('ranking.japan'), value: 'JP' },
+        { label: '🇺🇸 ' + t('ranking.usa'), value: 'US' },
+      ],
+      selected: rankingFilters.country ?? null,
+      onSelect: (v) => handleFilterChange('country', v),
+    },
+  ], [t, rankingFilters, handleFilterChange]);
+
+  // Top 3 entries for podium
+  const podiumEntries = useMemo(
+    () => selectedCourseRankings.slice(0, 3),
+    [selectedCourseRankings],
+  );
+
+  // Remaining entries (after top 3)
+  const remainingRankings = useMemo(
+    () => selectedCourseRankings.slice(3),
+    [selectedCourseRankings],
+  );
 
   const pendingSelectForRaid = useCourseListStore((s) => s.pendingSelectForRaid);
   const [isStartingRaid, setIsStartingRaid] = useState(false);
@@ -324,12 +370,6 @@ export default function CourseDetailScreen() {
     navigation.navigate('CrewDetail', { crewId });
   }, [navigation]);
 
-  const handleReviewInputFocus = useCallback(() => {
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 300);
-  }, []);
-
   const handleStartRaid = useCallback(async () => {
     if (!pendingSelectForRaid || isStartingRaid) return;
     setIsStartingRaid(true);
@@ -395,9 +435,10 @@ export default function CourseDetailScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         onScroll={handleScroll}
         scrollEventThrottle={16}
-        keyboardShouldPersistTaps="handled"
       >
         {/* Large map at top */}
         <View style={styles.mapWrapper}>
@@ -532,49 +573,30 @@ export default function CourseDetailScreen() {
         {stats && (
           <View style={styles.statsCard}>
             <Text style={styles.sectionTitle}>{t('course.detail.stats')}</Text>
-            <View style={styles.dashboardGrid}>
-              <View style={styles.dashboardCell}>
-                <Text style={styles.dashboardValue}>
-                  {formatNumber(stats.total_runs)}
-                </Text>
-                <Text style={styles.dashboardLabel}>{t('course.detail.totalRuns')}</Text>
+            <View style={styles.statsRowList}>
+              <View style={styles.statsRowItem}>
+                <Text style={styles.statsRowLabel}>{t('course.detail.totalRuns')}</Text>
+                <Text style={styles.statsRowValue}>{formatNumber(stats.total_runs)}회</Text>
               </View>
-              <View style={styles.dashboardDivider} />
-              <View style={styles.dashboardCell}>
-                <Text style={styles.dashboardValue}>
-                  {formatNumber(stats.unique_runners)}
-                </Text>
-                <Text style={styles.dashboardLabel}>{t('course.detail.runners')}</Text>
+              <View style={styles.statsRowItem}>
+                <Text style={styles.statsRowLabel}>{t('course.detail.runners')}</Text>
+                <Text style={styles.statsRowValue}>{formatNumber(stats.unique_runners)}명</Text>
               </View>
-              <View style={styles.dashboardDivider} />
-              <View style={styles.dashboardCell}>
-                <Text style={styles.dashboardValue}>
-                  {Math.round(stats.completion_rate * 100)}%
-                </Text>
-                <Text style={styles.dashboardLabel}>{t('course.detail.completionRate')}</Text>
+              <View style={styles.statsRowItem}>
+                <Text style={styles.statsRowLabel}>{t('course.detail.completionRate')}</Text>
+                <Text style={styles.statsRowValue}>{Math.round(stats.completion_rate * 100)}%</Text>
               </View>
-            </View>
-            <View style={styles.statsRowDivider} />
-            <View style={styles.dashboardGrid}>
-              <View style={styles.dashboardCell}>
-                <Text style={styles.dashboardValue}>
-                  {formatPace(stats.avg_pace_seconds_per_km)}
-                </Text>
-                <Text style={styles.dashboardLabel}>{t('course.detail.avgPace')}</Text>
+              <View style={styles.statsRowItem}>
+                <Text style={styles.statsRowLabel}>{t('course.detail.avgPace')}</Text>
+                <Text style={styles.statsRowValue}>{formatPace(stats.avg_pace_seconds_per_km)}</Text>
               </View>
-              <View style={styles.dashboardDivider} />
-              <View style={styles.dashboardCell}>
-                <Text style={styles.dashboardValueHighlight}>
-                  {formatPace(stats.best_pace_seconds_per_km)}
-                </Text>
-                <Text style={styles.dashboardLabel}>{t('course.detail.bestPace')}</Text>
+              <View style={styles.statsRowItem}>
+                <Text style={styles.statsRowLabel}>{t('course.detail.bestPace')}</Text>
+                <Text style={[styles.statsRowValue, { color: colors.primary }]}>{formatPace(stats.best_pace_seconds_per_km)}</Text>
               </View>
-              <View style={styles.dashboardDivider} />
-              <View style={styles.dashboardCell}>
-                <Text style={styles.dashboardValue}>
-                  {formatDuration(stats.avg_duration_seconds)}
-                </Text>
-                <Text style={styles.dashboardLabel}>{t('course.detail.avgTime')}</Text>
+              <View style={styles.statsRowItem}>
+                <Text style={styles.statsRowLabel}>{t('course.detail.avgTime')}</Text>
+                <Text style={styles.statsRowValue}>{formatDuration(stats.avg_duration_seconds)}</Text>
               </View>
             </View>
           </View>
@@ -611,13 +633,58 @@ export default function CourseDetailScreen() {
           </View>
         )}
 
+        {/* Course Dominion Banner */}
+        {courseDominion && (
+          <TouchableOpacity
+            style={[styles.dominionBanner, { borderColor: (courseDominion.crew_badge_color || colors.primary) + '44' }]}
+            onPress={() => navigation.navigate('CrewDetail', { crewId: courseDominion.crew_id })}
+            activeOpacity={0.7}
+          >
+            {courseDominion.crew_logo_url ? (
+              <Image
+                source={{ uri: courseDominion.crew_logo_url }}
+                style={[styles.dominionLogo, { borderColor: courseDominion.crew_badge_color || colors.primary }]}
+              />
+            ) : (
+              <View style={[styles.dominionIcon, { backgroundColor: (courseDominion.crew_badge_color || colors.primary) + '20' }]}>
+                <Ionicons name="shield" size={20} color={courseDominion.crew_badge_color || colors.primary} />
+              </View>
+            )}
+            <View style={styles.dominionInfo}>
+              <Text style={styles.dominionLabel}>{t('dominion.dominatedBy')}</Text>
+              <Text style={[styles.dominionCrewName, { color: courseDominion.crew_badge_color || colors.primary }]}>
+                {courseDominion.crew_name}
+              </Text>
+              <Text style={styles.dominionAvgTime}>
+                {t('dominion.avgTime')}: {formatDuration(courseDominion.avg_duration_seconds)}
+              </Text>
+            </View>
+            <View style={styles.dominionMembers}>
+              {courseDominion.top_members.slice(0, 3).map((m, i) => (
+                m.avatar_url ? (
+                  <Image
+                    key={m.user_id}
+                    source={{ uri: m.avatar_url }}
+                    style={[styles.dominionAvatar, i > 0 && { marginLeft: -8 }]}
+                  />
+                ) : (
+                  <View key={m.user_id} style={[styles.dominionAvatarPlaceholder, i > 0 && { marginLeft: -8 }]}>
+                    <Ionicons name="person" size={10} color={colors.textTertiary} />
+                  </View>
+                )
+              ))}
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+          </TouchableOpacity>
+        )}
+
         {/* Leaderboard with Individual / Crew tabs */}
         <View style={styles.rankingSection}>
           <View style={styles.rankingHeader}>
             <Text style={styles.sectionTitle}>{t('course.detail.leaderboard')}</Text>
             <Text style={styles.rankingCount}>
               {rankingTab === 'individual'
-                ? `TOP ${selectedCourseRankings.length}`
+                ? `${rankingTotalRunners} ${t('ranking.runners')}`
                 : `${selectedCourseCrewRankings.length} ${t('ranking.crew')}`}
             </Text>
           </View>
@@ -644,42 +711,32 @@ export default function CourseDetailScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Country Filter (individual tab only) */}
+          {/* Filter Chips (individual tab only) */}
           {rankingTab === 'individual' && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.countryFilterRow}
-              contentContainerStyle={styles.countryFilterContent}
-            >
-              {COUNTRY_FILTERS.map((option) => {
-                const isActive = rankingCountry === option.value;
-                return (
-                  <TouchableOpacity
-                    key={option.value ?? 'all'}
-                    style={[styles.countryFilterChip, isActive && styles.countryFilterChipActive]}
-                    onPress={() => fetchRankingsWithCountry(courseId, option.value)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.countryFilterText, isActive && styles.countryFilterTextActive]}>
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+            <FilterChipBar groups={filterGroups} />
           )}
 
           {/* Individual Rankings */}
           {rankingTab === 'individual' && (
             selectedCourseRankings.length > 0 ? (
-              selectedCourseRankings.map((entry: RankingEntry) => (
-                <RankingRow
-                  key={`${entry.rank}-${entry.user.id}`}
-                  entry={entry}
-                  isMe={entry.user.id === currentUser?.id}
-                />
-              ))
+              <>
+                {/* Top 3 Podium */}
+                {podiumEntries.length > 0 && (
+                  <PodiumView
+                    entries={podiumEntries}
+                    onUserPress={(userId) => navigation.navigate('UserProfile', { userId })}
+                  />
+                )}
+
+                {/* Remaining rankings */}
+                {remainingRankings.map((entry: RankingEntry) => (
+                  <RankingRow
+                    key={`${entry.rank}-${entry.user.id}`}
+                    entry={entry}
+                    isMe={entry.user.id === currentUser?.id}
+                  />
+                ))}
+              </>
             ) : (
               <View style={styles.groupRankEmpty}>
                 <Ionicons name="trophy-outline" size={32} color={colors.textTertiary} />
@@ -698,7 +755,6 @@ export default function CourseDetailScreen() {
                 </View>
               ) : (
                 <>
-                  {/* My crews first (if not already in main list) */}
                   {selectedCourseMyCrewRankings.map((entry) => (
                     <CrewRankingRow
                       key={`my-${entry.crew_id}`}
@@ -721,13 +777,8 @@ export default function CourseDetailScreen() {
           )}
         </View>
 
-        {/* Reviews */}
-        <ReviewSection
-          courseId={courseId}
-          creatorId={course.creator.id}
-          currentUserId={currentUser?.id}
-          onInputFocus={handleReviewInputFocus}
-        />
+        {/* Comments */}
+        <CourseCommentSection courseId={courseId} scrollViewRef={scrollViewRef} />
       </ScrollView>
       </KeyboardAvoidingView>
 
@@ -959,16 +1010,13 @@ const CrewRankingRow = React.memo(function CrewRankingRow({
           {isMyCrew ? '  (ME)' : ''}
         </Text>
         <Text style={styles.rankCrewName}>
-          {entry.completed_count}/{entry.total_participants}
+          {entry.completed_count}명 참여
         </Text>
       </View>
 
       <View style={styles.rankStats}>
         <Text style={styles.rankPace}>
           {formatDuration(entry.avg_duration_seconds)}
-        </Text>
-        <Text style={styles.rankDuration}>
-          {t('ranking.avgTime')}
         </Text>
       </View>
     </TouchableOpacity>
@@ -1025,6 +1073,7 @@ const RankingRow = React.memo(function RankingRow({ entry, isMe = false }: { ent
           <Text style={[styles.rankNickname, isMe && styles.rankNicknameMe, isTop3 && { fontWeight: '800' }]} numberOfLines={1}>
             {entry.user.nickname}
           </Text>
+          {entry.gps_verified && <GpsVerifiedBadge size={12} />}
           {(entry.user.runner_level ?? 0) > 1 && (
             <RunnerLevelBadge level={entry.user.runner_level} size="sm" />
           )}
@@ -1034,9 +1083,14 @@ const RankingRow = React.memo(function RankingRow({ entry, isMe = false }: { ent
             </View>
           )}
         </View>
-        {entry.user.crew_name ? (
-          <Text style={styles.rankCrewName}>{entry.user.crew_name}</Text>
-        ) : null}
+        <View style={styles.rankSubRow}>
+          {entry.user.crew_name ? (
+            <Text style={styles.rankCrewName}>{entry.user.crew_name}</Text>
+          ) : null}
+          {entry.user.country ? (
+            <Text style={styles.rankCountry}>{entry.user.country}</Text>
+          ) : null}
+        </View>
       </View>
 
       {/* Time (primary) + Pace (secondary) */}
@@ -1244,6 +1298,27 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     height: 1,
     backgroundColor: c.divider,
   },
+  statsRowList: {
+    gap: 0,
+  },
+  statsRowItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: c.divider,
+  },
+  statsRowLabel: {
+    fontSize: FONT_SIZES.md,
+    color: c.textSecondary,
+  },
+  statsRowValue: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '700',
+    color: c.text,
+    fontVariant: ['tabular-nums'] as any,
+  },
   sectionTitle: {
     fontSize: FONT_SIZES.lg,
     fontWeight: '800',
@@ -1280,6 +1355,72 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
 
   // -- Leaderboard --
+  // Dominion banner
+  dominionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: SPACING.xxl,
+    marginBottom: SPACING.lg,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    backgroundColor: c.card,
+  },
+  dominionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.sm,
+  },
+  dominionLogo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    marginRight: SPACING.sm,
+  },
+  dominionInfo: {
+    flex: 1,
+  },
+  dominionLabel: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textTertiary,
+    marginBottom: 1,
+  },
+  dominionCrewName: {
+    fontSize: FONT_SIZES.md,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  dominionAvgTime: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textSecondary,
+  },
+  dominionMembers: {
+    flexDirection: 'row',
+    marginRight: SPACING.xs,
+  },
+  dominionAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: c.card,
+  },
+  dominionAvatarPlaceholder: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: c.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: c.card,
+  },
+
   rankingSection: {
     marginHorizontal: SPACING.xxl,
     gap: SPACING.sm,
@@ -1372,10 +1513,19 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.white,
     letterSpacing: 0.5,
   },
+  rankSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
   rankCrewName: {
     fontSize: FONT_SIZES.xs,
     fontWeight: '500',
     color: c.textSecondary,
+  },
+  rankCountry: {
+    fontSize: FONT_SIZES.xs,
+    color: c.textTertiary,
   },
   rankStats: {
     alignItems: 'flex-end',
@@ -1418,35 +1568,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   rankingTabTextActive: {
     color: c.text,
-    fontWeight: '700',
-  },
-
-  // -- Country Filter --
-  countryFilterRow: {
-    marginBottom: SPACING.xs,
-  },
-  countryFilterContent: {
-    gap: SPACING.xs,
-  },
-  countryFilterChip: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
-    borderRadius: BORDER_RADIUS.full,
-    backgroundColor: c.surfaceLight,
-    borderWidth: 1,
-    borderColor: c.divider,
-  },
-  countryFilterChipActive: {
-    backgroundColor: c.primary + '18',
-    borderColor: c.primary,
-  },
-  countryFilterText: {
-    fontSize: FONT_SIZES.sm,
-    fontWeight: '600',
-    color: c.textSecondary,
-  },
-  countryFilterTextActive: {
-    color: c.primary,
     fontWeight: '700',
   },
 

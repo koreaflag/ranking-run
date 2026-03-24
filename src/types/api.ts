@@ -61,6 +61,7 @@ export interface UserProfile {
   nickname: string;
   avatar_url: string | null;
   birthday: string | null;
+  gender: string | null;
   height_cm: number | null;
   weight_kg: number | null;
   bio: string | null;
@@ -246,6 +247,33 @@ export interface NearbyCourse {
   like_count?: number;
 }
 
+export interface CourseDominionBrief {
+  crew_id: string;
+  crew_name: string;
+  crew_badge_color: string | null;
+  crew_logo_url: string | null;
+}
+
+export interface DominionMemberInfo {
+  user_id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  best_duration_seconds: number;
+}
+
+export interface CourseDominionInfo {
+  course_id: string;
+  crew_id: string;
+  crew_name: string;
+  crew_logo_url: string | null;
+  crew_badge_color: string | null;
+  crew_badge_icon: string | null;
+  avg_duration_seconds: number;
+  top_members: DominionMemberInfo[];
+  dominated_since: string;
+  points_accumulated: number;
+}
+
 export interface CourseMarker {
   id: string;
   title: string;
@@ -260,6 +288,7 @@ export interface CourseMarker {
   elevation_gain_meters?: number;
   creator_nickname?: string | null;
   user_rank?: number | null;
+  dominion?: CourseDominionBrief | null;
 }
 
 export interface GeoJSONLineString {
@@ -349,6 +378,7 @@ export interface RankingUser {
   avatar_url: string | null;
   crew_name?: string | null;
   runner_level?: number;
+  country?: string | null;
 }
 
 export interface RankingEntry {
@@ -358,6 +388,16 @@ export interface RankingEntry {
   best_pace_seconds_per_km: number;
   achieved_at: string;
   run_count?: number;
+  percentile?: number | null;
+  gps_verified?: boolean;
+}
+
+export interface RankingFilterParams {
+  scope?: 'all_time' | 'season';
+  gender?: 'male' | 'female';
+  age_group?: string;
+  crew_id?: string;
+  country?: string;
 }
 
 export interface RankingListResponse {
@@ -366,6 +406,8 @@ export interface RankingListResponse {
     rank: number;
     best_duration_seconds: number;
     best_pace_seconds_per_km: number;
+    percentile?: number | null;
+    rank_change?: number | null;
   } | null;
   total_runners: number;
 }
@@ -375,6 +417,7 @@ export interface MyRanking {
   best_duration_seconds: number | null;
   total_runners: number;
   percentile: number | null;
+  rank_change?: number | null;
 }
 
 export interface MyBestRecord {
@@ -578,11 +621,22 @@ export interface RawGPSPointAPI {
   timestamp: number;
 }
 
+export interface FilteredPointAPI {
+  lat: number;
+  lng: number;
+  alt: number;
+  speed: number;
+  bearing: number;
+  timestamp: number;
+  is_interpolated: boolean;
+}
+
 export interface UploadChunkRequest {
   session_id: string;
   sequence: number;
   chunk_type: 'intermediate' | 'final' | 'emergency';
   raw_gps_points: RawGPSPointAPI[];
+  filtered_points?: FilteredPointAPI[];
   chunk_summary: ChunkSummary;
   cumulative: CumulativeSummary;
   completed_splits: Split[];
@@ -819,6 +873,7 @@ export interface PublicProfile {
   bio: string | null;
   instagram_username: string | null;
   activity_region?: string;
+  country?: string | null;
   crew_name?: string | null;
   runner_level?: number;
   total_distance_meters: number;
@@ -1086,6 +1141,21 @@ export interface CrewWeeklyRankingResponse {
   data: CrewWeeklyRankingItem[];
 }
 
+export interface CrewWeeklyStats {
+  total_distance_meters: number;
+  total_runs: number;
+  active_members: number;
+  avg_pace_seconds_per_km: number | null;
+}
+
+export interface CrewActiveCourse {
+  course_id: string;
+  course_title: string;
+  distance_meters: number;
+  member_run_count: number;
+  best_crew_time_seconds: number | null;
+}
+
 // ---- Point Transactions ----
 
 export interface PointTransactionItem {
@@ -1190,6 +1260,31 @@ export interface CommunityCommentItem {
 
 export interface CommunityCommentListResponse {
   data: CommunityCommentItem[];
+  total_count: number;
+}
+
+// ---- Course Comments ----
+
+export interface CourseCommentAuthor {
+  id: string;
+  nickname: string | null;
+  profile_image_url: string | null;
+}
+
+export interface CourseCommentItem {
+  id: string;
+  course_id: string;
+  author: CourseCommentAuthor;
+  content: string;
+  image_urls: string[] | null;
+  parent_id: string | null;
+  replies: CourseCommentItem[];
+  reply_count: number;
+  created_at: string;
+}
+
+export interface CourseCommentListResponse {
+  data: CourseCommentItem[];
   total_count: number;
 }
 

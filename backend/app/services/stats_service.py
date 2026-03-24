@@ -253,6 +253,7 @@ class StatsService:
         page: int = 0,
         per_page: int = 20,
         region: str | None = None,
+        country: str | None = None,
         requesting_user_id: UUID | None = None,
     ) -> dict:
         """Get the weekly leaderboard ranked by course run count."""
@@ -288,6 +289,8 @@ class StatsService:
                 User.nickname,
                 User.avatar_url,
                 User.crew_name,
+                User.runner_level,
+                User.country,
             )
             .join(User, User.id == agg.c.user_id)
             .order_by(agg.c.run_count.desc(), agg.c.total_distance.desc())
@@ -295,6 +298,8 @@ class StatsService:
 
         if region:
             query = query.where(User.activity_region.ilike(f"%{region}%"))
+        if country:
+            query = query.where(User.country == country)
 
         # Total count
         count_result = await db.execute(
@@ -317,6 +322,8 @@ class StatsService:
                     "nickname": row.nickname,
                     "avatar_url": row.avatar_url,
                     "crew_name": row.crew_name,
+                    "runner_level": row.runner_level or 1,
+                    "country": row.country,
                 },
                 "total_distance_meters": int(row.total_distance or 0),
                 "run_count": int(row.run_count or 0),
@@ -327,7 +334,7 @@ class StatsService:
         my_ranking = None
         if requesting_user_id:
             my_ranking = await self._get_my_weekly_ranking(
-                db, requesting_user_id, week_start, week_end, region
+                db, requesting_user_id, week_start, week_end, region, country
             )
 
         return {
@@ -345,6 +352,7 @@ class StatsService:
         week_start: datetime,
         week_end: datetime,
         region: str | None = None,
+        country: str | None = None,
     ) -> dict | None:
         """Get the requesting user's weekly ranking entry."""
         # My run stats this week
@@ -384,40 +392,24 @@ class StatsService:
             .subquery()
         )
 
-        above_query = (
-            select(func.count())
-            .select_from(
-                select(agg.c.user_id)
-                .join(User, User.id == agg.c.user_id)
-                .where(
-                    or_(
-                        agg.c.run_count > my_run_count,
-                        and_(
-                            agg.c.run_count == my_run_count,
-                            agg.c.total_distance > my_total_distance,
-                        ),
-                    )
+        above_inner = (
+            select(agg.c.user_id)
+            .join(User, User.id == agg.c.user_id)
+            .where(
+                or_(
+                    agg.c.run_count > my_run_count,
+                    and_(
+                        agg.c.run_count == my_run_count,
+                        agg.c.total_distance > my_total_distance,
+                    ),
                 )
             )
         )
         if region:
-            above_query = (
-                select(func.count())
-                .select_from(
-                    select(agg.c.user_id)
-                    .join(User, User.id == agg.c.user_id)
-                    .where(
-                        or_(
-                            agg.c.run_count > my_run_count,
-                            and_(
-                                agg.c.run_count == my_run_count,
-                                agg.c.total_distance > my_total_distance,
-                            ),
-                        ),
-                        User.activity_region.ilike(f"%{region}%"),
-                    )
-                )
-            )
+            above_inner = above_inner.where(User.activity_region.ilike(f"%{region}%"))
+        if country:
+            above_inner = above_inner.where(User.country == country)
+        above_query = select(func.count()).select_from(above_inner)
 
         rank_result = await db.execute(above_query)
         rank = (rank_result.scalar() or 0) + 1

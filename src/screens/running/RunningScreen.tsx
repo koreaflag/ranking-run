@@ -434,6 +434,10 @@ export default function RunningScreen() {
             setCheckpointPasses(checkpointPasses);
           }
           await stopTracking();
+
+          // Read sessionId BEFORE complete() to navigate immediately
+          // and avoid a flash from phase→completed re-render
+          const currentSessionId = useRunningStore.getState().sessionId;
           complete();
 
           if (hapticFeedback) {
@@ -442,9 +446,6 @@ export default function RunningScreen() {
             );
           }
 
-          // Read sessionId from store at action time to avoid stale closure —
-          // the server session ID may have arrived after the Alert was shown.
-          const currentSessionId = useRunningStore.getState().sessionId;
           if (currentSessionId) {
             navigation.replace('RunResult', { sessionId: currentSessionId });
           }
@@ -596,6 +597,24 @@ export default function RunningScreen() {
     );
   }
 
+  // Memoize map props to prevent unnecessary RouteMapView re-renders
+  const mapCustomUserLocation = useMemo(() => {
+    if (courseId && courseNavigation?.snappedPosition) return courseNavigation.snappedPosition;
+    return myLocation ?? persistedLocation ?? undefined;
+  }, [courseId, courseNavigation?.snappedPosition, myLocation, persistedLocation]);
+
+  const mapRoutePoints = useMemo(() => {
+    return courseId && snappedRoutePoints.length > 0 ? snappedRoutePoints : routePoints;
+  }, [courseId, snappedRoutePoints, routePoints]);
+
+  const mapCheckpoints = useMemo(() => {
+    return cpMarkerData.length > 0 ? cpMarkerData : undefined;
+  }, [cpMarkerData]);
+
+  const mapFollowsUser = followUser && phase !== 'completed';
+  const mapFollowMode = phase === 'completed' ? undefined : "course" as const;
+  const mapFollowPitch = phase === 'completed' ? undefined : 30;
+
   // During running, show live GPS accuracy instead of binary status
   const isIndoorMode = distanceSource === 'pedometer';
   const gpsDisabled = gpsStatus === 'disabled';
@@ -698,41 +717,52 @@ export default function RunningScreen() {
           </View>
         )}
 
-        {/* Mini Map — flex fills remaining space, shrinks when banners appear */}
+        {/* Mini Map — flex fills remaining space */}
         <View style={styles.miniMapContainer}>
           <RouteMapView
             ref={mapRef}
-            routePoints={courseId && snappedRoutePoints.length > 0 ? snappedRoutePoints : routePoints}
+            routePoints={mapRoutePoints}
             hideRouteMarkers
             previewPolyline={courseRoute ?? undefined}
-            checkpoints={cpMarkerData.length > 0 ? cpMarkerData : undefined}
+            checkpoints={mapCheckpoints}
             showUserLocation
-            followsUserLocation={followUser && phase !== 'completed'}
+            followsUserLocation={mapFollowsUser}
             followZoomLevel={16}
-            followUserMode={phase === 'completed' ? undefined : "course"}
-            followPitch={phase === 'completed' ? undefined : 30}
-            interactive={false}
+            followUserMode={mapFollowMode}
+            followPitch={mapFollowPitch}
+            interactive
+            onUserMapInteraction={() => setFollowUser(false)}
             lastKnownLocation={persistedLocation ?? undefined}
-            customUserLocation={
-              courseId && courseNavigation?.snappedPosition
-                ? courseNavigation.snappedPosition
-                : myLocation ?? undefined
-            }
+            customUserLocation={mapCustomUserLocation}
             customUserHeading={headingValue}
             style={styles.miniMap}
           />
-          {/* Locate button hidden — map is locked to heading during running */}
-        </View>
 
-        {/* Paused Banner */}
-        {(phase === 'paused' || isAutoPaused) && (
-          <View style={styles.pausedBanner}>
-            <Ionicons name="pause" size={14} color="#000" />
-            <Text style={styles.pausedText}>
-              {isAutoPaused && phase !== 'paused' ? 'AUTO PAUSED' : 'PAUSED'}
-            </Text>
-          </View>
-        )}
+          {/* Paused Banner — absolute overlay to avoid resizing map */}
+          {(phase === 'paused' || isAutoPaused) && (
+            <View style={styles.pausedBanner}>
+              <Ionicons name="pause" size={14} color="#000" />
+              <Text style={styles.pausedText}>
+                {isAutoPaused && phase !== 'paused' ? 'AUTO PAUSED' : 'PAUSED'}
+              </Text>
+            </View>
+          )}
+
+          {/* Recenter on my location button — visible when user pans away */}
+          {!followUser && phase !== 'completed' && (
+            <TouchableOpacity
+              style={styles.miniMapLocateBtn}
+              onPress={() => {
+                const loc = myLocation ?? persistedLocation;
+                if (loc) mapRef.current?.recenterOnUser(loc);
+                setFollowUser(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="locate" size={20} color={colors.text} />
+            </TouchableOpacity>
+          )}
+        </View>
 
         {/* Off-course warning with return arrow */}
         {courseNavigation?.isOffCourse && (
@@ -1273,15 +1303,16 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
 
   // Paused banner
   pausedBanner: {
+    position: 'absolute',
+    bottom: SPACING.sm,
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'center',
     gap: 5,
     backgroundColor: '#FFD60A',
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 20,
-    marginTop: SPACING.md,
   },
   pausedText: {
     fontSize: 12,

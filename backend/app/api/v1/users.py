@@ -78,6 +78,7 @@ async def search_by_code(
         bio=user.bio,
         instagram_username=user.instagram_username,
         activity_region=user.activity_region,
+        country=user.country,
         crew_name=user.crew_name,
         runner_level=user.runner_level or 1,
         total_distance_meters=user.total_distance_meters,
@@ -142,6 +143,7 @@ async def get_my_profile(current_user: CurrentUser) -> UserResponse:
         nickname=current_user.nickname,
         avatar_url=current_user.avatar_url,
         birthday=current_user.birthday,
+        gender=current_user.gender,
         height_cm=current_user.height_cm,
         weight_kg=current_user.weight_kg,
         bio=current_user.bio,
@@ -226,6 +228,8 @@ async def update_profile(
         current_user.avatar_url = body.avatar_url
     if body.birthday is not None:
         current_user.birthday = body.birthday
+    if "gender" in body.model_fields_set:
+        current_user.gender = body.gender
     if body.height_cm is not None:
         current_user.height_cm = body.height_cm
     if body.weight_kg is not None:
@@ -250,6 +254,7 @@ async def update_profile(
         nickname=current_user.nickname,
         avatar_url=current_user.avatar_url,
         birthday=current_user.birthday,
+        gender=current_user.gender,
         height_cm=current_user.height_cm,
         weight_kg=current_user.weight_kg,
         bio=current_user.bio,
@@ -817,6 +822,7 @@ async def get_public_profile(
         bio=user.bio,
         instagram_username=user.instagram_username,
         activity_region=user.activity_region,
+        country=user.country,
         crew_name=user.crew_name,
         runner_level=user.runner_level or 1,
         total_distance_meters=user.total_distance_meters,

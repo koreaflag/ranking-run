@@ -184,6 +184,7 @@ export default function UserProfileScreen() {
           avatarUrl={profile.avatar_url}
           runnerLevel={profile.runner_level ?? 1}
           crewName={profile.crew_name}
+          country={profile.country}
           bio={profile.bio}
           instagramUsername={profile.instagram_username}
           followersCount={followersCount}

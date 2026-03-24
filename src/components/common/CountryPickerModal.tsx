@@ -1,0 +1,162 @@
+import React, { useMemo, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  FlatList,
+  SafeAreaView,
+} from 'react-native';
+import { Ionicons } from '../../lib/icons';
+import { useTranslation } from 'react-i18next';
+import { useTheme } from '../../hooks/useTheme';
+import { COUNTRIES, getCountryFlag } from '../../data/countries';
+import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
+import type { ThemeColors } from '../../utils/constants';
+
+interface CountryPickerModalProps {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (code: string | null) => void;
+  selectedCountry?: string | null;
+}
+
+export default function CountryPickerModal({
+  visible,
+  onClose,
+  onSelect,
+  selectedCountry,
+}: CountryPickerModalProps) {
+  const { t } = useTranslation();
+  const colors = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const handleSelect = useCallback(
+    (code: string | null) => {
+      onSelect(code);
+      onClose();
+    },
+    [onSelect, onClose],
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: (typeof COUNTRIES)[0] }) => {
+      const isSelected = selectedCountry === item.code;
+      return (
+        <TouchableOpacity
+          style={[styles.row, isSelected && styles.rowSelected]}
+          onPress={() => handleSelect(item.code)}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.flag}>{getCountryFlag(item.code)}</Text>
+          <Text style={[styles.name, isSelected && styles.nameSelected]}>
+            {item.name}
+          </Text>
+          {isSelected && (
+            <Ionicons name="checkmark" size={18} color={colors.primary} />
+          )}
+        </TouchableOpacity>
+      );
+    },
+    [colors, handleSelect, selectedCountry, styles],
+  );
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onClose} activeOpacity={0.6}>
+            <Ionicons name="close" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.title}>{t('ranking.selectCountry')}</Text>
+          <View style={{ width: 24 }} />
+        </View>
+
+        {/* All countries option */}
+        <TouchableOpacity
+          style={[styles.row, !selectedCountry && styles.rowSelected]}
+          onPress={() => handleSelect(null)}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.flag}>🌍</Text>
+          <Text style={[styles.name, !selectedCountry && styles.nameSelected]}>
+            {t('ranking.allCountries')}
+          </Text>
+          {!selectedCountry && (
+            <Ionicons name="checkmark" size={18} color={colors.primary} />
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.divider} />
+
+        <FlatList
+          data={COUNTRIES}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.code}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.list}
+        />
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    title: {
+      fontSize: FONT_SIZES.lg,
+      fontWeight: '600',
+      color: colors.text,
+    },
+    list: {
+      paddingBottom: SPACING.xl,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.sm + 2,
+      gap: SPACING.sm,
+    },
+    rowSelected: {
+      backgroundColor: colors.primary + '15',
+    },
+    flag: {
+      fontSize: 22,
+      width: 32,
+      textAlign: 'center',
+    },
+    name: {
+      flex: 1,
+      fontSize: FONT_SIZES.md,
+      color: colors.text,
+    },
+    nameSelected: {
+      fontWeight: '600',
+      color: colors.primary,
+    },
+    divider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.border,
+    },
+  });

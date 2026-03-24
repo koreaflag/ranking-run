@@ -13,12 +13,14 @@ import { SPACING, FONT_SIZES } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import RunnerLevelBadge from '../runner/RunnerLevelBadge';
 import { formatNumber } from '../../utils/format';
+import { getCountryFlag, getCountryName } from '../../data/countries';
 
 type Props = {
   nickname: string | null;
   avatarUrl: string | null;
   runnerLevel: number;
   crewName?: string | null;
+  country?: string | null;
   bio?: string | null;
   instagramUsername?: string | null;
   followersCount: number;
@@ -38,6 +40,7 @@ export default function PlayerCard({
   avatarUrl,
   runnerLevel,
   crewName,
+  country,
   bio,
   instagramUsername,
   followersCount,
@@ -99,10 +102,20 @@ export default function PlayerCard({
           </Text>
           <RunnerLevelBadge level={runnerLevel} size="sm" />
         </View>
-        {crewName ? (
-          <View style={styles.crewTag}>
-            <Ionicons name="people" size={11} color={colors.primary} />
-            <Text style={styles.crewTagText}>{crewName}</Text>
+        {(crewName || country) ? (
+          <View style={styles.tagRow}>
+            {crewName ? (
+              <View style={styles.crewTag}>
+                <Ionicons name="people" size={11} color={colors.primary} />
+                <Text style={styles.crewTagText}>{crewName}</Text>
+              </View>
+            ) : null}
+            {country ? (
+              <View style={styles.countryTag}>
+                <Text style={styles.countryFlag}>{getCountryFlag(country)}</Text>
+                <Text style={styles.countryText}>{getCountryName(country)}</Text>
+              </View>
+            ) : null}
           </View>
         ) : null}
         {bio ? (
@@ -195,10 +208,15 @@ const createStyles = (c: ThemeColors) =>
       letterSpacing: -0.3,
       flexShrink: 1,
     },
+    tagRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      flexWrap: 'wrap',
+    },
     crewTag: {
       flexDirection: 'row',
       alignItems: 'center',
-      alignSelf: 'flex-start',
       gap: 3,
       backgroundColor: c.primary + '15',
       paddingHorizontal: 6,
@@ -209,6 +227,19 @@ const createStyles = (c: ThemeColors) =>
       fontSize: 12,
       fontWeight: '600',
       color: c.primary,
+    },
+    countryTag: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+    },
+    countryFlag: {
+      fontSize: 13,
+    },
+    countryText: {
+      fontSize: 12,
+      fontWeight: '500',
+      color: c.textSecondary,
     },
     bio: {
       fontSize: 14,

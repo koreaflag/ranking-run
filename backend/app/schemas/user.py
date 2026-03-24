@@ -13,6 +13,7 @@ class UserResponse(BaseModel):
     nickname: str | None
     avatar_url: str | None
     birthday: date | None = None
+    gender: str | None = None
     height_cm: float | None = None
     weight_kg: float | None = None
     bio: str | None = None
@@ -42,6 +43,7 @@ class ProfileUpdateRequest(BaseModel):
     nickname: str | None = Field(None, min_length=2, max_length=12)
     avatar_url: str | None = None
     birthday: date | None = None
+    gender: str | None = Field(None, pattern="^(male|female|other)$")
     height_cm: float | None = Field(None, ge=50, le=300)
     weight_kg: float | None = Field(None, ge=20, le=500)
     bio: str | None = Field(None, max_length=100)
@@ -57,6 +59,7 @@ class ProfileResponse(BaseModel):
     nickname: str | None
     avatar_url: str | None
     birthday: date | None = None
+    gender: str | None = None
     height_cm: float | None = None
     weight_kg: float | None = None
     bio: str | None = None
@@ -105,6 +108,7 @@ class PublicProfileResponse(BaseModel):
     bio: str | None = None
     instagram_username: str | None = None
     activity_region: str | None = None
+    country: str | None = None
     crew_name: str | None = None
     total_distance_meters: int
     total_runs: int

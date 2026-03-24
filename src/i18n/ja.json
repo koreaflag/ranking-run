@@ -762,7 +762,15 @@
     "rejectFailed": "拒否に失敗しました。",
     "weeklyRanking": "今週のランキング",
     "level": "Lv.{{level}}",
-    "xpProgress": "{{current}} / {{next}} XP"
+    "xpProgress": "{{current}} / {{next}} XP",
+    "weeklyStats": "今週のアクティビティ",
+    "totalDistance": "総距離",
+    "totalRuns": "総ラン数",
+    "activeMembers": "アクティブメンバー",
+    "avgPace": "平均ペース",
+    "activeCourses": "アクティブコース",
+    "memberRuns": "回ラン",
+    "noActiveCourses": "最近のコースアクティビティはありません"
   },
   "format": {
     "justNow": "たった今",
@@ -1086,9 +1094,26 @@
     "tabLabel": "ランキング",
     "myRanking": "マイランキング",
     "allCountries": "すべて",
+    "selectCountry": "国を選択",
     "southKorea": "韓国",
     "japan": "日本",
-    "usa": "アメリカ"
+    "usa": "アメリカ",
+    "allTime": "全期間",
+    "season": "シーズン",
+    "allGenders": "すべて",
+    "male": "男性",
+    "female": "女性",
+    "top": "Top",
+    "rankChange": "位",
+    "runners": "人"
+  },
+  "dominion": {
+    "title": "コース制覇",
+    "dominatedBy": "制覇クルー",
+    "noDominion": "まだ制覇したクルーがいません",
+    "since": "制覇開始",
+    "avgTime": "トップ3平均",
+    "territory": "テリトリー"
   },
   "points": {
     "history": "ポイント履歴",

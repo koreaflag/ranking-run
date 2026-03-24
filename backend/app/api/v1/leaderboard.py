@@ -23,6 +23,7 @@ async def get_weekly_leaderboard(
     page: int = Query(0, ge=0),
     per_page: int = Query(20, ge=1, le=100),
     region: str | None = Query(None),
+    country: str | None = Query(None),
     stats_service: StatsService = Depends(Provide[Container.stats_service]),
 ) -> WeeklyLeaderboardResponse:
     """Get weekly leaderboard ranked by total distance. Auth optional."""
@@ -31,6 +32,7 @@ async def get_weekly_leaderboard(
         page=page,
         per_page=per_page,
         region=region or None,
+        country=country or None,
         requesting_user_id=current_user.id if current_user else None,
     )
 

@@ -709,7 +709,15 @@
     "rejectFailed": "거절에 실패했습니다.",
     "weeklyRanking": "이번 주 랭킹",
     "level": "Lv.{{level}}",
-    "xpProgress": "{{current}} / {{next}} XP"
+    "xpProgress": "{{current}} / {{next}} XP",
+    "weeklyStats": "이번 주 활동",
+    "totalDistance": "총 거리",
+    "totalRuns": "총 런닝",
+    "activeMembers": "활동 멤버",
+    "avgPace": "평균 페이스",
+    "activeCourses": "활동 중인 코스",
+    "memberRuns": "회 런닝",
+    "noActiveCourses": "최근 활동한 코스가 없습니다"
   },
   "format": {
     "justNow": "방금 전",
@@ -1086,9 +1094,26 @@
     "tabLabel": "랭킹",
     "myRanking": "내 랭킹",
     "allCountries": "전체",
+    "selectCountry": "국가 선택",
     "southKorea": "대한민국",
     "japan": "일본",
-    "usa": "미국"
+    "usa": "미국",
+    "allTime": "전체 기간",
+    "season": "시즌",
+    "allGenders": "전체",
+    "male": "남성",
+    "female": "여성",
+    "top": "Top",
+    "rankChange": "단계",
+    "runners": "명"
+  },
+  "dominion": {
+    "title": "코스 점령",
+    "dominatedBy": "점령 크루",
+    "noDominion": "아직 점령한 크루가 없습니다",
+    "since": "점령 시작",
+    "avgTime": "상위 3명 평균",
+    "territory": "영토"
   },
   "points": {
     "history": "포인트 내역",
