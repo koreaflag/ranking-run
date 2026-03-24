@@ -7,13 +7,16 @@ from celery import Celery
 # Redis URL from environment variable (matches docker-compose service name)
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
-celery_app = Celery(
+app = Celery(
     "runvs",
     broker=REDIS_URL,
     backend=REDIS_URL,
 )
 
-celery_app.conf.update(
+# Alias for imports elsewhere
+celery_app = app
+
+app.conf.update(
     # Serialization
     task_serializer="json",
     accept_content=["json"],
@@ -30,4 +33,4 @@ celery_app.conf.update(
 )
 
 # Auto-discover tasks in app.tasks package
-celery_app.autodiscover_tasks(["app.tasks"])
+app.autodiscover_tasks(["app.tasks"])
