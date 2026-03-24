@@ -4,7 +4,7 @@ Ban columns (is_banned, banned_reason, banned_until) already exist on users
 from the admin panel migration.
 
 Revision ID: 0053
-Revises: 0048
+Revises: 0052
 Create Date: 2026-03-21
 """
 from alembic import op
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
 revision = "0053"
-down_revision = "0048"
+down_revision = "0052"
 branch_labels = None
 depends_on = None
 
