@@ -220,7 +220,8 @@ export default function HomeScreen() {
         userService.getFriendsRunning().catch((): FriendRunning[] => []),
         fetchChallenges().catch(() => {}),
         groupRunService.getMyGroupRuns().then((res) => {
-          const active = (res.data ?? []).filter((g) => g.status === 'active').slice(0, 3);
+          const items = Array.isArray(res?.data) ? res.data : [];
+          const active = items.filter((g) => g.status === 'active').slice(0, 3);
           setGroupRuns(active);
         }).catch(() => {}),
       ]);
@@ -723,7 +724,7 @@ export default function HomeScreen() {
                 contentContainerStyle={styles.favScroll}
               >
                 {groupRuns.slice(0, 3).map((group: GroupRunItem) => {
-                  const completedCount = group.members.filter((m) => m.status === 'completed').length;
+                  const completedCount = (group.members ?? []).filter((m) => m.status === 'completed').length;
 
                   return (
                     <TouchableOpacity
