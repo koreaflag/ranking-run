@@ -63,6 +63,9 @@ export type HomeStackParamList = {
   CrewActiveCourses: { crewId: string; crewName: string };
   ChallengeList: undefined;
   ChallengeDetail: { challengeId: string };
+  GroupRunList: undefined;
+  GroupRunCreate: undefined;
+  GroupRunLobby: { groupRunId: string };
 };
 
 export type CourseStackParamList = {

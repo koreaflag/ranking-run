@@ -57,6 +57,10 @@ import { useToastStore } from '../../stores/toastStore';
 import CrewLevelBadge from '../../components/crew/CrewLevelBadge';
 import { useWatchStandaloneStore } from '../../stores/watchStandaloneStore';
 import { getCache, setCache } from '../../utils/apiCache';
+import { useChallengeStore } from '../../stores/challengeStore';
+import type { ChallengeListItem, GoalType } from '../../services/challengeService';
+import { groupRunService } from '../../services/groupRunService';
+import type { GroupRunItem } from '../../types/api';
 
 const heroImage = require('../../assets/home-hero.jpg');
 
@@ -114,6 +118,13 @@ function getTimeOfDay(iso: string, t: (key: string) => string): string {
   return t('mypage.timeOfDay.evening');
 }
 
+const GOAL_TYPE_ICONS: Record<GoalType, keyof typeof Ionicons.glyphMap> = {
+  total_distance: 'navigate',
+  total_runs: 'flag',
+  total_duration: 'time',
+  streak_days: 'flame',
+};
+
 type HomeNav = NativeStackNavigationProp<HomeStackParamList, 'Home'>;
 
 export default function HomeScreen() {
@@ -136,6 +147,13 @@ export default function HomeScreen() {
   const favoriteCourses = useCourseListStore((s) => s.favoriteCourses);
   const fetchFavoriteCourses = useCourseListStore((s) => s.fetchFavoriteCourses);
   const watchStandalone = useWatchStandaloneStore();
+
+  // Challenges
+  const challenges = useChallengeStore((s) => s.challenges);
+  const fetchChallenges = useChallengeStore((s) => s.fetchChallenges);
+
+  // Group Runs (local state since store may not exist yet)
+  const [groupRuns, setGroupRuns] = useState<GroupRunItem[]>([]);
 
   // Auto-clear stale watch standalone status (no update in 15s → watch disconnected)
   useEffect(() => {
@@ -200,6 +218,11 @@ export default function HomeScreen() {
         announcementService.getAnnouncements(10).catch(() => ({ data: [] })),
         crewService.getMyCrews().catch((): CrewItem[] => []),
         userService.getFriendsRunning().catch((): FriendRunning[] => []),
+        fetchChallenges().catch(() => {}),
+        groupRunService.getMyGroupRuns().then((res) => {
+          const active = (res.data ?? []).filter((g) => g.status === 'active').slice(0, 3);
+          setGroupRuns(active);
+        }).catch(() => {}),
       ]);
       setFriendsRunning(friendsRes); _cachedFriendsRunning = friendsRes;
       const ann = annRes.data ?? [];
@@ -611,6 +634,130 @@ export default function HomeScreen() {
                     </View>
                   </TouchableOpacity>
                 ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Active Challenges */}
+          {challenges.length > 0 && (
+            <View style={styles.favSection}>
+              <View style={styles.favHeader}>
+                <View style={styles.cardTitleWithIcon}>
+                  <Ionicons name="trophy" size={14} color={colors.primary} />
+                  <Text style={styles.favTitle}>{t('home.activeChallenges')}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('ChallengeList')}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.seeAllText}>{t('home.viewAllSection')}</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.favScroll}
+              >
+                {challenges.slice(0, 3).map((challenge: ChallengeListItem) => {
+                  const endDate = new Date(challenge.end_date);
+                  const now = new Date();
+                  const daysLeft = Math.max(0, Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+                  const goalIcon = GOAL_TYPE_ICONS[challenge.goal_type] || 'flag';
+
+                  return (
+                    <TouchableOpacity
+                      key={challenge.id}
+                      style={styles.challengeCard}
+                      activeOpacity={0.7}
+                      onPress={() => navigation.navigate('ChallengeDetail', { challengeId: challenge.id })}
+                    >
+                      <View style={styles.challengeCardTop}>
+                        <View style={styles.challengeIconCircle}>
+                          <Ionicons name={goalIcon} size={16} color={colors.primary} />
+                        </View>
+                        {challenge.is_joined && (
+                          <View style={styles.challengeJoinedBadge}>
+                            <Text style={styles.challengeJoinedText}>{t('challenge.joined')}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.challengeCardTitle} numberOfLines={2}>
+                        {challenge.title}
+                      </Text>
+                      <View style={styles.challengeCardMeta}>
+                        <Text style={styles.challengeCardMetaText}>
+                          {t('challenge.daysLeft', { count: daysLeft })}
+                        </Text>
+                        <View style={styles.recentRunDot} />
+                        <Text style={styles.challengeCardMetaText}>
+                          {t('challenge.participants', { count: challenge.participant_count })}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Live Group Runs */}
+          {groupRuns.length > 0 && (
+            <View style={styles.favSection}>
+              <View style={styles.favHeader}>
+                <View style={styles.cardTitleWithIcon}>
+                  <Ionicons name="people" size={14} color={colors.primary} />
+                  <Text style={styles.favTitle}>{t('home.liveGroupRuns')}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => navigation.getParent()?.navigate('CourseTab')}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.seeAllText}>{t('home.viewAllSection')}</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.favScroll}
+              >
+                {groupRuns.slice(0, 3).map((group: GroupRunItem) => {
+                  const completedCount = group.members.filter((m) => m.status === 'completed').length;
+
+                  return (
+                    <TouchableOpacity
+                      key={group.id}
+                      style={styles.groupRunCard}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        if (group.course_id) {
+                          navigation.navigate('CourseDetail', { courseId: group.course_id });
+                        }
+                      }}
+                    >
+                      {group.course_name && (
+                        <Text style={styles.groupRunCourseName} numberOfLines={1}>
+                          {group.course_name}
+                        </Text>
+                      )}
+                      <Text style={styles.groupRunTitle} numberOfLines={1}>
+                        {group.name}
+                      </Text>
+                      <View style={styles.groupRunMeta}>
+                        <View style={styles.groupRunStatusBadge}>
+                          <View style={styles.groupRunStatusDot} />
+                          <Text style={styles.groupRunStatusText}>
+                            {t('home.ongoing')}
+                          </Text>
+                        </View>
+                        <Text style={styles.groupRunMemberText}>
+                          {t('groupRun.completedCount', { count: completedCount, total: group.member_count })}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             </View>
           )}
@@ -1505,6 +1652,111 @@ const createStyles = (c: ThemeColors) =>
       justifyContent: 'center',
       borderWidth: 1.5,
       borderColor: '#FFF',
+    },
+
+    // Challenge cards
+    challengeCard: {
+      width: 170,
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: SPACING.md,
+      gap: SPACING.xs,
+    },
+    challengeCardTop: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    challengeIconCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: `${COLORS.primary}18`,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    challengeJoinedBadge: {
+      backgroundColor: `${COLORS.primary}20`,
+      borderRadius: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+    },
+    challengeJoinedText: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: COLORS.primary,
+    },
+    challengeCardTitle: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.text,
+      marginTop: SPACING.xs,
+      lineHeight: 18,
+    },
+    challengeCardMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+      marginTop: SPACING.xs,
+    },
+    challengeCardMetaText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '500',
+      color: c.textTertiary,
+    },
+
+    // Group Run cards
+    groupRunCard: {
+      width: 190,
+      backgroundColor: c.card,
+      borderRadius: BORDER_RADIUS.lg,
+      borderWidth: 1,
+      borderColor: c.border,
+      padding: SPACING.md,
+      gap: SPACING.xs,
+    },
+    groupRunCourseName: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '600',
+      color: COLORS.primary,
+    },
+    groupRunTitle: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.text,
+    },
+    groupRunMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: SPACING.xs,
+    },
+    groupRunStatusBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(52,199,89,0.12)',
+      borderRadius: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+    },
+    groupRunStatusDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: '#34C759',
+    },
+    groupRunStatusText: {
+      fontSize: 10,
+      fontWeight: '700',
+      color: '#34C759',
+    },
+    groupRunMemberText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '500',
+      color: c.textTertiary,
     },
 
     bottomSpacer: {

@@ -26,6 +26,9 @@ import FriendsScreen from '../screens/profile/FriendsScreen';
 import CrewMemberSettingsScreen from '../screens/crew/CrewMemberSettingsScreen';
 import ChallengeListScreen from '../screens/challenge/ChallengeListScreen';
 import ChallengeDetailScreen from '../screens/challenge/ChallengeDetailScreen';
+import GroupRunListScreen from '../screens/grouprun/GroupRunListScreen';
+import GroupRunCreateScreen from '../screens/grouprun/GroupRunCreateScreen';
+import GroupRunLobbyScreen from '../screens/grouprun/GroupRunLobbyScreen';
 import { useTheme } from '../hooks/useTheme';
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -65,6 +68,9 @@ export default function HomeStack() {
       <Stack.Screen name="CrewMemberSettings" component={CrewMemberSettingsScreen} />
       <Stack.Screen name="ChallengeList" component={ChallengeListScreen} />
       <Stack.Screen name="ChallengeDetail" component={ChallengeDetailScreen} />
+      <Stack.Screen name="GroupRunList" component={GroupRunListScreen} />
+      <Stack.Screen name="GroupRunCreate" component={GroupRunCreateScreen} />
+      <Stack.Screen name="GroupRunLobby" component={GroupRunLobbyScreen} />
     </Stack.Navigator>
   );
 }
