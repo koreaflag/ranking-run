@@ -37,6 +37,7 @@ from app.api.v1.live_group_runs import router as live_group_runs_router
 from app.api.v1.crew_challenges import router as crew_challenges_router
 from app.api.v1.challenges import router as challenges_router
 from app.api.v1.strava import router as strava_router
+from app.api.v1.admin_errors import router as admin_errors_router
 from app.api.v1.weather import router as weather_router
 
 api_router = APIRouter(prefix="/api/v1")
@@ -71,3 +72,4 @@ api_router.include_router(crew_challenges_router)
 api_router.include_router(challenges_router)
 api_router.include_router(strava_router)
 api_router.include_router(leaderboard_router)
+api_router.include_router(admin_errors_router)

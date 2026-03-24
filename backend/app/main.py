@@ -6,9 +6,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from slowapi import _rate_limit_exceeded_handler
@@ -18,7 +17,7 @@ from app.api.v1.router import api_router
 from app.api.v1.ws import ws_router
 from app.core.config import get_settings
 from app.core.container import Container
-from app.core.exceptions import AppError
+from app.core.error_handler import install_error_handlers
 from app.core.logging_config import setup_logging
 from app.core.rate_limit import limiter
 from app.core.sentry import init_sentry
@@ -109,35 +108,8 @@ app.include_router(api_router)
 # Include WebSocket routes (outside /api/v1 prefix since ws_router defines its own path)
 app.include_router(ws_router)
 
-
-# ---------------------------------------------------------------------------
-# Global exception handlers
-# ---------------------------------------------------------------------------
-
-@app.exception_handler(AppError)
-async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-    """Catch all AppError subclasses and return a uniform JSON response."""
-    headers = None
-    if exc.status_code == 401:
-        headers = {"WWW-Authenticate": "Bearer"}
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"code": exc.code, "message": exc.message},
-        headers=headers,
-    )
-
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Fallback handler for truly unexpected errors."""
-    logger.exception("Unhandled exception: %s", str(exc))
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "code": "INTERNAL_ERROR",
-            "message": "An unexpected error occurred",
-        },
-    )
+# Install global exception handlers (AppError + unhandled → DB error logging)
+install_error_handlers(app)
 
 
 @app.get("/health")

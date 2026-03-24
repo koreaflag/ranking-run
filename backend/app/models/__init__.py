@@ -27,6 +27,7 @@ from app.models.crew_challenge import CrewChallenge, CrewChallengeRecord, CrewCo
 from app.models.point_transaction import PointTransaction
 from app.models.course_streak import CourseStreak
 from app.models.challenge import Challenge, ChallengeParticipant
+from app.models.error_log import ErrorLog
 from app.models.live_group_run import LiveGroupRun, LiveGroupRunParticipant
 
 __all__ = [
@@ -73,4 +74,5 @@ __all__ = [
     "ChallengeParticipant",
     "LiveGroupRun",
     "LiveGroupRunParticipant",
+    "ErrorLog",
 ]
