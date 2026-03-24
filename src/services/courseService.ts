@@ -16,6 +16,8 @@ import type {
   FavoriteCourseItem,
   LikeToggleResponse,
   LikeStatusResponse,
+  CourseCommentItem,
+  CourseCommentListResponse,
 } from '../types/api';
 import { PAGINATION } from '../utils/constants';
 
@@ -235,5 +237,40 @@ export const courseService = {
    */
   async replyToReview(courseId: string, reviewId: string, content: string): Promise<CourseReview> {
     return api.post<CourseReview>(`/courses/${courseId}/reviews/${reviewId}/reply`, { content });
+  },
+
+  // ---- Course Comments ----
+
+  async getCourseComments(courseId: string, page: number, perPage: number): Promise<CourseCommentListResponse> {
+    return api.get<CourseCommentListResponse>(`/courses/${courseId}/comments?page=${page}&per_page=${perPage}`);
+  },
+
+  async createCourseComment(
+    courseId: string,
+    content: string,
+    imageUrls?: string[],
+    parentId?: string,
+  ): Promise<CourseCommentItem> {
+    return api.post<CourseCommentItem>(`/courses/${courseId}/comments`, {
+      content,
+      image_urls: imageUrls,
+      parent_id: parentId,
+    });
+  },
+
+  async updateCourseComment(
+    courseId: string,
+    commentId: string,
+    content: string,
+    imageUrls?: string[],
+  ): Promise<CourseCommentItem> {
+    return api.patch<CourseCommentItem>(`/courses/${courseId}/comments/${commentId}`, {
+      content,
+      image_urls: imageUrls,
+    });
+  },
+
+  async deleteCourseComment(courseId: string, commentId: string): Promise<void> {
+    return api.delete(`/courses/${courseId}/comments/${commentId}`);
   },
 };

@@ -6,6 +6,7 @@ import type {
   MyBestRecord,
   CourseReview,
   CrewCourseRankingEntry,
+  RankingFilterParams,
 } from '../types/api';
 import { courseService } from '../services/courseService';
 import { crewChallengeService } from '../services/crewChallengeService';
@@ -28,6 +29,18 @@ interface CourseDetailState {
 
   // Ranking filter
   rankingCountry: string | null;
+  rankingFilters: RankingFilterParams;
+  rankingTotalRunners: number;
+
+  // Dominion
+  selectedCourseDominion: {
+    crew_id: string;
+    crew_name: string;
+    crew_logo_url: string | null;
+    crew_badge_color: string | null;
+    avg_duration_seconds: number;
+    top_members: Array<{ user_id: string; nickname: string; avatar_url: string | null }>;
+  } | null;
 
   // Reviews
   selectedCourseReviews: CourseReview[];
@@ -42,6 +55,7 @@ interface CourseDetailState {
   // Actions
   fetchCourseDetail: (courseId: string) => Promise<void>;
   fetchRankingsWithCountry: (courseId: string, country: string | null) => Promise<void>;
+  fetchRankingsWithFilters: (courseId: string, filters: RankingFilterParams) => Promise<void>;
   toggleLike: (courseId: string) => Promise<void>;
   submitReview: (courseId: string, content?: string) => Promise<void>;
   deleteReview: (reviewId: string, courseId: string) => Promise<void>;
@@ -61,6 +75,9 @@ export const useCourseDetailStore = create<CourseDetailState>((set, get) => ({
   error: null,
 
   rankingCountry: null,
+  rankingFilters: {},
+  rankingTotalRunners: 0,
+  selectedCourseDominion: null,
 
   selectedCourseReviews: [],
   selectedCourseAvgRating: null,
@@ -111,8 +128,18 @@ export const useCourseDetailStore = create<CourseDetailState>((set, get) => ({
       const rankings = await rankingService.getCourseRankings(
         courseId,
         10,
-        country || undefined,
+        country ? { country } : undefined,
       );
+      set({ selectedCourseRankings: rankings });
+    } catch {
+      // Keep existing rankings on error
+    }
+  },
+
+  fetchRankingsWithFilters: async (courseId: string, filters: RankingFilterParams) => {
+    set({ rankingFilters: filters, rankingCountry: filters.country ?? null });
+    try {
+      const rankings = await rankingService.getCourseRankings(courseId, 10, filters);
       set({ selectedCourseRankings: rankings });
     } catch {
       // Keep existing rankings on error

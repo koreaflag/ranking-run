@@ -60,6 +60,7 @@ export type HomeStackParamList = {
   FollowList: { userId: string; type: 'followers' | 'following' };
   Friends: undefined;
   CrewMemberSettings: { crewId: string; crewName: string };
+  CrewActiveCourses: { crewId: string; crewName: string };
 };
 
 export type CourseStackParamList = {

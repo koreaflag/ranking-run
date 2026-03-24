@@ -288,6 +288,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           bio: null,
           instagram_username: null,
           country: country ?? null,
+          gender: null,
           total_distance_meters: profile.total_distance_meters,
           total_runs: profile.total_runs,
           total_points: profile.total_points ?? 0,

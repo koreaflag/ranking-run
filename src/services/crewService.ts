@@ -8,6 +8,7 @@ import type {
   CrewJoinRequestItem,
   CrewJoinRequestListResponse,
   MyJoinRequestStatus,
+  CrewActiveCourse,
   CrewManagementStats,
   CrewWeeklyRankingResponse,
 } from '../types/api';
@@ -149,6 +150,9 @@ class CrewService {
 
     const res = await api.post<{ url: string }>('/uploads/image', formData);
     return res.url;
+  }
+  async getActiveCourses(crewId: string): Promise<CrewActiveCourse[]> {
+    return api.get<CrewActiveCourse[]>(`/crews/${crewId}/active-courses`);
   }
 }
 
