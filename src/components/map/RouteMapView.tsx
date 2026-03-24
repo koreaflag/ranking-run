@@ -120,6 +120,8 @@ interface RouteMapViewProps {
   signalGapSegments?: Array<[number, number]>;
   /** Split km markers along the route (e.g. 1km, 2km, ...) */
   splitMarkers?: Array<{ km: number; latitude: number; longitude: number; pace?: string }>;
+  /** When true, start camera at lastKnownLocation then animate to route bounds after map loads */
+  animateToRouteOnLoad?: boolean;
 }
 
 export interface Camera {
@@ -231,6 +233,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   deviationSegments,
   signalGapSegments,
   splitMarkers,
+  animateToRouteOnLoad = false,
 }, ref) {
   const cameraRef = useRef<Mapbox.Camera>(null);
   const colors = useTheme();
@@ -355,6 +358,14 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   // setCamera() calls are ignored if Camera hasn't mounted yet.
   // lastKnownLocation comes from zustand persist (synchronously available).
   const cameraDefaults = useMemo(() => {
+    // When animateToRouteOnLoad is set, start from user's last position
+    // and animate to route bounds after map loads (smoother transition)
+    if (animateToRouteOnLoad && lastKnownLocation) {
+      return {
+        centerCoordinate: [lastKnownLocation.longitude, lastKnownLocation.latitude] as [number, number],
+        zoomLevel: 16,
+      };
+    }
     if (isRouteMode && routePoints.length >= 2 && !followsUserLocation) {
       const { ne, sw } = computeBounds(routePoints);
       const latDelta = Math.max((ne[1] - sw[1]) * 2.5, 0.01);
@@ -378,25 +389,38 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   // Fit map to route bounds after map loads (skip when following user — Camera handles centering)
   const handleDidFinishLoadingMap = useCallback(() => {
     if (isRouteMode && routePoints.length >= 2 && !followsUserLocation) {
-      // Immediate fit + delayed retry to ensure bounds are applied
       const { ne, sw } = computeBounds(routePoints);
-      cameraRef.current?.fitBounds(ne, sw, [40, 40, 40, 40], 0);
-      setTimeout(() => {
+      if (animateToRouteOnLoad) {
+        // Smooth transition: wait briefly then animate to route bounds
+        setTimeout(() => {
+          cameraRef.current?.fitBounds(ne, sw, [40, 40, 40, 40], 800);
+        }, 400);
+      } else {
+        // Immediate fit + delayed retry to ensure bounds are applied
         cameraRef.current?.fitBounds(ne, sw, [40, 40, 40, 40], 0);
-      }, 500);
+        setTimeout(() => {
+          cameraRef.current?.fitBounds(ne, sw, [40, 40, 40, 40], 0);
+        }, 500);
+      }
     }
-  }, [isRouteMode, routePoints, followsUserLocation]);
+  }, [isRouteMode, routePoints, followsUserLocation, animateToRouteOnLoad]);
 
-  // Re-fit when routePoints change
+  // Re-fit when routePoints change (skip initial mount when animateToRouteOnLoad — handled by onDidFinishLoadingMap)
+  const mountedRef = useRef(false);
   useEffect(() => {
     if (isRouteMode && routePoints.length >= 2 && !followsUserLocation) {
+      if (animateToRouteOnLoad && !mountedRef.current) {
+        mountedRef.current = true;
+        return; // Skip — onDidFinishLoadingMap will animate
+      }
+      mountedRef.current = true;
       const timer = setTimeout(() => {
         const { ne, sw } = computeBounds(routePoints);
         cameraRef.current?.fitBounds(ne, sw, [40, 40, 40, 40], 500);
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [isRouteMode, routePoints, followsUserLocation]);
+  }, [isRouteMode, routePoints, followsUserLocation, animateToRouteOnLoad]);
 
   // Custom follow: center camera on customUserLocation (Kalman-filtered)
   // instead of relying on Mapbox's native follow which tracks raw GPS.

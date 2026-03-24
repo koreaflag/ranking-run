@@ -523,6 +523,8 @@ export default function RunResultScreen() {
             onUserLocationChange={handleUserLocationChange}
             deviationSegments={deviationSegments.length > 0 ? deviationSegments : undefined}
             splitMarkers={splitMapMarkers.length > 0 ? splitMapMarkers : undefined}
+            lastKnownLocation={routePoints.length > 0 ? routePoints[routePoints.length - 1] : undefined}
+            animateToRouteOnLoad
             style={styles.mapPreview}
           />
           <TouchableOpacity
