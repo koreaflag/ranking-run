@@ -1466,6 +1466,7 @@ export default function WorldScreen() {
           total_runs: 0,
           difficulty: null,
           avg_rating: null,
+          dominion: detail.dominion ?? null,
         } as CourseMarkerData);
         setIs3DMode(true);
 
@@ -1838,6 +1839,22 @@ export default function WorldScreen() {
                       </View>
                     )}
                   </View>
+                  {selectedMarker.dominion && (
+                    <View style={styles.hudDominionRow}>
+                      <Ionicons name="flag" size={13} color="#FFD600" />
+                      {selectedMarker.dominion.crew_logo_url ? (
+                        <Image source={{ uri: selectedMarker.dominion.crew_logo_url }} style={styles.hudDominionLogo} />
+                      ) : (
+                        <View style={[styles.hudDominionLogo, { backgroundColor: selectedMarker.dominion.crew_badge_color || COLORS.primary, alignItems: 'center', justifyContent: 'center' }]}>
+                          <Ionicons name="shield" size={10} color={COLORS.white} />
+                        </View>
+                      )}
+                      <Text style={styles.hudDominionText}>
+                        <Text style={styles.hudDominionCrew}>{selectedMarker.dominion.crew_name}</Text>
+                        {' 점령 중'}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
             </SafeAreaView>
@@ -2623,6 +2640,25 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '700',
     color: 'rgba(255,255,255,0.85)',
     fontVariant: ['tabular-nums'],
+  },
+
+  hudDominionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  hudDominionLogo: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+  },
+  hudDominionText: {
+    fontSize: FONT_SIZES.sm,
+    color: '#FFD600',
+  },
+  hudDominionCrew: {
+    fontWeight: '800',
   },
 
   // -- HUD overlay (ranking) --
