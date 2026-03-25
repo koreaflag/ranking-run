@@ -90,6 +90,14 @@ class CourseCheckpoint(BaseModel):
     distance_from_start_meters: int
 
 
+class CourseDominionBrief(BaseModel):
+    """Brief dominion info for course responses."""
+    crew_id: str
+    crew_name: str
+    crew_badge_color: str | None = None
+    crew_logo_url: str | None = None
+
+
 class CourseDetail(BaseModel):
     """Full course detail with route geometry."""
     id: str
@@ -105,6 +113,7 @@ class CourseDetail(BaseModel):
     created_at: datetime
     creator: CourseCreatorInfo
     checkpoints: list[CourseCheckpoint] | None = None
+    dominion: CourseDominionBrief | None = None
 
 
 class CourseStatsResponse(BaseModel):
@@ -150,6 +159,7 @@ class CourseMarker(BaseModel):
     is_new: bool = False
     elevation_gain_meters: int = 0
     creator_nickname: str | None = None
+    dominion: CourseDominionBrief | None = None
 
 
 class NearbyCourse(BaseModel):

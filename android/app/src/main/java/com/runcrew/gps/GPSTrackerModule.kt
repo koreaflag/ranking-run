@@ -275,16 +275,17 @@ class GPSTrackerModule(
             }
 
             // Sanity check: if smoothed covers < half original, fall back
-            val origCount = engine.session?.filteredLocations?.size ?: 0
+            val sessionRef = engine.session
+            val origCount = sessionRef.filteredLocations.size
             if (origCount > 10 && smoothed.size < origCount / 2) {
                 engine.kalmanFilter.clearHistory()
                 val array = Arguments.createArray()
-                for (location in engine.session!!.filteredLocations) {
+                for (location in sessionRef.filteredLocations) {
                     array.pushMap(location.toWritableMap())
                 }
                 val result = Arguments.createMap()
                 result.putArray("route", array)
-                result.putDouble("distance", engine.session!!.totalDistance)
+                result.putDouble("distance", sessionRef.totalDistance)
                 promise.resolve(result)
                 return
             }
@@ -354,7 +355,6 @@ class GPSTrackerModule(
             val tracker = HeadingTracker(sensorManager)
             tracker.setListener(object : HeadingTracker.Listener {
                 override fun onHeadingUpdate(heading: Double) {
-                    if (listenerCount <= 0) return
                     val params = Arguments.createMap().apply {
                         putDouble("heading", heading)
                     }

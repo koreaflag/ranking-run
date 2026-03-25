@@ -14,6 +14,7 @@ from app.schemas.course import (
     CourseCreateResponse,
     CourseCreatorInfo,
     CourseDetail,
+    CourseDominionBrief,
     CourseListItem,
     CourseListResponse,
     CourseMarker,
@@ -192,6 +193,7 @@ async def get_course_detail(
         created_at=detail["created_at"],
         creator=CourseCreatorInfo(**detail["creator"]),
         checkpoints=detail.get("checkpoints"),
+        dominion=CourseDominionBrief(**detail["dominion"]) if detail.get("dominion") else None,
     )
 
 

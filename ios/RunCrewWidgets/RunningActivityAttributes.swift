@@ -9,6 +9,7 @@ struct RunningActivityAttributes: ActivityAttributes {
         var avgPace: Int            // seconds per km
         var calories: Int
         var heartRate: Int          // bpm, 0 = no data
+        var cadence: Int            // steps per minute, 0 = no data
         var isPaused: Bool
         /// Effective start date for live timer: `now - elapsed`.
         /// Widget uses `Text(date, style: .timer)` for smooth counting.

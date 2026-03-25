@@ -380,8 +380,16 @@ export default function CourseDetailScreen() {
       Alert.alert(t('raid.raidStarted'), t('raid.raidStartedDesc'));
       // Navigate back to CrewDetail in HomeTab
       (navigation as any).navigate('HomeTab', { screen: 'CrewDetail', params: { crewId } });
-    } catch {
-      Alert.alert(t('common.errorTitle'), t('common.error'));
+    } catch (err: any) {
+      const code = err?.code || err?.response?.data?.code;
+      const serverMsg = err?.message || err?.response?.data?.message || err?.response?.data?.detail;
+      if (code === 'CHALLENGE_LIMIT') {
+        Alert.alert(t('common.errorTitle'), '이미 진행 중인 레이드가 있습니다. 기존 레이드를 종료한 후 시작해주세요.');
+      } else if (code === 'FORBIDDEN' || code === 'NOT_ADMIN') {
+        Alert.alert(t('common.errorTitle'), '레이드를 시작할 권한이 없습니다.');
+      } else {
+        Alert.alert(t('common.errorTitle'), serverMsg || t('common.error'));
+      }
     } finally {
       setIsStartingRaid(false);
     }
@@ -655,12 +663,14 @@ export default function CourseDetailScreen() {
               <Text style={[styles.dominionCrewName, { color: courseDominion.crew_badge_color || colors.primary }]}>
                 {courseDominion.crew_name}
               </Text>
-              <Text style={styles.dominionAvgTime}>
-                {t('dominion.avgTime')}: {formatDuration(courseDominion.avg_duration_seconds)}
-              </Text>
+              {courseDominion.avg_duration_seconds != null && (
+                <Text style={styles.dominionAvgTime}>
+                  {t('dominion.avgTime')}: {formatDuration(courseDominion.avg_duration_seconds)}
+                </Text>
+              )}
             </View>
             <View style={styles.dominionMembers}>
-              {courseDominion.top_members.slice(0, 3).map((m, i) => (
+              {(courseDominion.top_members ?? []).slice(0, 3).map((m, i) => (
                 m.avatar_url ? (
                   <Image
                     key={m.user_id}
@@ -1609,7 +1619,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   startRaidBtn: {
     flexDirection: 'row',
-    backgroundColor: c.accent,
+    backgroundColor: c.primary,
     borderRadius: BORDER_RADIUS.lg,
     paddingVertical: SPACING.lg + 2,
     alignItems: 'center',

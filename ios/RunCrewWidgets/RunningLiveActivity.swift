@@ -45,25 +45,27 @@ struct RunningLiveActivity: Widget {
                 }
 
                 DynamicIslandExpandedRegion(.center) {
-                    // intentionally empty — clean look
+                    // Current pace prominently in center
+                    HStack(spacing: 4) {
+                        Image(systemName: "speedometer")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(appOrange)
+                        Text(formatPace(context.state.currentPace))
+                            .font(.system(size: 18, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundColor(.white)
+                        Text("/km")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.gray)
+                    }
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack(spacing: 0) {
                         ExpandedStatCell(
-                            icon: "speedometer",
-                            value: formatPace(context.state.currentPace),
-                            label: "페이스",
-                            accentColor: appOrange
-                        )
-
-                        capsuleDivider
-
-                        ExpandedStatCell(
                             icon: "chart.line.uptrend.xyaxis",
                             value: formatPace(context.state.avgPace),
                             label: "평균",
-                            accentColor: .cyan
+                            accentColor: .green
                         )
 
                         capsuleDivider
@@ -73,6 +75,15 @@ struct RunningLiveActivity: Widget {
                             value: context.state.heartRate > 0 ? "\(context.state.heartRate)" : "--",
                             label: "BPM",
                             accentColor: .red
+                        )
+
+                        capsuleDivider
+
+                        ExpandedStatCell(
+                            icon: "metronome",
+                            value: context.state.cadence > 0 ? "\(context.state.cadence)" : "--",
+                            label: "SPM",
+                            accentColor: .cyan
                         )
 
                         capsuleDivider
@@ -88,15 +99,18 @@ struct RunningLiveActivity: Widget {
                     .padding(.horizontal, 4)
                 }
             } compactLeading: {
-                // Compact — left pill
-                HStack(spacing: 4) {
+                // Compact — left pill: distance + pace
+                HStack(spacing: 3) {
                     Image(systemName: "figure.run")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundColor(appOrange)
                     Text(formatDistance(context.state.distanceMeters))
-                        .font(.system(size: 14, weight: .heavy, design: .rounded).monospacedDigit())
+                        .font(.system(size: 13, weight: .heavy, design: .rounded).monospacedDigit())
                         .foregroundColor(.white)
                         .contentTransition(.numericText())
+                    Text(formatPace(context.state.currentPace))
+                        .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                        .foregroundColor(.gray)
                 }
             } compactTrailing: {
                 // Compact — right pill
@@ -247,19 +261,19 @@ private struct LockScreenRunView: View {
                 lockDivider
 
                 LockScreenStatCell(
-                    icon: "chart.line.uptrend.xyaxis",
-                    value: formatPace(context.state.avgPace),
-                    label: "평균",
-                    accentColor: .cyan
+                    icon: "heart.fill",
+                    value: context.state.heartRate > 0 ? "\(context.state.heartRate)" : "--",
+                    label: "BPM",
+                    accentColor: .red
                 )
 
                 lockDivider
 
                 LockScreenStatCell(
-                    icon: "heart.fill",
-                    value: context.state.heartRate > 0 ? "\(context.state.heartRate)" : "--",
-                    label: "BPM",
-                    accentColor: .red
+                    icon: "metronome",
+                    value: context.state.cadence > 0 ? "\(context.state.cadence)" : "--",
+                    label: "SPM",
+                    accentColor: .cyan
                 )
 
                 lockDivider

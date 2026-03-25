@@ -17,6 +17,8 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.config import get_settings
 from app.core.exceptions import NotFoundError, PermissionDeniedError
 from app.models.course import Course, CourseStats
+from app.models.course_dominion import CourseDominion
+from app.models.crew import Crew
 from app.models.like import CourseLike
 from app.models.review import Review
 from app.models.run_record import RunRecord
@@ -420,6 +422,26 @@ class CourseService:
                 course.checkpoint_interval_meters = 500
                 await db.flush()
 
+        # Fetch dominion (which crew currently owns this course)
+        dominion_result = await db.execute(
+            select(CourseDominion.crew_id, CourseDominion.crew_name)
+            .where(CourseDominion.course_id == course_id)
+        )
+        dominion_row = dominion_result.first()
+        dominion_info = None
+        if dominion_row:
+            crew_result = await db.execute(
+                select(Crew.badge_color, Crew.logo_url)
+                .where(Crew.id == dominion_row.crew_id)
+            )
+            crew_row = crew_result.first()
+            dominion_info = {
+                "crew_id": str(dominion_row.crew_id),
+                "crew_name": dominion_row.crew_name,
+                "crew_badge_color": crew_row.badge_color if crew_row else None,
+                "crew_logo_url": crew_row.logo_url if crew_row else None,
+            }
+
         return {
             "id": str(course.id),
             "title": course.title,
@@ -434,6 +456,7 @@ class CourseService:
             "created_at": course.created_at,
             "creator": creator_info,
             "checkpoints": checkpoints,
+            "dominion": dominion_info,
         }
 
     @staticmethod
@@ -716,7 +739,11 @@ class CourseService:
                 COALESCE(act.active_runners, 0) AS active_runners,
                 c.created_at,
                 c.elevation_gain_meters,
-                u.nickname AS creator_nickname
+                u.nickname AS creator_nickname,
+                cd.crew_id AS dominion_crew_id,
+                cd.crew_name AS dominion_crew_name,
+                cr.badge_color AS dominion_crew_badge_color,
+                cr.logo_url AS dominion_crew_logo_url
             FROM courses c
             LEFT JOIN course_stats cs ON cs.course_id = c.id
             LEFT JOIN (
@@ -731,6 +758,8 @@ class CourseService:
                 GROUP BY course_id
             ) act ON act.course_id = c.id
             LEFT JOIN users u ON u.id = c.creator_id
+            LEFT JOIN course_dominions cd ON cd.course_id = c.id
+            LEFT JOIN crews cr ON cr.id = cd.crew_id
             WHERE c.is_public = true
               {spatial_clause}
             LIMIT :limit
@@ -762,6 +791,12 @@ class CourseService:
                 "is_new": row.created_at >= seven_days_ago if row.created_at else False,
                 "elevation_gain_meters": row.elevation_gain_meters or 0,
                 "creator_nickname": row.creator_nickname,
+                "dominion": {
+                    "crew_id": str(row.dominion_crew_id),
+                    "crew_name": row.dominion_crew_name,
+                    "crew_badge_color": row.dominion_crew_badge_color,
+                    "crew_logo_url": row.dominion_crew_logo_url,
+                } if row.dominion_crew_id else None,
             }
             for row in rows
         ]

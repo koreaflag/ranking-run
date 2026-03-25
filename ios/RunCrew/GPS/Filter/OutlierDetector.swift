@@ -14,6 +14,12 @@ class OutlierDetector {
     private let maxTimestampAge: TimeInterval = 10.0   // seconds (matches Android; 5s was too strict for background/brief signal loss)
     private let minTimeBetweenUpdates: TimeInterval = 0.05 // seconds (allow more frequent updates)
 
+    // Adaptive speed thresholds (matched with Android)
+    private let walkingSpeedThreshold: Double = 2.0    // m/s (~7.2 km/h) — below this = walking
+    private let walkingMaxSpeed: Double = 6.0          // m/s (~21.6 km/h) — generous for walking
+    private let backgroundMaxDistance: Double = 50.0   // meters — cap for stale background GPS
+    private let backgroundMinInterval: TimeInterval = 5.0 // seconds
+
     private var lastTimestamp: TimeInterval = 0
     private var previousPoints: [(location: CLLocation, speed: Double)] = []
 
@@ -42,7 +48,17 @@ class OutlierDetector {
             guard timeDelta > 0 else { return nil }
 
             let calculatedSpeed = distance / timeDelta
-            if calculatedSpeed > maxSpeed {
+
+            // Adaptive speed threshold (matched with Android):
+            // Walking pace → lower threshold catches GPS jumps that look normal at running pace
+            let adaptiveMax = getAdaptiveSpeedThreshold()
+            if calculatedSpeed > adaptiveMax {
+                return nil
+            }
+
+            // Background GPS guard (matched with Android):
+            // When update interval is large (>5s), GPS may report stale/cell-tower positions
+            if timeDelta > backgroundMinInterval && distance > backgroundMaxDistance {
                 return nil
             }
 
@@ -78,6 +94,13 @@ class OutlierDetector {
         lastValidLocation = location
         lastTimestamp = timestampMs
         return location
+    }
+
+    /// Adaptive max speed based on recent average (matched with Android)
+    private func getAdaptiveSpeedThreshold() -> Double {
+        guard !recentSpeeds.isEmpty else { return maxSpeed }
+        let avgSpeed = recentSpeeds.reduce(0, +) / Double(recentSpeeds.count)
+        return avgSpeed < walkingSpeedThreshold ? walkingMaxSpeed : maxSpeed
     }
 
     func reset() {

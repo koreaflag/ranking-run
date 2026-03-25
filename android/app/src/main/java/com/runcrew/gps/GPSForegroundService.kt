@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 
@@ -75,6 +76,7 @@ class GPSForegroundService : Service() {
 
     private val binder = LocalBinder()
     private var isRunning = false
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder {
         return binder
@@ -116,12 +118,27 @@ class GPSForegroundService : Service() {
 
     override fun onDestroy() {
         isRunning = false
+        try {
+            wakeLock?.let { if (it.isHeld) it.release() }
+            wakeLock = null
+        } catch (_: Exception) {}
         super.onDestroy()
     }
 
     private fun startForegroundTracking() {
         if (isRunning) return
         isRunning = true
+
+        // Acquire partial wake lock to keep CPU alive during background GPS tracking.
+        // Without this, the CPU may sleep and stop processing GPS callbacks.
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RUNVS::GPSTracking").apply {
+                acquire(4 * 60 * 60 * 1000L) // 4 hours max as safety timeout
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire wake lock", e)
+        }
 
         val notification = buildNotification(0.0, 0L)
 
@@ -143,6 +160,15 @@ class GPSForegroundService : Service() {
 
     private fun stopForegroundTracking() {
         isRunning = false
+        // Release wake lock
+        try {
+            wakeLock?.let {
+                if (it.isHeld) it.release()
+            }
+            wakeLock = null
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to release wake lock", e)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -186,7 +212,7 @@ class GPSForegroundService : Service() {
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("RunCrew - Running")
+            .setContentTitle("RUNVS - 러닝 중")
             .setContentText("$distanceText | $durationText")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setOngoing(true)

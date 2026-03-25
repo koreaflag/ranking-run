@@ -441,6 +441,8 @@ export default function CrewDetailScreen() {
           showsVerticalScrollIndicator={false}
           onScroll={handleScroll}
           scrollEventThrottle={400}
+          removeClippedSubviews={Platform.OS === 'android'}
+          overScrollMode="never"
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -451,7 +453,7 @@ export default function CrewDetailScreen() {
         >
           {/* Cover Image */}
           {hasCover ? (
-            <Image source={{ uri: crew.cover_image_url! }} style={styles.coverImage} />
+            <Image source={{ uri: crew.cover_image_url! }} style={styles.coverImage} fadeDuration={0} resizeMethod="resize" />
           ) : (
             <View style={[styles.coverPlaceholder, { backgroundColor: (crew.badge_color || colors.primary) + '25' }]}>
               <Ionicons name="image-outline" size={32} color={(crew.badge_color || colors.primary) + '60'} />
@@ -462,7 +464,7 @@ export default function CrewDetailScreen() {
           <View style={styles.logoSection}>
             <View style={styles.logoWrapper}>
               {hasLogo ? (
-                <Image source={{ uri: crew.logo_url! }} style={styles.logoImage} />
+                <Image source={{ uri: crew.logo_url! }} style={styles.logoImage} fadeDuration={0} />
               ) : (
                 <View style={[styles.logoBadge, { backgroundColor: crew.badge_color || colors.primary }]}>
                   <Ionicons
@@ -820,7 +822,7 @@ const PostItem = React.memo(function PostItem({
       {/* Author row */}
       <View style={styles.postAuthorRow}>
         {post.author.avatar_url ? (
-          <Image source={{ uri: post.author.avatar_url }} style={styles.postAvatar} />
+          <Image source={{ uri: post.author.avatar_url }} style={styles.postAvatar} fadeDuration={0} />
         ) : (
           <View style={styles.postAvatarPlaceholder}>
             <Text style={styles.postAvatarText}>{initial}</Text>
@@ -835,7 +837,7 @@ const PostItem = React.memo(function PostItem({
         {post.title ? <><Text style={styles.postTitleInline}>{post.title}  </Text>{post.content}</> : post.content}
       </Text>
       {post.image_url && (
-        <Image source={{ uri: post.image_url }} style={styles.postImagePreview} resizeMode="cover" />
+        <Image source={{ uri: post.image_url }} style={styles.postImagePreview} resizeMode="cover" fadeDuration={0} />
       )}
       <View style={styles.postActions}>
         {post.like_count > 0 && (
@@ -909,7 +911,7 @@ function MemberRow({
       activeOpacity={0.7}
     >
       {member.avatar_url ? (
-        <Image source={{ uri: member.avatar_url }} style={styles.memberAvatarImg} />
+        <Image source={{ uri: member.avatar_url }} style={styles.memberAvatarImg} fadeDuration={0} />
       ) : (
         <View style={styles.memberAvatar}>
           <Text style={styles.memberAvatarText}>{initial}</Text>

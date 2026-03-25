@@ -158,16 +158,32 @@ class CrewChallengeService:
         db: AsyncSession,
         crew_id: UUID,
     ) -> dict | None:
-        """Get the currently active challenge for a crew, or None."""
+        """Get the currently active challenge for a crew, or None.
+
+        If multiple active challenges exist (shouldn't happen normally),
+        keep only the most recent one and auto-end the rest.
+        """
         result = await db.execute(
-            select(CrewChallenge).where(
+            select(CrewChallenge)
+            .where(
                 CrewChallenge.crew_id == crew_id,
                 CrewChallenge.status == "active",
             )
+            .order_by(CrewChallenge.created_at.desc())
         )
-        challenge = result.scalar_one_or_none()
-        if challenge is None:
+        active_list = result.scalars().all()
+        if not active_list:
             return None
+
+        # Keep the most recent, auto-end duplicates
+        challenge = active_list[0]
+        if len(active_list) > 1:
+            now = datetime.now(timezone.utc)
+            for stale in active_list[1:]:
+                stale.status = "ended"
+                stale.ended_at = now
+                logger.warning("Auto-ended duplicate active challenge %s for crew %s", stale.id, crew_id)
+            await db.flush()
 
         crew = await db.get(Crew, crew_id)
         return await self._challenge_to_dict(db, challenge, crew)

@@ -38,8 +38,8 @@ interface CourseDetailState {
     crew_name: string;
     crew_logo_url: string | null;
     crew_badge_color: string | null;
-    avg_duration_seconds: number;
-    top_members: Array<{ user_id: string; nickname: string; avatar_url: string | null }>;
+    avg_duration_seconds?: number;
+    top_members?: Array<{ user_id: string; nickname: string; avatar_url: string | null }>;
   } | null;
 
   // Reviews
@@ -111,6 +111,7 @@ export const useCourseDetailStore = create<CourseDetailState>((set, get) => ({
         selectedCourseAvgRating: reviewsResponse.avg_rating,
         selectedCourseReviewCount: reviewsResponse.total_count,
         selectedCourseMyReview: myReview,
+        selectedCourseDominion: detail.dominion ?? null,
         selectedCourseLikeCount: likeStatus.like_count,
         selectedCourseIsLiked: likeStatus.is_liked,
         isLoadingDetail: false,

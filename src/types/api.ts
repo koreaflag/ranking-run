@@ -318,6 +318,7 @@ export interface CourseDetail {
   created_at: string;
   creator: CourseCreator;
   checkpoints?: CourseCheckpoint[] | null;
+  dominion?: CourseDominionBrief | null;
 }
 
 export interface CourseDetailStats {

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo, useState } from 'react';
-import { StyleSheet, View, Text, Platform } from 'react-native';
+import { StyleSheet, View, Text, Platform, Animated, Image } from 'react-native';
 import Mapbox, { UserTrackingMode } from '@rnmapbox/maps';
 import { Ionicons } from '../../lib/icons';
 import { COLORS, DIFFICULTY_COLORS, type DifficultyLevel } from '../../utils/constants';
@@ -44,6 +44,12 @@ export interface CourseMarkerData {
   elevation_gain_meters?: number;
   creator_nickname?: string | null;
   user_rank?: number | null;
+  dominion?: {
+    crew_id: string;
+    crew_name: string;
+    crew_badge_color: string | null;
+    crew_logo_url: string | null;
+  } | null;
 }
 
 export interface EventMarkerData {
@@ -141,6 +147,10 @@ export interface RouteMapViewHandle {
   ) => void;
   /** Move camera to given location (or just re-engage follow mode) and re-enable follow */
   recenterOnUser: (location?: { latitude: number; longitude: number }) => void;
+  /** Smooth zoom-in WITHOUT disabling follow — for countdown transitions.
+   *  Unlike animateCamera, this does NOT toggle internalFollow, so custom
+   *  follow seamlessly takes over after the animation completes. */
+  smoothZoomIn: (camera: Camera, duration?: number) => void;
 }
 
 // ---- Helpers ----
@@ -241,6 +251,61 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   const mapBearingRef = useRef(0);
   const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM);
 
+  // Smooth heading rotation animation
+  const headingAnimRef = useRef(new Animated.Value(0));
+  const prevHeadingRef = useRef(0);
+  // Suppress custom follow during smoothZoomIn animation so it doesn't
+  // interrupt the flyTo with competing setCamera calls.
+  const suppressFollowUntilRef = useRef(0);
+
+  // Smooth GPS marker position interpolation (prevents choppy jumps)
+  const markerTargetRef = useRef<{ lng: number; lat: number } | null>(null);
+  const markerCurrentRef = useRef<{ lng: number; lat: number } | null>(null);
+  const [smoothMarkerPos, setSmoothMarkerPos] = useState<[number, number] | null>(null);
+  const markerAnimFrameRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!customUserLocation) return;
+    const target = { lng: customUserLocation.longitude, lat: customUserLocation.latitude };
+    markerTargetRef.current = target;
+    if (!markerCurrentRef.current) {
+      // First position — snap immediately
+      markerCurrentRef.current = { ...target };
+      setSmoothMarkerPos([target.lng, target.lat]);
+      return;
+    }
+    // Animate from current to target over ~800ms using lerp
+    const startLng = markerCurrentRef.current.lng;
+    const startLat = markerCurrentRef.current.lat;
+    const startTime = Date.now();
+    const duration = Platform.OS === 'android' ? 800 : 500;
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      // Ease-out cubic for natural deceleration
+      const ease = 1 - Math.pow(1 - t, 3);
+      const lng = startLng + (target.lng - startLng) * ease;
+      const lat = startLat + (target.lat - startLat) * ease;
+      markerCurrentRef.current = { lng, lat };
+      setSmoothMarkerPos([lng, lat]);
+      if (t < 1) {
+        markerAnimFrameRef.current = requestAnimationFrame(animate);
+      }
+    };
+    cancelAnimationFrame(markerAnimFrameRef.current);
+    markerAnimFrameRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(markerAnimFrameRef.current);
+  }, [customUserLocation?.latitude, customUserLocation?.longitude]);
+
+  // Debug: track mount/unmount to detect unexpected remounts
+  useEffect(() => {
+    if (__DEV__) console.log('[RouteMapView] MOUNTED');
+    return () => {
+      if (__DEV__) console.log('[RouteMapView] UNMOUNTED');
+    };
+  }, []);
+
   // ---------- Internal follow state ----------
   // Mapbox Camera silently blocks ALL setCamera/fitBounds calls when
   // followUserLocation=true. We manage follow internally so imperative
@@ -259,9 +324,15 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     ? false
     : (internalFollow && !useCustomFollow);
 
-  // Sync external prop → internal state
+  // Sync external prop → internal state (only re-engage, never override local disable)
+  const prevFollowPropRef = useRef(followsUserLocation);
   useEffect(() => {
-    setInternalFollow(followsUserLocation);
+    const prev = prevFollowPropRef.current;
+    prevFollowPropRef.current = followsUserLocation;
+    // Only sync when prop transitions: false→true (re-engage) or true→false (parent disable)
+    if (followsUserLocation !== prev) {
+      setInternalFollow(followsUserLocation);
+    }
   }, [followsUserLocation]);
 
   // Queue: animations waiting for follow=false to take effect
@@ -336,6 +407,23 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         );
       });
     },
+    smoothZoomIn: (camera: Camera, duration = 1500) => {
+      // Directly call setCamera WITHOUT disabling internalFollow.
+      // This prevents the follow-stuck-at-false bug on Android where
+      // animateCamera's runCameraAction disables follow permanently.
+      // Also suppress custom follow for the animation duration so competing
+      // setCamera calls don't interrupt the flyTo (causes jitter on Android).
+      suppressFollowUntilRef.current = Date.now() + duration;
+      const config: any = { animationDuration: duration, animationMode: 'flyTo' };
+      if (camera.center) {
+        config.centerCoordinate = [camera.center.longitude, camera.center.latitude];
+      }
+      if (camera.pitch != null) config.pitch = camera.pitch;
+      if (camera.heading != null) config.heading = camera.heading;
+      if (camera.zoom != null) config.zoomLevel = camera.zoom;
+      config.padding = { paddingTop: 0, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 };
+      cameraRef.current?.setCamera(config);
+    },
     recenterOnUser: (location?: { latitude: number; longitude: number }) => {
       // Directly move camera to given location, then re-enable follow.
       // On Android, native follow is disabled so we must always setCamera explicitly.
@@ -388,6 +476,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
 
   // Fit map to route bounds after map loads (skip when following user — Camera handles centering)
   const handleDidFinishLoadingMap = useCallback(() => {
+    if (__DEV__) console.log('[RouteMapView] onDidFinishLoadingMap fired — map style loaded');
     if (isRouteMode && routePoints.length >= 2 && !followsUserLocation) {
       const { ne, sw } = computeBounds(routePoints);
       if (animateToRouteOnLoad) {
@@ -429,8 +518,16 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   // (accounting for overlapping inline UI panels).
   useEffect(() => {
     if (useCustomFollow && customUserLocation) {
+      // Skip if smoothZoomIn animation is in progress — let the flyTo finish
+      // without competing setCamera calls that cause jitter on Android.
+      if (Date.now() < suppressFollowUntilRef.current) return;
+
       const zoomLevel = followZoomLevel ?? 16;
-      const headingToUse = customUserHeading ?? 0;
+      // Only rotate the map when in course/compass mode (running).
+      // In normal mode (idle/touring), keep the map north-up — the heading
+      // cone on the marker handles direction display instead.
+      const rotateMap = followUserModeProp === 'course' || followUserModeProp === 'compass';
+      const headingToUse = rotateMap ? (customUserHeading ?? 0) : 0;
       const cameraConfig: any = {
         centerCoordinate: [customUserLocation.longitude, customUserLocation.latitude],
         zoomLevel,
@@ -455,7 +552,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
       }
       cameraRef.current?.setCamera(cameraConfig);
     }
-  }, [useCustomFollow, customUserLocation?.latitude, customUserLocation?.longitude, followZoomLevel, customUserHeading, followPitchProp, followPadding]);
+  }, [useCustomFollow, customUserLocation?.latitude, customUserLocation?.longitude, followZoomLevel, customUserHeading, followPitchProp, followPadding, followUserModeProp]);
 
   // Region change callback
   const handleRegionDidChange = useCallback(
@@ -572,8 +669,11 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     return toLineGeoJSON(previewPolyline);
   }, [previewPolyline]);
 
-  // Use globe projection for the world map mode (only in 3D style)
-  const projection = isMarkersMode && use3DStyle ? 'globe' : 'mercator';
+  // Globe projection for the world map mode (only in 3D style).
+  // Android: globe ↔ mercator switch causes a full map reload (tile re-fetch +
+  // blank flash). On iOS the transition is smooth. Disable globe entirely on
+  // Android so the running transition doesn't trigger a map re-render.
+  const projection = isMarkersMode && use3DStyle && Platform.OS === 'ios' ? 'globe' : 'mercator';
 
   // Map style: 3D = custom Mapbox styles, 2D = basic flat styles
   const mapStyleURL = use3DStyle
@@ -581,7 +681,13 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     : (isDark ? 'mapbox://styles/mapbox/dark-v11' : 'mapbox://styles/mapbox/light-v11');
 
   return (
-    <View style={[styles.container, style]}>
+    <View
+      style={[styles.container, style]}
+      onTouchStart={isInteractive && onUserMapInteraction ? () => {
+        if (useCustomFollow) setInternalFollow(false);
+        onUserMapInteraction();
+      } : undefined}
+    >
       <Mapbox.MapView
         styleURL={mapStyleURL}
         projection={projection}
@@ -628,7 +734,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             <Mapbox.LineLayer
               id="route-line"
               style={{
-                lineColor: '#FFC800',
+                lineColor: '#FFD600',
                 lineWidth: 6,
                 lineCap: 'round',
                 lineJoin: 'round',
@@ -761,9 +867,18 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
                     return true;
                   }}
                 >
-                  <View style={[styles.courseBadge, { backgroundColor: badgeColor }]}>
-                    <Ionicons name={icon} size={14} color={COLORS.white} />
-                  </View>
+                  {m.dominion?.crew_logo_url ? (
+                    <Image
+                      source={{ uri: m.dominion.crew_logo_url }}
+                      style={[styles.dominionMarkerLogo, {
+                        borderColor: m.dominion.crew_badge_color || badgeColor,
+                      }]}
+                    />
+                  ) : (
+                    <View style={[styles.courseBadge, { backgroundColor: badgeColor }]}>
+                      <Ionicons name={icon} size={14} color={COLORS.white} />
+                    </View>
+                  )}
                 </View>
               </Mapbox.MarkerView>
             );
@@ -779,33 +894,48 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
         )}
 
         {/* Custom orange location dot + heading arrow via MarkerView (above all layers, always visible) */}
-        {customUserLocation && isFinite(customUserLocation.longitude) && isFinite(customUserLocation.latitude) && (
-          <Mapbox.MarkerView
-            coordinate={[customUserLocation.longitude, customUserLocation.latitude]}
-            anchor={{ x: 0.5, y: 0.5 }}
-            allowOverlap={true}
-            allowOverlapWithPuck={true}
-          >
-            <View
-              style={[
-                styles.userLocationWrapper,
-                {
-                  transform: [
-                    ...(customUserHeading != null
-                      ? [{ rotate: `${((customUserHeading - mapBearingRef.current) % 360 + 360) % 360}deg` }]
-                      : []),
-                    { scale: 1 },
-                  ],
-                },
-              ]}
+        {smoothMarkerPos && (() => {
+          // Animate heading rotation smoothly
+          if (customUserHeading != null) {
+            const target = ((customUserHeading - mapBearingRef.current) % 360 + 360) % 360;
+            // Shortest path rotation (handle 0/360 wraparound)
+            let delta = target - prevHeadingRef.current;
+            if (delta > 180) delta -= 360;
+            if (delta < -180) delta += 360;
+            const newVal = prevHeadingRef.current + delta;
+            prevHeadingRef.current = newVal;
+            Animated.timing(headingAnimRef.current, {
+              toValue: newVal,
+              duration: 200,
+              useNativeDriver: true,
+            }).start();
+          }
+          const hasHeading = customUserHeading != null;
+          const spin = headingAnimRef.current.interpolate({
+            inputRange: [-360, 360],
+            outputRange: ['-360deg', '360deg'],
+          });
+          return (
+            <Mapbox.MarkerView
+              coordinate={smoothMarkerPos}
+              anchor={{ x: 0.5, y: 0.5 }}
+              allowOverlap={true}
+              allowOverlapWithPuck={true}
             >
-              {customUserHeading != null && (
-                <View style={styles.headingChevron} />
-              )}
-              <View style={styles.userLocationInner} />
-            </View>
-          </Mapbox.MarkerView>
-        )}
+              <Animated.View
+                style={[
+                  styles.userLocationWrapper,
+                  hasHeading ? { transform: [{ rotate: spin }] } : undefined,
+                ]}
+              >
+                {hasHeading && (
+                  <View style={styles.headingChevron} />
+                )}
+                <View style={styles.userLocationInner} />
+              </Animated.View>
+            </Mapbox.MarkerView>
+          );
+        })()}
 
         {/* ---- Event markers ---- */}
         {eventMarkers
@@ -869,7 +999,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             <Mapbox.LineLayer
               id="preview-line"
               style={{
-                lineColor: '#FFC800',
+                lineColor: '#FFD600',
                 lineWidth: 6,
                 lineCap: 'round',
                 lineJoin: 'round',
@@ -955,7 +1085,7 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
   },
   startDot: {
-    backgroundColor: '#FFC800',
+    backgroundColor: '#FFD600',
   },
   finishDot: {
     backgroundColor: '#FF3B30',
@@ -967,7 +1097,7 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   startLabel: {
-    color: '#FFC800',
+    color: '#FFD600',
   },
   finishLabel: {
     color: '#FF3B30',
@@ -1034,21 +1164,22 @@ const styles = StyleSheet.create({
   // ---- User location marker + heading chevron ----
   userLocationWrapper: {
     alignItems: 'center',
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     justifyContent: 'center',
+    overflow: 'visible',
   },
   headingChevron: {
     width: 0,
     height: 0,
-    borderLeftWidth: 7,
-    borderRightWidth: 7,
-    borderBottomWidth: 10,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderBottomWidth: 12,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderBottomColor: '#FF5F00',
     position: 'absolute',
-    top: -2,
+    top: 0,
   },
   userLocationInner: {
     width: 24,
@@ -1128,6 +1259,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.9)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  dominionMarkerLogo: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
+import { NativeModules, NativeEventEmitter } from 'react-native';
 import { useRunningStore } from '../stores/runningStore';
 import type {
   LocationUpdateEvent,
@@ -81,9 +81,7 @@ export function useGPSTracker() {
     if (!GPSTrackerModule) return;
     if (phase !== 'running' && phase !== 'paused' && phase !== 'countdown') return;
 
-    const emitter = new NativeEventEmitter(
-      Platform.OS === 'ios' ? GPSTrackerModule : undefined,
-    );
+    const emitter = new NativeEventEmitter(GPSTrackerModule);
 
     const locationSub = emitter.addListener(
       GPS_EVENTS.LOCATION_UPDATE,

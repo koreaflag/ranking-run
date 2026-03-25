@@ -63,6 +63,7 @@ export function useLiveActivity() {
         avgPace: state.avgPaceSecondsPerKm,
         calories: state.calories,
         heartRate: state.heartRate,
+        cadence: state.cadence,
         isPaused: state.phase === 'paused' || state.isPaused || state.isAutoPaused,
       }).catch((err: any) => {
         console.warn('[useLiveActivity] 라이브 액티비티 업데이트 실패:', err);
@@ -96,6 +97,7 @@ export function useLiveActivity() {
           avgPace: state.avgPaceSecondsPerKm,
           calories: state.calories,
           heartRate: state.heartRate,
+          cadence: state.cadence,
         });
         console.log('[LiveActivity] Ended');
       } catch {
@@ -132,6 +134,7 @@ export function useLiveActivity() {
             avgPace: state.avgPaceSecondsPerKm,
             calories: state.calories,
             heartRate: state.heartRate,
+            cadence: state.cadence,
           }).catch((err: any) => {
             console.warn('[useLiveActivity] 라이브 액티비티 종료 실패:', err);
           });

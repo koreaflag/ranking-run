@@ -153,6 +153,17 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     func launchWatchApp() {
         guard HKHealthStore.isHealthDataAvailable() else { return }
 
+        // Only attempt startWatchApp when a Watch is actually paired and our
+        // companion app is installed. Calling without a paired watch triggers
+        // an iOS internal NSXPCConnection deserialization crash in
+        // HDIDSMessagePersistentContext (rdar://FB…, iOS 17–18 bug).
+        guard WCSession.isSupported() else { return }
+        let wc = WCSession.default
+        guard wc.isPaired, wc.isWatchAppInstalled else {
+            NSLog("[WatchSessionMgr] Skip startWatchApp — watch not paired or app not installed")
+            return
+        }
+
         // Lazily request HealthKit authorization on first run (not during module init).
         if #available(iOS 17, *) {
             WorkoutMirroringPhone.shared.ensureAuthorized()

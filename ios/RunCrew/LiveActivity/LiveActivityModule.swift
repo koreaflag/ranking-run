@@ -36,6 +36,7 @@ class LiveActivityModule: NSObject {
             avgPace: 0,
             calories: 0,
             heartRate: 0,
+            cadence: 0,
             isPaused: false,
             timerStartDate: Date().addingTimeInterval(-Double(durationSeconds))
         )
@@ -72,6 +73,7 @@ class LiveActivityModule: NSObject {
         let avgPace = data["avgPace"] as? Int ?? 0
         let calories = data["calories"] as? Int ?? 0
         let heartRate = data["heartRate"] as? Int ?? 0
+        let cadence = data["cadence"] as? Int ?? 0
         let isPaused = data["isPaused"] as? Bool ?? false
 
         let state = RunningActivityAttributes.ContentState(
@@ -81,6 +83,7 @@ class LiveActivityModule: NSObject {
             avgPace: avgPace,
             calories: calories,
             heartRate: heartRate,
+            cadence: cadence,
             isPaused: isPaused,
             timerStartDate: Date().addingTimeInterval(-Double(durationSeconds))
         )
@@ -124,6 +127,7 @@ class LiveActivityModule: NSObject {
         let avgPace = data["avgPace"] as? Int ?? 0
         let calories = data["calories"] as? Int ?? 0
         let heartRate = data["heartRate"] as? Int ?? 0
+        let cadence = data["cadence"] as? Int ?? 0
 
         let finalState = RunningActivityAttributes.ContentState(
             distanceMeters: distanceMeters,
@@ -132,6 +136,7 @@ class LiveActivityModule: NSObject {
             avgPace: avgPace,
             calories: calories,
             heartRate: heartRate,
+            cadence: cadence,
             isPaused: true,
             timerStartDate: Date().addingTimeInterval(-Double(durationSeconds))
         )

@@ -358,6 +358,7 @@ export default function WorldScreen() {
 
   // Countdown state
   const [countdown, setCountdown] = useState<number | null>(null);
+  const lastCountdownRef = useRef(countdownSeconds);
   const [showCountdownOverlay, setShowCountdownOverlay] = useState(false);
 
   // Goal reached banner
@@ -509,9 +510,10 @@ export default function WorldScreen() {
     lockHapticTimer.current = setInterval(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }, 400);
-    // Listen for progress reaching 1 — fires immediately when gauge fills
+    // Listen for progress reaching ~95% — unlock slightly before visual fill
+    // to eliminate perceived delay between gauge full and actual unlock
     lockListenerId.current = lockProgressAnim.addListener(({ value }) => {
-      if (value >= 0.99 && !lockUnlockedRef.current) {
+      if (value >= 0.95 && !lockUnlockedRef.current) {
         lockUnlockedRef.current = true;
         cleanupLockTimers();
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -521,7 +523,7 @@ export default function WorldScreen() {
     });
     Animated.timing(lockProgressAnim, {
       toValue: 1,
-      duration: 2000,
+      duration: 1500,
       useNativeDriver: false,
     }).start();
   }, [lockProgressAnim, cleanupLockTimers]);
@@ -644,19 +646,19 @@ export default function WorldScreen() {
     setPreviewCheckpoints([]);
     setIs3DMode(false);
     setSelectedMarker(null);
-    // Stop following first so padding clears before reset
-    setFollowUser(false);
-    reset();
-    // After panel slide-out animation, re-center on full-screen map
-    // Use recenterOnUser which explicitly zeros padding to prevent stale anchor
+    // Smoothly transition camera BEFORE resetting state to avoid flicker.
+    // recenterOnUser zeros padding and re-enables internalFollow.
     const loc = myLocationRef.current ?? myLocation ?? useSettingsStore.getState().lastKnownLocation;
+    if (loc) {
+      mapRef.current?.recenterOnUser(loc);
+    }
+    // Delay reset so the camera animation (500ms) finishes before props change
     setTimeout(() => {
-      if (loc) {
-        mapRef.current?.recenterOnUser(loc);
-      }
-      // Re-enable follow after camera has moved
-      setTimeout(() => setFollowUser(true), 700);
-    }, 400);
+      setFollowUser(false);
+      reset();
+      // Re-enable follow after reset completes
+      requestAnimationFrame(() => setFollowUser(true));
+    }, 500);
   }, [reset, myLocation]);
 
 
@@ -738,15 +740,14 @@ export default function WorldScreen() {
     }
 
     // Center map on current location and begin smooth zoom-in during countdown.
-    // Uses persisted location (synchronous, reliable) instead of getLastKnownPositionAsync
-    // which may return stale/wrong position on Android.
+    // BOTH platforms use smoothZoomIn (keeps internalFollow alive).
+    // animateCamera calls runCameraAction which sets internalFollow=false permanently
+    // because the followsUserLocation prop doesn't re-trigger the sync useEffect.
     const persistedLoc = myLocationRef.current ?? useSettingsStore.getState().lastKnownLocation;
     if (persistedLoc) {
-      // Smooth zoom-in transition: gradually increase zoom and pitch over 1.5s
-      // so the transition from world view → running view feels natural
       const targetZoom = courseId ? 17 : 16;
       const targetPitch = courseId ? 45 : 30;
-      mapRef.current?.animateCamera({
+      mapRef.current?.smoothZoomIn({
         center: { latitude: persistedLoc.latitude, longitude: persistedLoc.longitude },
         zoom: targetZoom,
         pitch: targetPitch,
@@ -785,6 +786,7 @@ export default function WorldScreen() {
     }
 
     for (let i = countdownSeconds; i > 0; i--) {
+      lastCountdownRef.current = i;
       setCountdown(i);
       if (hapticFeedback) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -1135,20 +1137,22 @@ export default function WorldScreen() {
     await stopTracking();
     trackingStartedRef.current = false;
     setScreenLocked(false);
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     complete();
 
     if (hapticFeedback) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
 
-    // Fit map to completed route
+    // Fit map to completed route after UI settles
     if (store.routePoints.length >= 2) {
-      setTimeout(() => {
-        mapRef.current?.fitToCoordinates(store.routePoints, {
-          top: 120, right: 60, bottom: 380, left: 60,
-        }, true);
-      }, 400);
+      InteractionManager.runAfterInteractions(() => {
+        mapRef.current?.animateCamera({ pitch: 0, heading: 0 }, 800);
+        setTimeout(() => {
+          mapRef.current?.fitToCoordinates(store.routePoints, {
+            top: 120, right: 60, bottom: 380, left: 60,
+          }, true);
+        }, 900);
+      });
     }
 
     if (!sid) return;
@@ -1258,16 +1262,64 @@ export default function WorldScreen() {
     }
   }, [phase, runCourseId, courseNavigation, finishReached, cpTotalCount, finishRun, distanceMeters, durationSeconds]);
 
-  const handleStop = useCallback(() => {
-    Alert.alert('러닝 종료', '러닝을 종료하시겠습니까?', [
-      { text: '계속 달리기', style: 'cancel' },
-      {
-        text: '종료',
-        style: 'destructive',
-        onPress: finishRun,
-      },
-    ]);
-  }, [finishRun]);
+  // Long-press stop: hold for 1.5s to end run (no Alert confirmation)
+  const [stopProgressAnim] = useState(() => new Animated.Value(0));
+  const stopHapticTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopUnlockedRef = useRef(false);
+  const stopPressStart = useRef(0);
+  const [showStopHint, setShowStopHint] = useState(false);
+  const stopHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopFinishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cleanupStopTimers = useCallback(() => {
+    if (stopHapticTimer.current) {
+      clearInterval(stopHapticTimer.current);
+      stopHapticTimer.current = null;
+    }
+    if (stopFinishTimer.current) {
+      clearTimeout(stopFinishTimer.current);
+      stopFinishTimer.current = null;
+    }
+  }, []);
+
+  const handleStopPressIn = useCallback(() => {
+    stopUnlockedRef.current = false;
+    stopPressStart.current = Date.now();
+    if (stopHintTimer.current) clearTimeout(stopHintTimer.current);
+    setShowStopHint(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    stopProgressAnim.setValue(0);
+    stopHapticTimer.current = setInterval(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }, 400);
+    // Timer-based finish — no JS-thread listener needed
+    stopFinishTimer.current = setTimeout(() => {
+      if (!stopUnlockedRef.current) {
+        stopUnlockedRef.current = true;
+        cleanupStopTimers();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        finishRun();
+      }
+    }, 1500);
+    Animated.timing(stopProgressAnim, {
+      toValue: 1,
+      duration: 1500,
+      useNativeDriver: true,
+    }).start();
+  }, [stopProgressAnim, cleanupStopTimers, finishRun]);
+
+  const handleStopPressOut = useCallback(() => {
+    if (stopUnlockedRef.current) return;
+    cleanupStopTimers();
+    stopProgressAnim.stopAnimation();
+    stopProgressAnim.setValue(0);
+    // 짧게 탭한 경우 힌트 표시
+    if (Date.now() - stopPressStart.current < 300) {
+      setShowStopHint(true);
+      stopHintTimer.current = setTimeout(() => setShowStopHint(false), 2500);
+    }
+  }, [stopProgressAnim, cleanupStopTimers]);
 
   // Watch stop (no confirmation)
   const handleWatchStop = useCallback(async () => {
@@ -1495,13 +1547,12 @@ export default function WorldScreen() {
     setPreviewCheckpoints([]);
     setIs3DMode(false);
 
-    const target = myLocation ?? userRegion ?? SEOUL_REGION;
+    // Reset pitch/heading to flat north-up without moving camera position
     mapRef.current?.animateCamera(
-      { center: target, pitch: 0, heading: 0, zoom: 14 },
-      800,
+      { pitch: 0, heading: 0 },
+      500,
     );
-    setFollowUser(true);
-  }, [cancelRouteAnimation, myLocation, userRegion]);
+  }, [cancelRouteAnimation]);
 
   const handleMarkerPress = useCallback(
     async (courseId: string) => {
@@ -1650,7 +1701,7 @@ export default function WorldScreen() {
         routePoints={isInRun && !runCourseId ? runRoutePoints : undefined}
         previewPolyline={
           isInRun
-            ? (courseRoute ?? undefined)
+            ? undefined
             : navigatingToStart && !readyToStart
               ? (navRoute.length > 0 ? navRoute : (currentLocation && startCheckpoint ? [
                   { latitude: currentLocation.latitude, longitude: currentLocation.longitude },
@@ -1662,7 +1713,7 @@ export default function WorldScreen() {
         onMarkerPress={isInRun ? undefined : handleMarkerPress}
         onMapPress={isInRun ? undefined : handleMapPress}
         onRegionChange={isInRun ? undefined : handleRegionChange}
-        onUserMapInteraction={isInRun ? undefined : () => setFollowUser(false)}
+        onUserMapInteraction={() => setFollowUser(false)}
         onUserLocationChange={(coord) => {
           setMyLocation({ latitude: coord.latitude, longitude: coord.longitude });
           // Persist for instant map centering on screen transitions (e.g. RunningScreen)
@@ -1676,8 +1727,8 @@ export default function WorldScreen() {
         }}
         followsUserLocation={followUser && phase !== 'completed'}
         followZoomLevel={isInRun ? (runCourseId ? 17 : 16) : undefined}
-        followUserMode={phase === 'running' ? 'course' : undefined}
-        followPitch={phase === 'running' ? (runCourseId ? 45 : 30) : undefined}
+        followUserMode={undefined}
+        followPitch={isInRun ? (runCourseId ? 45 : 30) : undefined}
         followPadding={panelHeight > 0 ? {
           paddingTop: 0,
           paddingBottom: Math.max(panelHeight - 40, 0),
@@ -1686,8 +1737,8 @@ export default function WorldScreen() {
         hideRouteMarkers={isInRun}
         lastKnownLocation={myLocation ?? useSettingsStore.getState().lastKnownLocation ?? undefined}
         customUserLocation={myLocation ?? undefined}
-        customUserHeading={isInRun ? runHeadingValue : undefined}
-        interactive={!isInRun || phase !== 'running'}
+        customUserHeading={runHeadingValue ?? undefined}
+        interactive={phase === 'idle' || isInRun}
         pitchEnabled={map3DStyle || is3DMode || isInRun}
         use3DStyle={map3DStyle}
         style={styles.map}
@@ -1721,7 +1772,7 @@ export default function WorldScreen() {
             {touring && phase === 'idle' && (
               <TouchableOpacity
                 style={styles.tourBackBtn}
-                onPress={() => { setTouring(false); setWelcomeVisible(true); }}
+                onPress={() => { setTouring(false); setWelcomeVisible(true); setFollowUser(true); }}
                 activeOpacity={0.7}
               >
                 <Ionicons name="arrow-back" size={16} color={colors.text} />
@@ -1898,7 +1949,7 @@ export default function WorldScreen() {
         visible={welcomeVisible && phase === 'idle' && !selectedMarker && !navigatingToStart && !touring}
         nickname={userNickname ?? undefined}
         runGoal={runGoal}
-        onTour={() => { setTouring(true); setWelcomeVisible(false); }}
+        onTour={() => { setTouring(true); setWelcomeVisible(false); setFollowUser(false); }}
       />
 
 
@@ -1907,12 +1958,12 @@ export default function WorldScreen() {
         <Animated.View style={[styles.countdownOverlay, { opacity: countdownOpacity, transform: [{ translateY: countdownTranslateY }] }]} pointerEvents="none">
           <View style={styles.countdownContent}>
             <Text style={styles.countdownLabel}>준비하세요</Text>
-            <Text style={styles.countdownNumber}>{countdown ?? countdownSeconds}</Text>
+            <Text style={styles.countdownNumber}>{countdown ?? lastCountdownRef.current}</Text>
             <View style={styles.countdownBarTrack}>
               <View
                 style={[
                   styles.countdownBarFill,
-                  { width: `${((countdownSeconds - (countdown ?? countdownSeconds) + 1) / countdownSeconds) * 100}%` },
+                  { width: `${((countdownSeconds - (countdown ?? lastCountdownRef.current) + 1) / countdownSeconds) * 100}%` },
                 ]}
               />
             </View>
@@ -1996,6 +2047,28 @@ export default function WorldScreen() {
             </>
           )}
 
+      {/* Stop hint toast — floating above the bottom panel */}
+      {showStopHint && (
+        <View style={styles.stopHintContainer}>
+          <Text style={styles.stopHintText}>종료 버튼을 꾹 눌러주세요</Text>
+        </View>
+      )}
+
+      {/* Recenter button during running — visible when user panned away */}
+      {isInRun && !followUser && (
+        <TouchableOpacity
+          style={[styles.runRecenterBtn, { bottom: panelHeight + SPACING.md }]}
+          onPress={() => {
+            const loc = myLocation ?? useSettingsStore.getState().lastKnownLocation;
+            if (loc) mapRef.current?.recenterOnUser(loc);
+            setFollowUser(true);
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="navigate" size={20} color={colors.white} />
+        </TouchableOpacity>
+      )}
+
       {/* Bottom panel — always rendered (starts offscreen at translateY:500), content conditional */}
       <Animated.View
         style={[styles.runPanel, { transform: [{ translateY: runPanelTranslateY }] }]}
@@ -2004,7 +2077,11 @@ export default function WorldScreen() {
           if (phase === 'idle' || phase === 'countdown') return;
           const h = e.nativeEvent.layout.height;
           if (Math.abs(h - panelHeight) > 2) {
-            LayoutAnimation.configureNext(LayoutAnimation.create(250, 'easeInEaseOut', 'opacity'));
+            // LayoutAnimation on Android interferes with Mapbox GL surface,
+            // causing the map to visually reload/flash. Only use on iOS.
+            if (Platform.OS === 'ios') {
+              LayoutAnimation.configureNext(LayoutAnimation.create(250, 'easeInEaseOut', 'opacity'));
+            }
             setPanelHeight(h);
           }
         }}
@@ -2219,9 +2296,13 @@ export default function WorldScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.runStopBtn}
-                      onPress={handleStop}
-                      activeOpacity={0.7}
+                      onPressIn={handleStopPressIn}
+                      onPressOut={handleStopPressOut}
+                      activeOpacity={0.9}
                     >
+                      <Animated.View style={[styles.stopProgress, {
+                        transform: [{ scaleX: stopProgressAnim }],
+                      }]} />
                       <Ionicons name="stop" size={28} color={colors.white} />
                       <Text style={styles.runStopBtnLabel}>종료</Text>
                     </TouchableOpacity>
@@ -2232,7 +2313,15 @@ export default function WorldScreen() {
                       <Ionicons name="pause" size={28} color={colors.text} />
                       <Text style={styles.runPauseBtnLabel}>일시정지</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.runStopBtn} onPress={handleStop} activeOpacity={0.7}>
+                    <TouchableOpacity
+                      style={styles.runStopBtn}
+                      onPressIn={handleStopPressIn}
+                      onPressOut={handleStopPressOut}
+                      activeOpacity={0.9}
+                    >
+                      <Animated.View style={[styles.stopProgress, {
+                        transform: [{ scaleX: stopProgressAnim }],
+                      }]} />
                       <Ionicons name="stop" size={28} color={colors.white} />
                       <Text style={styles.runStopBtnLabel}>종료</Text>
                     </TouchableOpacity>
@@ -2240,7 +2329,6 @@ export default function WorldScreen() {
                 )}
               </View>
             )}
-
             {/* Result actions — after completion */}
             {phase === 'completed' && (
               <>
@@ -2401,6 +2489,7 @@ export default function WorldScreen() {
         visible={settingsSheetVisible}
         onClose={() => setSettingsSheetVisible(false)}
         onNavigateWatch={() => navigation.navigate('WatchSettings')}
+        onNavigateHeartRate={() => navigation.navigate('HeartRateSettings')}
       />
     </View>
   );
@@ -3164,6 +3253,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
     gap: SPACING.xs,
     shadowColor: c.primary,
     shadowOffset: { width: 0, height: 4 },
@@ -3175,6 +3265,31 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: FONT_SIZES.xs,
     color: c.white,
     fontWeight: '700',
+  },
+  stopProgress: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    right: 0,
+    borderRadius: 36,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    transformOrigin: 'left',
+  },
+  stopHintContainer: {
+    position: 'absolute',
+    bottom: 280,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderRadius: 24,
+    zIndex: 999,
+  },
+  stopHintText: {
+    color: '#FFFFFF',
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '600',
   },
 
   // Screen lock
@@ -3238,6 +3353,21 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 15,
     fontWeight: '700' as const,
     color: '#FFFFFF',
+  },
+
+  // Recenter button during running
+  runRecenterBtn: {
+    position: 'absolute',
+    right: SPACING.lg,
+    bottom: 0,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: c.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 200,
+    ...SHADOWS.md,
   },
 
   // ============================================================

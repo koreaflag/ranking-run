@@ -26,6 +26,7 @@ interface RunSettingsSheetProps {
   visible: boolean;
   onClose: () => void;
   onNavigateWatch?: () => void;
+  onNavigateHeartRate?: () => void;
 }
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
@@ -38,7 +39,7 @@ interface SettingTile {
   onTap: () => void;
 }
 
-export default function RunSettingsSheet({ visible, onClose, onNavigateWatch }: RunSettingsSheetProps) {
+export default function RunSettingsSheet({ visible, onClose, onNavigateWatch, onNavigateHeartRate }: RunSettingsSheetProps) {
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -137,7 +138,6 @@ export default function RunSettingsSheet({ visible, onClose, onNavigateWatch }: 
     voiceGuidance, setVoiceGuidance,
     voiceGender, setVoiceGender,
     countdownSeconds, setCountdownSeconds,
-    showHeartRate, setShowHeartRate,
     hapticFeedback,
   } = useSettingsStore();
 
@@ -179,10 +179,11 @@ export default function RunSettingsSheet({ visible, onClose, onNavigateWatch }: 
     setCountdownSeconds(opts[(idx + 1) % opts.length]);
   }, [countdownSeconds, setCountdownSeconds, tap]);
 
-  const toggleHeartRate = useCallback(() => {
+  const openHeartRate = useCallback(() => {
     tap();
-    setShowHeartRate(!showHeartRate);
-  }, [tap, showHeartRate, setShowHeartRate]);
+    onClose();
+    setTimeout(() => onNavigateHeartRate?.(), 300);
+  }, [tap, onClose, onNavigateHeartRate]);
 
   const openWatch = useCallback(() => {
     tap();
@@ -233,8 +234,8 @@ export default function RunSettingsSheet({ visible, onClose, onNavigateWatch }: 
       key: 'hr',
       icon: 'heart',
       label: '심박수',
-      getValue: () => showHeartRate ? '켜기' : '끄기',
-      onTap: toggleHeartRate,
+      getValue: () => '설정',
+      onTap: openHeartRate,
     },
     {
       key: 'watch',
@@ -243,7 +244,7 @@ export default function RunSettingsSheet({ visible, onClose, onNavigateWatch }: 
       getValue: () => '설정',
       onTap: openWatch,
     },
-  ], [showHeartRate, toggleHeartRate, openWatch]);
+  ], [openHeartRate, openWatch]);
 
   const renderTile = (tile: SettingTile) => (
     <TouchableOpacity

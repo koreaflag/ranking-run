@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
+import { NativeEventEmitter, NativeModules } from 'react-native';
 
 const { GPSTrackerModule } = NativeModules;
 
@@ -69,9 +69,7 @@ export function useCompassHeading(
     let subscription: { remove: () => void } | null = null;
 
     try {
-      const emitter = new NativeEventEmitter(
-        Platform.OS === 'ios' ? GPSTrackerModule : undefined,
-      );
+      const emitter = new NativeEventEmitter(GPSTrackerModule);
 
       // Register listener FIRST so hasListeners=true before events fire
       subscription = emitter.addListener(
