@@ -642,51 +642,64 @@ export default function CourseDetailScreen() {
         )}
 
         {/* Course Dominion Banner */}
-        {courseDominion && (
-          <TouchableOpacity
-            style={[styles.dominionBanner, { borderColor: (courseDominion.crew_badge_color || colors.primary) + '44' }]}
-            onPress={() => navigation.navigate('CrewDetail', { crewId: courseDominion.crew_id })}
-            activeOpacity={0.7}
-          >
-            {courseDominion.crew_logo_url ? (
-              <Image
-                source={{ uri: courseDominion.crew_logo_url }}
-                style={[styles.dominionLogo, { borderColor: courseDominion.crew_badge_color || colors.primary }]}
-              />
-            ) : (
-              <View style={[styles.dominionIcon, { backgroundColor: (courseDominion.crew_badge_color || colors.primary) + '20' }]}>
-                <Ionicons name="shield" size={20} color={courseDominion.crew_badge_color || colors.primary} />
-              </View>
-            )}
-            <View style={styles.dominionInfo}>
-              <Text style={styles.dominionLabel}>{t('dominion.dominatedBy')}</Text>
-              <Text style={[styles.dominionCrewName, { color: courseDominion.crew_badge_color || colors.primary }]}>
-                {courseDominion.crew_name}
-              </Text>
-              {courseDominion.avg_duration_seconds != null && (
-                <Text style={styles.dominionAvgTime}>
-                  {t('dominion.avgTime')}: {formatDuration(courseDominion.avg_duration_seconds)}
+        {courseDominion && (() => {
+          const badgeColor = courseDominion.crew_badge_color || colors.primary;
+          return (
+            <TouchableOpacity
+              style={[styles.dominionBanner, { backgroundColor: badgeColor + '18', borderColor: badgeColor + '55' }]}
+              onPress={() => navigation.navigate('CrewDetail', { crewId: courseDominion.crew_id })}
+              activeOpacity={0.7}
+            >
+              <View style={styles.dominionTopRow}>
+                <View style={[styles.dominionFlagBadge, { backgroundColor: badgeColor }]}>
+                  <Ionicons name="flag" size={12} color="#FFFFFF" />
+                </View>
+                <Text style={[styles.dominionLabel, { color: badgeColor }]}>
+                  {t('dominion.title')}
                 </Text>
-              )}
-            </View>
-            <View style={styles.dominionMembers}>
-              {(courseDominion.top_members ?? []).slice(0, 3).map((m, i) => (
-                m.avatar_url ? (
+                <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
+              </View>
+              <View style={styles.dominionMainRow}>
+                {courseDominion.crew_logo_url ? (
                   <Image
-                    key={m.user_id}
-                    source={{ uri: m.avatar_url }}
-                    style={[styles.dominionAvatar, i > 0 && { marginLeft: -8 }]}
+                    source={{ uri: courseDominion.crew_logo_url }}
+                    style={[styles.dominionLogo, { borderColor: badgeColor }]}
                   />
                 ) : (
-                  <View key={m.user_id} style={[styles.dominionAvatarPlaceholder, i > 0 && { marginLeft: -8 }]}>
-                    <Ionicons name="person" size={10} color={colors.textTertiary} />
+                  <View style={[styles.dominionIcon, { backgroundColor: badgeColor + '25' }]}>
+                    <Ionicons name="shield" size={22} color={badgeColor} />
                   </View>
-                )
-              ))}
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
-          </TouchableOpacity>
-        )}
+                )}
+                <View style={styles.dominionInfo}>
+                  <Text style={[styles.dominionCrewName, { color: colors.text }]}>
+                    {courseDominion.crew_name}
+                  </Text>
+                  <Text style={[styles.dominionSubText, { color: colors.textSecondary }]}>
+                    {t('dominion.dominatedBy')}
+                    {courseDominion.avg_duration_seconds != null
+                      ? ` · ${t('dominion.avgTime')} ${formatDuration(courseDominion.avg_duration_seconds)}`
+                      : ''}
+                  </Text>
+                </View>
+                <View style={styles.dominionMembers}>
+                  {(courseDominion.top_members ?? []).slice(0, 3).map((m, i) => (
+                    m.avatar_url ? (
+                      <Image
+                        key={m.user_id}
+                        source={{ uri: m.avatar_url }}
+                        style={[styles.dominionAvatar, i > 0 && { marginLeft: -8 }]}
+                      />
+                    ) : (
+                      <View key={m.user_id} style={[styles.dominionAvatarPlaceholder, i > 0 && { marginLeft: -8 }]}>
+                        <Ionicons name="person" size={10} color={colors.textTertiary} />
+                      </View>
+                    )
+                  ))}
+                </View>
+              </View>
+            </TouchableOpacity>
+          );
+        })()}
 
         {/* Leaderboard with Individual / Crew tabs */}
         <View style={styles.rankingSection}>
@@ -1367,28 +1380,42 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   // -- Leaderboard --
   // Dominion banner
   dominionBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginHorizontal: SPACING.xxl,
     marginBottom: SPACING.lg,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.md,
     borderRadius: BORDER_RADIUS.md,
     borderWidth: 1,
-    backgroundColor: c.card,
+  },
+  dominionTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  dominionFlagBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 6,
+  },
+  dominionMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   dominionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: SPACING.sm,
   },
   dominionLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 2,
     marginRight: SPACING.sm,
   },
@@ -1396,18 +1423,18 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flex: 1,
   },
   dominionLabel: {
+    flex: 1,
     fontSize: FONT_SIZES.xs,
-    color: c.textTertiary,
-    marginBottom: 1,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   dominionCrewName: {
     fontSize: FONT_SIZES.md,
     fontWeight: '800',
     marginBottom: 2,
   },
-  dominionAvgTime: {
+  dominionSubText: {
     fontSize: FONT_SIZES.xs,
-    color: c.textSecondary,
   },
   dominionMembers: {
     flexDirection: 'row',
