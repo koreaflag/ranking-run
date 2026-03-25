@@ -1841,7 +1841,7 @@ export default function WorldScreen() {
                   </View>
                   {selectedMarker.dominion && (
                     <View style={styles.hudDominionRow}>
-                      <Ionicons name="flag" size={13} color="#FFD600" />
+                      <Ionicons name="flag" size={13} color={selectedMarker.dominion.crew_badge_color || COLORS.primary} />
                       {selectedMarker.dominion.crew_logo_url ? (
                         <Image source={{ uri: selectedMarker.dominion.crew_logo_url }} style={styles.hudDominionLogo} />
                       ) : (
@@ -1849,7 +1849,7 @@ export default function WorldScreen() {
                           <Ionicons name="shield" size={10} color={COLORS.white} />
                         </View>
                       )}
-                      <Text style={styles.hudDominionText}>
+                      <Text style={[styles.hudDominionText, { color: selectedMarker.dominion.crew_badge_color || COLORS.primary }]}>
                         <Text style={styles.hudDominionCrew}>{selectedMarker.dominion.crew_name}</Text>
                         {' 점령 중'}
                       </Text>
@@ -2655,7 +2655,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   hudDominionText: {
     fontSize: FONT_SIZES.sm,
-    color: '#FFD600',
   },
   hudDominionCrew: {
     fontWeight: '800',
