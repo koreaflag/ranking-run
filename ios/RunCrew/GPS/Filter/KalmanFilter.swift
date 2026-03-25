@@ -23,7 +23,7 @@ class KalmanFilter {
     // Fast running (> 5 m/s): higher Q trusts measurements more (responsive to changes).
     private let walkingSpeedThreshold: Double = 2.0   // m/s
     private let runningSpeedThreshold: Double = 5.0   // m/s
-    private let walkingQScale: Double = 0.6
+    private let walkingQScale: Double = 0.35
     private let joggingQScale: Double = 1.0
     private let sprintingQScale: Double = 1.8
     private var speedAdaptiveQScale: Double = 1.0

@@ -478,7 +478,12 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         }
 
         // Calculate distance (spike already rejected above)
+        // Stationary suppression: clamp position to last known good location
+        // to prevent GPS drift from drawing phantom routes (matched with Android).
         var distanceFromPrevious: Double = 0
+        var emitLat = filtered.lat
+        var emitLon = filtered.lon
+
         if let lastLoc = lastFilteredLocation {
             let rawDist = GeoMath.distance(
                 lat1: lastLoc.latitude, lon1: lastLoc.longitude,
@@ -490,6 +495,10 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
                 // significant (> 2m), the detector is wrong — still count distance
                 if rawDist > 2.0 {
                     distanceFromPrevious = rawDist
+                } else {
+                    // Clamp position to last known location — prevents GPS drift on map
+                    emitLat = lastLoc.latitude
+                    emitLon = lastLoc.longitude
                 }
             } else {
                 // Normal case: ignore tiny movements (< 0.3m) as noise
@@ -499,8 +508,8 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         }
 
         let filteredLocation = FilteredLocation(
-            latitude: filtered.lat,
-            longitude: filtered.lon,
+            latitude: emitLat,
+            longitude: emitLon,
             altitude: correctedAltitude,
             speed: filtered.speed,
             bearing: filtered.bearing,
@@ -511,7 +520,11 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         )
 
         session.addFilteredLocation(filteredLocation)
-        lastFilteredLocation = filteredLocation
+        // Only update lastFilteredLocation when actually moving — keeps the
+        // clamping anchor stable during stationary (matched with Android).
+        if !stationaryDetector.isStationary || lastFilteredLocation == nil {
+            lastFilteredLocation = filteredLocation
+        }
 
         // Emit location update event
         // CMPedometer.currentCadence is steps/second — multiply by 60 for SPM.

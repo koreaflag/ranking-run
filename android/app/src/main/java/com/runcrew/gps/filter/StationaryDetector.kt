@@ -46,9 +46,11 @@ class StationaryDetector(
         // Set to 3 (matched with iOS) to avoid false triggers during brief slow-downs
         private const val REQUIRED_STATIONARY_COUNT = 3
 
-        // Number of consecutive readings required to resume MOVING
-        // Set to 1 (matched with iOS) for maximum responsiveness — critical for distance
-        private const val REQUIRED_MOVING_COUNT = 1
+        // Number of consecutive readings required to resume MOVING via GPS speed.
+        // Set to 2 to prevent indoor GPS drift (speed noise > 0.35 m/s) from
+        // falsely triggering MOVING. Real movement still detected quickly because
+        // accelerometer path provides independent resume (3 consecutive readings).
+        private const val REQUIRED_MOVING_COUNT = 2
 
         // Accelerometer magnitude threshold for movement detection (matched with iOS: 0.2g)
         private const val ACCEL_MAGNITUDE_THRESHOLD = 0.2
@@ -261,9 +263,10 @@ class StationaryDetector(
 
     @Synchronized
     fun reset() {
-        // Start in MOVING state (matched with iOS) — first movement is natural start.
-        // Grace period prevents false stationary during cold start.
-        currentState = MovementState.MOVING
+        // Start in STATIONARY state — user must actually move before distance accumulates.
+        // This prevents indoor GPS drift from drawing phantom routes when the user
+        // starts a run while sitting still.
+        currentState = MovementState.STATIONARY
         lastStateChangeTime = System.currentTimeMillis()
         lastGpsSpeed = 0.0
         currentAccelVariance = 0.0

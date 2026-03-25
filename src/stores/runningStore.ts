@@ -274,7 +274,9 @@ export const useRunningStore = create<RunningState>((set, get) => ({
 
     // --- Auto-pause: freeze timer when stationary ---
     // Must run BEFORE route accumulation so we can skip route points while paused
-    const { autoPause } = useSettingsStore.getState();
+    const { autoPause, runEnvironment } = useSettingsStore.getState();
+    // Indoor running: disable auto-pause (GPS speed is unreliable indoors)
+    const effectiveAutoPause = autoPause && runEnvironment !== 'indoor';
     let { isAutoPaused } = state;
     let startTime = state.startTime;
     let elapsedBeforePause = state.elapsedBeforePause;
@@ -282,7 +284,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
     const elapsed = startTime ? (Date.now() - startTime) / 1000 + elapsedBeforePause : elapsedBeforePause;
     const gracePeriodOver = elapsed >= 8;
 
-    if (autoPause && gracePeriodOver) {
+    if (effectiveAutoPause && gracePeriodOver) {
       if (!event.isMoving && !isAutoPaused) {
         isAutoPaused = true;
         elapsedBeforePause = state.durationSeconds;
@@ -425,7 +427,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       }
     }
 
-    // --- Speed anomaly detection ---
+    // --- Speed anomaly detection → auto-pause running ---
     let highSpeedCount = state.highSpeedCount;
     let speedAnomalyDetected = state.speedAnomalyDetected;
     if (!speedAnomalyDetected && distance > SPEED_ANOMALY_MIN_DISTANCE_M) {
@@ -433,6 +435,10 @@ export const useRunningStore = create<RunningState>((set, get) => ({
         highSpeedCount += 1;
         if (highSpeedCount >= SPEED_ANOMALY_CONSECUTIVE) {
           speedAnomalyDetected = true;
+          // Pause running instead of just flagging — freeze timer and stop accumulation
+          isAutoPaused = true;
+          elapsedBeforePause = state.durationSeconds;
+          startTime = null;
         }
       } else {
         highSpeedCount = 0;

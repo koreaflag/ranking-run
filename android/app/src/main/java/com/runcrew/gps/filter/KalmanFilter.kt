@@ -42,7 +42,7 @@ class KalmanFilter(
         // Sprinting: higher Q trusts measurements more (responsive)
         private const val WALKING_SPEED_THRESHOLD = 2.0   // m/s
         private const val RUNNING_SPEED_THRESHOLD = 5.0   // m/s
-        private const val WALKING_Q_SCALE = 0.6
+        private const val WALKING_Q_SCALE = 0.35
         private const val JOGGING_Q_SCALE = 1.0
         private const val SPRINTING_Q_SCALE = 1.8
 

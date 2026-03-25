@@ -49,9 +49,10 @@ class StationaryDetector {
     /// Kalman filter lag, or GPS noise at constant pace.
     private let requiredStationaryCount = 3
 
-    /// Number of consecutive above-threshold readings required to resume moving.
-    /// Set to 1 for maximum responsiveness — critical for distance accumulation.
-    private let requiredMovingCount = 1
+    /// Number of consecutive above-threshold readings required to resume moving via GPS speed.
+    /// Set to 2 to prevent indoor GPS drift from falsely triggering MOVING.
+    /// Accelerometer path provides independent resume (3 consecutive readings).
+    private let requiredMovingCount = 2
 
     /// Grace period: ignore the first N speed readings to avoid false stationary
     /// detection during cold start (GPS speed may report -1/0 initially).
@@ -139,7 +140,9 @@ class StationaryDetector {
     }
 
     func reset() {
-        state = .moving
+        // Start stationary — user must actually move before distance accumulates.
+        // Prevents indoor GPS drift from drawing phantom routes.
+        state = .stationary
         stateStartTime = Date()
         recentSpeeds.removeAll()
         consecutiveStationaryCount = 0
