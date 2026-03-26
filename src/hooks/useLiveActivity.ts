@@ -16,9 +16,13 @@ const { LiveActivityModule } = NativeModules;
  */
 export function useLiveActivity() {
   const [activityId, setActivityId] = useState<string | null>(null);
+  const activityIdRef = useRef<string | null>(null);
   const updateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { phase, courseId, isPaused, isAutoPaused } = useRunningStore();
+  const phase = useRunningStore((s) => s.phase);
+  const courseId = useRunningStore((s) => s.courseId);
+  const isPaused = useRunningStore((s) => s.isPaused);
+  const isAutoPaused = useRunningStore((s) => s.isAutoPaused);
 
   // Start Live Activity when entering 'running' phase
   useEffect(() => {
@@ -36,6 +40,7 @@ export function useLiveActivity() {
           isCourseRun: !!state.courseId,
           durationSeconds: state.durationSeconds,
         });
+        activityIdRef.current = id;
         setActivityId(id);
         console.log('[LiveActivity] Started:', id);
       } catch (error) {
@@ -71,6 +76,10 @@ export function useLiveActivity() {
     };
 
     pushUpdate();
+    // Defensive: clear any lingering timer before creating new one
+    if (updateTimerRef.current) {
+      clearInterval(updateTimerRef.current);
+    }
     updateTimerRef.current = setInterval(pushUpdate, 1000);
 
     return () => {
@@ -103,6 +112,7 @@ export function useLiveActivity() {
       } catch {
         // Ignore errors
       }
+      activityIdRef.current = null;
       setActivityId(null);
     };
 
@@ -123,22 +133,20 @@ export function useLiveActivity() {
         clearInterval(updateTimerRef.current);
         updateTimerRef.current = null;
       }
-      // Use ref-like approach for cleanup — read current activityId from store
-      if (LiveActivityModule) {
+      // Use ref for cleanup — activityId state would be stale in this closure
+      if (LiveActivityModule && activityIdRef.current) {
         const state = useRunningStore.getState();
-        if (state.phase === 'running' || state.phase === 'paused') {
-          LiveActivityModule.endActivity({
-            distanceMeters: state.distanceMeters,
-            durationSeconds: state.durationSeconds,
-            currentPace: state.currentPaceSecondsPerKm,
-            avgPace: state.avgPaceSecondsPerKm,
-            calories: state.calories,
-            heartRate: state.heartRate,
-            cadence: state.cadence,
-          }).catch((err: any) => {
-            console.warn('[useLiveActivity] 라이브 액티비티 종료 실패:', err);
-          });
-        }
+        LiveActivityModule.endActivity({
+          distanceMeters: state.distanceMeters,
+          durationSeconds: state.durationSeconds,
+          currentPace: state.currentPaceSecondsPerKm,
+          avgPace: state.avgPaceSecondsPerKm,
+          calories: state.calories,
+          heartRate: state.heartRate,
+          cadence: state.cadence,
+        }).catch((err: any) => {
+          console.warn('[useLiveActivity] 라이브 액티비티 종료 실패:', err);
+        });
       }
     };
   }, []);

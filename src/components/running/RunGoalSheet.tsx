@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '../../lib/icons';
 import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useTheme } from '../../hooks/useTheme';
 import type { ThemeColors } from '../../utils/constants';
 import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
@@ -49,21 +51,6 @@ const DISTANCE_PRESETS = [
   { label: '42km', value: 42195 },
 ];
 
-const TIME_PRESETS = [
-  { label: '30분', value: 30 * 60 },
-  { label: '1시간', value: 60 * 60 },
-  { label: '1시간30분', value: 90 * 60 },
-  { label: '2시간', value: 120 * 60 },
-];
-
-const PACE_PRESETS = [
-  { label: "5'00\"", value: 5 * 60 },
-  { label: "5'30\"", value: 5 * 60 + 30 },
-  { label: "6'00\"", value: 6 * 60 },
-  { label: "6'30\"", value: 6 * 60 + 30 },
-  { label: "7'00\"", value: 7 * 60 },
-];
-
 const PROGRAM_DISTANCE_PRESETS = [
   { label: '3km', value: 3000 },
   { label: '5km', value: 5000 },
@@ -71,31 +58,40 @@ const PROGRAM_DISTANCE_PRESETS = [
   { label: '21km', value: 21097 },
 ];
 
-type GoalType = 'distance' | 'time' | 'pace' | 'program' | 'interval';
+type GoalType = 'distance' | 'time' | 'program' | 'interval';
 
-const GOAL_TYPES: Array<{ type: GoalType; label: string; icon: string }> = [
-  { type: 'distance', label: '거리', icon: 'flag-outline' },
-  { type: 'time', label: '시간', icon: 'timer-outline' },
-  { type: 'pace', label: '페이스', icon: 'speedometer-outline' },
-  { type: 'program', label: '목표 러닝', icon: 'trophy-outline' },
-  { type: 'interval', label: '인터벌', icon: 'repeat-outline' },
-];
+/** Build time presets with i18n labels */
+function buildTimePresets(t: TFunction) {
+  return [
+    { label: `30${t('goal.minuteUnit')}`, value: 30 * 60 },
+    { label: t('goal.timeFormatH', { h: 1 }), value: 60 * 60 },
+    { label: `${t('goal.timeFormatH', { h: 1 })}30${t('goal.minuteUnit')}`, value: 90 * 60 },
+    { label: t('goal.timeFormatH', { h: 2 }), value: 120 * 60 },
+  ];
+}
 
-const INTERVAL_RUN_PRESETS = [
-  { label: '1분', value: 60 },
-  { label: '2분', value: 120 },
-  { label: '3분', value: 180 },
-  { label: '5분', value: 300 },
-];
+/** Build interval presets with i18n labels */
+function buildIntervalRunPresets(fmt: (s: number) => string) {
+  return [
+    { label: fmt(30), value: 30 },
+    { label: fmt(60), value: 60 },
+    { label: fmt(120), value: 120 },
+    { label: fmt(180), value: 180 },
+    { label: fmt(300), value: 300 },
+  ];
+}
 
-const INTERVAL_WALK_PRESETS = [
-  { label: '30초', value: 30 },
-  { label: '1분', value: 60 },
-  { label: '2분', value: 120 },
-  { label: '3분', value: 180 },
-];
+function buildIntervalWalkPresets(fmt: (s: number) => string) {
+  return [
+    { label: fmt(30), value: 30 },
+    { label: fmt(60), value: 60 },
+    { label: fmt(90), value: 90 },
+    { label: fmt(120), value: 120 },
+    { label: fmt(180), value: 180 },
+  ];
+}
 
-const INTERVAL_SET_PRESETS = [3, 5, 8, 10];
+const INTERVAL_SET_PRESETS = [3, 5, 7, 10];
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -106,16 +102,16 @@ function formatPaceValue(secondsPerKm: number): string {
   return `${m}'${s.toString().padStart(2, '0')}"`;
 }
 
-/** Format seconds as human-readable time string */
-function formatTimeInput(totalSeconds: number): string {
+/** Format seconds as human-readable time string (i18n-aware) */
+function formatTimeInputI18n(totalSeconds: number, t: TFunction): string {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
   const parts: string[] = [];
-  if (h > 0) parts.push(`${h}시간`);
-  if (m > 0) parts.push(`${m}분`);
-  if (s > 0) parts.push(`${s}초`);
-  return parts.length > 0 ? parts.join(' ') : '0분';
+  if (h > 0) parts.push(t('goal.timeFormatH', { h }));
+  if (m > 0) parts.push(t('goal.timeFormatM', { m }));
+  if (s > 0) parts.push(t('goal.timeFormatS', { s }));
+  return parts.length > 0 ? parts.join(' ') : t('goal.timeFormatZero');
 }
 
 /** Compute recommended BPM from pace (sec/km). Clamped 140-200. */
@@ -137,7 +133,7 @@ const HOURS_RANGE = Array.from({ length: 6 }, (_, i) => i); // 0-5
 const MINUTES_RANGE = Array.from({ length: 60 }, (_, i) => i); // 0-59
 const SECONDS_RANGE = Array.from({ length: 60 }, (_, i) => i); // 0-59
 
-function WheelPicker({
+const WheelPicker = React.memo(function WheelPicker({
   values,
   selected,
   onSelect,
@@ -154,6 +150,7 @@ function WheelPicker({
   const scrollY = useRef(new Animated.Value(0)).current;
   const isUserScroll = useRef(false);
   const lastHapticIdx = useRef(-1);
+  const lastHapticTime = useRef(0);
 
   // Sync scroll position when selected changes externally (reset, restore)
   useEffect(() => {
@@ -168,13 +165,17 @@ function WheelPicker({
     isUserScroll.current = false;
   }, [selected, values]);
 
-  // Haptic feedback via Animated.Value listener (reliable with native driver)
+  // Haptic feedback — throttled to max once per 80ms to avoid bridge saturation
   useEffect(() => {
     const id = scrollY.addListener(({ value }) => {
       const idx = Math.round(value / WHEEL_ITEM_H);
       if (idx !== lastHapticIdx.current && idx >= 0 && idx < values.length) {
         lastHapticIdx.current = idx;
-        Haptics.selectionAsync();
+        const now = Date.now();
+        if (now - lastHapticTime.current >= 80) {
+          lastHapticTime.current = now;
+          Haptics.selectionAsync();
+        }
       }
     });
     return () => scrollY.removeListener(id);
@@ -303,7 +304,7 @@ function WheelPicker({
       </View>
     </View>
   );
-}
+});
 
 // ---- Component ----
 
@@ -313,8 +314,23 @@ export default function RunGoalSheet({
   goal,
   onGoalChange,
 }: RunGoalSheetProps) {
+  const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+
+  // i18n-aware format helper
+  const formatTimeInput = useCallback((secs: number) => formatTimeInputI18n(secs, t), [t]);
+
+  // Localized presets (rebuilt when language changes)
+  const GOAL_TYPES = useMemo<Array<{ type: GoalType; label: string; icon: string }>>(() => [
+    { type: 'distance', label: t('goal.distance'), icon: 'flag-outline' },
+    { type: 'time', label: t('goal.time'), icon: 'timer-outline' },
+    { type: 'program', label: t('goal.programRun'), icon: 'trophy-outline' },
+    { type: 'interval', label: t('goal.interval'), icon: 'repeat-outline' },
+  ], [t]);
+  const TIME_PRESETS = useMemo(() => buildTimePresets(t), [t]);
+  const INTERVAL_RUN_PRESETS = useMemo(() => buildIntervalRunPresets(formatTimeInput), [formatTimeInput]);
+  const INTERVAL_WALK_PRESETS = useMemo(() => buildIntervalWalkPresets(formatTimeInput), [formatTimeInput]);
 
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -343,7 +359,10 @@ export default function RunGoalSheet({
   }, [slideAnim, overlayOpacity, onClose]);
 
   // Local state for editing before confirming
-  const [selectedType, setSelectedType] = useState<GoalType | null>(goal.type);
+  // Filter out legacy 'pace' type (removed from UI)
+  const toGoalType = (t: string | null | undefined): GoalType | null =>
+    t === 'distance' || t === 'time' || t === 'program' || t === 'interval' ? t : null;
+  const [selectedType, setSelectedType] = useState<GoalType | null>(toGoalType(goal.type));
   const [selectedValue, setSelectedValue] = useState<number | null>(goal.value);
   const [customInput, setCustomInput] = useState('');
 
@@ -351,7 +370,6 @@ export default function RunGoalSheet({
   const [intervalRunSec, setIntervalRunSec] = useState(goal.type === 'interval' ? (goal.intervalRunSeconds ?? 180) : 180);
   const [intervalWalkSec, setIntervalWalkSec] = useState(goal.type === 'interval' ? (goal.intervalWalkSeconds ?? 60) : 60);
   const [intervalSets, setIntervalSets] = useState(goal.type === 'interval' ? (goal.intervalSets ?? 5) : 5);
-  const [intervalCustomSets, setIntervalCustomSets] = useState('');
 
   // Program-specific local state
   const [programDistance, setProgramDistance] = useState<number | null>(
@@ -368,14 +386,13 @@ export default function RunGoalSheet({
 
   // Sync local state when goal prop changes
   useEffect(() => {
-    setSelectedType(goal.type);
+    setSelectedType(toGoalType(goal.type));
     setSelectedValue(goal.value);
     setCustomInput('');
     if (goal.type === 'interval') {
       setIntervalRunSec(goal.intervalRunSeconds ?? 180);
       setIntervalWalkSec(goal.intervalWalkSeconds ?? 60);
       setIntervalSets(goal.intervalSets ?? 5);
-      setIntervalCustomSets('');
     }
     if (goal.type === 'program') {
       setProgramDistance(goal.value);
@@ -438,8 +455,7 @@ export default function RunGoalSheet({
         setIntervalRunSec(180);
         setIntervalWalkSec(60);
         setIntervalSets(5);
-        setIntervalCustomSets('');
-      }
+        }
     }
     setCustomInput('');
   };
@@ -460,9 +476,6 @@ export default function RunGoalSheet({
         value = num * 1000;
         break;
       case 'time':
-        value = num * 60;
-        break;
-      case 'pace':
         value = num * 60;
         break;
       default:
@@ -494,7 +507,6 @@ export default function RunGoalSheet({
     setIntervalRunSec(180);
     setIntervalWalkSec(60);
     setIntervalSets(5);
-    setIntervalCustomSets('');
     onGoalChange({ type: null, value: null, targetTime: null, cadenceBPM: null });
   };
 
@@ -526,14 +538,13 @@ export default function RunGoalSheet({
         cadenceBPM: null,
       });
     }
-    onClose();
+    animateClose();
   };
 
   const getCustomPlaceholder = (): string => {
     switch (selectedType) {
       case 'distance': return '7.5';
       case 'time': return '45';
-      case 'pace': return '5.5';
       default: return '';
     }
   };
@@ -541,8 +552,7 @@ export default function RunGoalSheet({
   const getCustomUnit = (): string => {
     switch (selectedType) {
       case 'distance': return 'km';
-      case 'time': return '분';
-      case 'pace': return "'/km";
+      case 'time': return t('goal.minuteUnit');
       default: return '';
     }
   };
@@ -551,7 +561,6 @@ export default function RunGoalSheet({
     switch (selectedType) {
       case 'distance': return DISTANCE_PRESETS;
       case 'time': return TIME_PRESETS;
-      case 'pace': return PACE_PRESETS;
       default: return [];
     }
   };
@@ -603,7 +612,7 @@ export default function RunGoalSheet({
 
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>목표 설정</Text>
+            <Text style={styles.title}>{t('goal.title')}</Text>
             <TouchableOpacity onPress={animateClose} activeOpacity={0.7}>
               <Ionicons name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
@@ -647,8 +656,8 @@ export default function RunGoalSheet({
             bounces={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Simple goal types: distance/time/pace */}
-            {selectedType && selectedType !== 'program' && (
+            {/* Simple goal types: distance/time */}
+            {selectedType && selectedType !== 'program' && selectedType !== 'interval' && (
               <View style={styles.valueSection}>
                 <View style={styles.presetRow}>
                   {getPresets().map((preset) => {
@@ -717,7 +726,7 @@ export default function RunGoalSheet({
                   <View style={styles.pgHeader}>
                     <View style={styles.pgBadge}><Text style={styles.pgBadgeText}>1</Text></View>
                     <Ionicons name="flag-outline" size={16} color={colors.primary} />
-                    <Text style={styles.pgHeaderText}>목표 거리</Text>
+                    <Text style={styles.pgHeaderText}>{t('goal.targetDistance')}</Text>
                   </View>
                   <View style={styles.pgChipRow}>
                     {PROGRAM_DISTANCE_PRESETS.map((preset) => {
@@ -753,7 +762,7 @@ export default function RunGoalSheet({
                             setProgramDistance(Math.round(km * 1000));
                           }
                         }}
-                        placeholder="직접 입력"
+                        placeholder={t('goal.customInput')}
                         placeholderTextColor={colors.textTertiary}
                         returnKeyType="done"
                         selectTextOnFocus
@@ -768,7 +777,7 @@ export default function RunGoalSheet({
                   <View style={styles.pgHeader}>
                     <View style={styles.pgBadge}><Text style={styles.pgBadgeText}>2</Text></View>
                     <Ionicons name="timer-outline" size={16} color={colors.primary} />
-                    <Text style={styles.pgHeaderText}>목표 시간</Text>
+                    <Text style={styles.pgHeaderText}>{t('goal.targetTime')}</Text>
                     {programTargetTime > 0 && (
                       <Text style={styles.pgTimeTag}>
                         {formatTimeInput(programTargetTime)}
@@ -780,7 +789,7 @@ export default function RunGoalSheet({
                       values={HOURS_RANGE}
                       selected={programTimeHours}
                       onSelect={setProgramTimeHours}
-                      label="시간"
+                      label={t('goal.hoursLabel')}
                       colors={colors}
                     />
                     <Text style={styles.pgWheelSep}>:</Text>
@@ -788,7 +797,7 @@ export default function RunGoalSheet({
                       values={MINUTES_RANGE}
                       selected={programTimeMinutes}
                       onSelect={setProgramTimeMinutes}
-                      label="분"
+                      label={t('goal.minutesLabel')}
                       colors={colors}
                     />
                     <Text style={styles.pgWheelSep}>:</Text>
@@ -796,7 +805,7 @@ export default function RunGoalSheet({
                       values={SECONDS_RANGE}
                       selected={programTimeSeconds}
                       onSelect={setProgramTimeSeconds}
-                      label="초"
+                      label={t('goal.secondsLabel')}
                       colors={colors}
                     />
                   </View>
@@ -806,7 +815,7 @@ export default function RunGoalSheet({
                       <View style={styles.pgPaceItem}>
                         <Ionicons name="speedometer-outline" size={18} color={colors.primary} />
                         <View>
-                          <Text style={styles.pgPaceLabel}>필요 페이스</Text>
+                          <Text style={styles.pgPaceLabel}>{t('goal.requiredPace')}</Text>
                           <Text style={styles.pgPaceValue}>{formatPaceValue(computedPace)} /km</Text>
                         </View>
                       </View>
@@ -814,7 +823,7 @@ export default function RunGoalSheet({
                         <View style={styles.pgPaceItem}>
                           <Ionicons name="musical-notes-outline" size={18} color={colors.primary} />
                           <View>
-                            <Text style={styles.pgPaceLabel}>추천 BPM</Text>
+                            <Text style={styles.pgPaceLabel}>{t('goal.recommendedBPM')}</Text>
                             <Text style={styles.pgPaceValue}>{recommendedBPM}</Text>
                           </View>
                         </View>
@@ -828,9 +837,9 @@ export default function RunGoalSheet({
                   <View style={styles.pgHeader}>
                     <View style={styles.pgBadge}><Text style={styles.pgBadgeText}>3</Text></View>
                     <Ionicons name="musical-notes-outline" size={16} color={colors.primary} />
-                    <Text style={styles.pgHeaderText}>메트로놈</Text>
+                    <Text style={styles.pgHeaderText}>{t('goal.metronome')}</Text>
                     {isAutoCadence && recommendedBPM ? (
-                      <Text style={styles.pgAutoTag}>자동</Text>
+                      <Text style={styles.pgAutoTag}>{t('goal.auto')}</Text>
                     ) : null}
                     <View style={{ flex: 1 }} />
                     <Switch
@@ -859,7 +868,7 @@ export default function RunGoalSheet({
                     <View style={styles.pgBpmDisplay}>
                       <Text style={styles.pgBpmBig}>{selectedCadence}</Text>
                       <Text style={styles.pgBpmUnit}>BPM</Text>
-                      <Text style={styles.pgBpmSub}>추천 케이던스 (자동)</Text>
+                      <Text style={styles.pgBpmSub}>{t('goal.recommendedCadenceAuto')}</Text>
                     </View>
                   )}
                   {selectedCadence > 0 && !isAutoCadence && (
@@ -885,7 +894,7 @@ export default function RunGoalSheet({
                     </View>
                   )}
                   {selectedCadence === 0 && (
-                    <Text style={styles.pgMetronomeHint}>달리는 동안 리듬에 맞춰 틱 소리가 울립니다</Text>
+                    <Text style={styles.pgMetronomeHint}>{t('goal.metronomeHint')}</Text>
                   )}
                 </View>
 
@@ -904,13 +913,14 @@ export default function RunGoalSheet({
             {/* Interval goal type: run time + walk time + sets */}
             {selectedType === 'interval' && (
               <View style={styles.valueSection}>
-                {/* ① Run duration */}
+                {/* ① Run duration — chip-only */}
                 <View style={styles.pgSection}>
                   <View style={styles.pgHeader}>
-                    <View style={styles.pgBadge}><Text style={styles.pgBadgeText}>1</Text></View>
-                    <Ionicons name="flash-outline" size={16} color={colors.primary} />
-                    <Text style={styles.pgHeaderText}>달리기 시간</Text>
-                    <Text style={styles.pgTimeTag}>{formatTimeInput(intervalRunSec)}</Text>
+                    <View style={[styles.ivIcon, { backgroundColor: colors.primary + '20' }]}>
+                      <Ionicons name="flash" size={13} color={colors.primary} />
+                    </View>
+                    <Text style={styles.pgHeaderText}>{t('goal.run')}</Text>
+                    <Text style={styles.ivSelectedTag}>{formatTimeInput(intervalRunSec)}</Text>
                   </View>
                   <View style={styles.pgChipRow}>
                     {INTERVAL_RUN_PRESETS.map((preset) => {
@@ -929,32 +939,16 @@ export default function RunGoalSheet({
                       );
                     })}
                   </View>
-                  <View style={styles.pgWheelRow}>
-                    <WheelPicker
-                      values={MINUTES_RANGE}
-                      selected={Math.floor(intervalRunSec / 60)}
-                      onSelect={(m) => setIntervalRunSec(m * 60 + (intervalRunSec % 60))}
-                      label="분"
-                      colors={colors}
-                    />
-                    <Text style={styles.pgWheelSep}>:</Text>
-                    <WheelPicker
-                      values={SECONDS_RANGE}
-                      selected={intervalRunSec % 60}
-                      onSelect={(s) => setIntervalRunSec(Math.floor(intervalRunSec / 60) * 60 + s)}
-                      label="초"
-                      colors={colors}
-                    />
-                  </View>
                 </View>
 
-                {/* ② Walk duration */}
+                {/* ② Walk duration — chip-only */}
                 <View style={styles.pgSection}>
                   <View style={styles.pgHeader}>
-                    <View style={styles.pgBadge}><Text style={styles.pgBadgeText}>2</Text></View>
-                    <Ionicons name="walk-outline" size={16} color={colors.primary} />
-                    <Text style={styles.pgHeaderText}>걷기 시간</Text>
-                    <Text style={styles.pgTimeTag}>{formatTimeInput(intervalWalkSec)}</Text>
+                    <View style={[styles.ivIcon, { backgroundColor: '#10B98120' }]}>
+                      <Ionicons name="walk" size={13} color="#10B981" />
+                    </View>
+                    <Text style={styles.pgHeaderText}>{t('goal.walk')}</Text>
+                    <Text style={styles.ivSelectedTag}>{formatTimeInput(intervalWalkSec)}</Text>
                   </View>
                   <View style={styles.pgChipRow}>
                     {INTERVAL_WALK_PRESETS.map((preset) => {
@@ -973,81 +967,67 @@ export default function RunGoalSheet({
                       );
                     })}
                   </View>
-                  <View style={styles.pgWheelRow}>
-                    <WheelPicker
-                      values={MINUTES_RANGE}
-                      selected={Math.floor(intervalWalkSec / 60)}
-                      onSelect={(m) => setIntervalWalkSec(m * 60 + (intervalWalkSec % 60))}
-                      label="분"
-                      colors={colors}
-                    />
-                    <Text style={styles.pgWheelSep}>:</Text>
-                    <WheelPicker
-                      values={SECONDS_RANGE}
-                      selected={intervalWalkSec % 60}
-                      onSelect={(s) => setIntervalWalkSec(Math.floor(intervalWalkSec / 60) * 60 + s)}
-                      label="초"
-                      colors={colors}
-                    />
-                  </View>
                 </View>
 
-                {/* ③ Number of sets */}
+                {/* ③ Number of sets — chip-only */}
                 <View style={styles.pgSection}>
                   <View style={styles.pgHeader}>
-                    <View style={styles.pgBadge}><Text style={styles.pgBadgeText}>3</Text></View>
-                    <Ionicons name="repeat-outline" size={16} color={colors.primary} />
-                    <Text style={styles.pgHeaderText}>세트 수</Text>
+                    <View style={[styles.ivIcon, { backgroundColor: 'rgba(142,142,147,0.15)' }]}>
+                      <Ionicons name="repeat" size={13} color="#8E8E93" />
+                    </View>
+                    <Text style={styles.pgHeaderText}>{t('goal.repeat')}</Text>
+                    <Text style={styles.ivSelectedTag}>{t('goal.setsLabel', { count: intervalSets })}</Text>
                   </View>
                   <View style={styles.pgChipRow}>
                     {INTERVAL_SET_PRESETS.map((n) => {
-                      const isActive = intervalSets === n && !intervalCustomSets;
+                      const isActive = intervalSets === n;
                       return (
                         <TouchableOpacity
                           key={n}
                           style={[styles.pgChip, isActive && styles.pgChipActive]}
-                          onPress={() => { setIntervalSets(n); setIntervalCustomSets(''); }}
+                          onPress={() => setIntervalSets(n)}
                           activeOpacity={0.7}
                         >
                           <Text style={[styles.pgChipText, isActive && styles.pgChipTextActive]}>
-                            {n}세트
+                            {t('goal.setsLabel', { count: n })}
                           </Text>
                         </TouchableOpacity>
                       );
                     })}
                   </View>
-                  <View style={styles.pgCustomRow}>
-                    <View style={styles.pgCustomInputWrap}>
-                      <TextInput
-                        style={styles.pgCustomInput}
-                        keyboardType="number-pad"
-                        value={intervalCustomSets}
-                        onChangeText={(v) => {
-                          const cleaned = v.replace(/[^0-9]/g, '');
-                          setIntervalCustomSets(cleaned);
-                          const num = parseInt(cleaned, 10);
-                          if (!isNaN(num) && num > 0 && num <= 99) {
-                            setIntervalSets(num);
-                          }
-                        }}
-                        placeholder="직접 입력"
-                        placeholderTextColor={colors.textTertiary}
-                        returnKeyType="done"
-                        selectTextOnFocus
-                      />
-                      <Text style={styles.pgCustomUnit}>세트</Text>
-                    </View>
-                  </View>
                 </View>
 
-                {/* Summary banner */}
+                {/* Timeline visualization + summary */}
                 {intervalRunSec > 0 && intervalWalkSec > 0 && intervalSets > 0 && (
-                  <View style={styles.pgSummary}>
-                    <Text style={styles.pgSummaryText}>
-                      {formatTimeInput(intervalRunSec)} 달리기 / {formatTimeInput(intervalWalkSec)} 걷기 × {intervalSets}세트
-                    </Text>
-                    <Text style={[styles.pgSummaryText, { marginTop: 2, opacity: 0.8 }]}>
-                      총 {formatTimeInput((intervalRunSec + intervalWalkSec) * intervalSets)}
+                  <View style={styles.ivTimeline}>
+                    {/* Visual blocks showing run/walk ratio */}
+                    <View style={styles.ivTimelineBar}>
+                      {Array.from({ length: Math.min(intervalSets, 8) }).map((_, i) => {
+                        const total = intervalRunSec + intervalWalkSec;
+                        const runRatio = intervalRunSec / total;
+                        return (
+                          <View key={i} style={styles.ivTimelineSet}>
+                            <View style={[styles.ivTimelineBlock, { flex: runRatio, backgroundColor: colors.primary }]} />
+                            <View style={[styles.ivTimelineBlock, { flex: 1 - runRatio, backgroundColor: '#10B981' }]} />
+                          </View>
+                        );
+                      })}
+                      {intervalSets > 8 && (
+                        <Text style={styles.ivTimelineMore}>+{intervalSets - 8}</Text>
+                      )}
+                    </View>
+                    <View style={styles.ivTimelineLegend}>
+                      <View style={styles.ivLegendItem}>
+                        <View style={[styles.ivLegendDot, { backgroundColor: colors.primary }]} />
+                        <Text style={styles.ivLegendText}>{t('goal.run')} {formatTimeInput(intervalRunSec)}</Text>
+                      </View>
+                      <View style={styles.ivLegendItem}>
+                        <View style={[styles.ivLegendDot, { backgroundColor: '#10B981' }]} />
+                        <Text style={styles.ivLegendText}>{t('goal.walk')} {formatTimeInput(intervalWalkSec)}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.ivTotalTime}>
+                      {t('goal.totalTime', { time: formatTimeInput((intervalRunSec + intervalWalkSec) * intervalSets) })}
                     </Text>
                   </View>
                 )}
@@ -1063,7 +1043,7 @@ export default function RunGoalSheet({
               activeOpacity={0.7}
             >
               <Ionicons name="refresh-outline" size={18} color={colors.textSecondary} />
-              <Text style={styles.resetText}>초기화</Text>
+              <Text style={styles.resetText}>{t('goal.reset')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1071,7 +1051,7 @@ export default function RunGoalSheet({
               onPress={handleConfirm}
               activeOpacity={0.8}
             >
-              <Text style={styles.confirmText}>설정 완료</Text>
+              <Text style={styles.confirmText}>{t('goal.confirm')}</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -1178,7 +1158,7 @@ const createStyles = (c: ThemeColors) =>
     pgHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: SPACING.sm,
+      gap: SPACING.xs,
     },
     pgBadge: {
       width: 20,
@@ -1194,9 +1174,10 @@ const createStyles = (c: ThemeColors) =>
       color: '#FFFFFF',
     },
     pgHeaderText: {
-      fontSize: FONT_SIZES.md,
+      fontSize: FONT_SIZES.sm,
       fontWeight: '700',
       color: c.text,
+      flexShrink: 0,
     },
     pgAutoTag: {
       fontSize: FONT_SIZES.xs - 1,
@@ -1210,11 +1191,13 @@ const createStyles = (c: ThemeColors) =>
     },
     pgChipRow: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: SPACING.sm,
+      flexWrap: 'nowrap',
+      gap: SPACING.xs,
     },
     pgChip: {
-      paddingHorizontal: SPACING.lg,
+      flex: 1,
+      alignItems: 'center',
+      paddingHorizontal: SPACING.sm,
       paddingVertical: SPACING.sm + 2,
       borderRadius: BORDER_RADIUS.full,
       backgroundColor: c.card,
@@ -1299,6 +1282,80 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '700',
       color: c.textSecondary,
       marginLeft: 4,
+    },
+    // Interval UI
+    ivIcon: {
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    ivSelectedTag: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '700',
+      color: c.primary,
+      backgroundColor: c.primary + '15',
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 6,
+      overflow: 'hidden',
+      marginLeft: 'auto',
+    },
+    ivTimeline: {
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: SPACING.lg,
+      gap: SPACING.md,
+    },
+    ivTimelineBar: {
+      flexDirection: 'row',
+      gap: 3,
+      height: 24,
+      borderRadius: 6,
+      overflow: 'hidden',
+    },
+    ivTimelineSet: {
+      flex: 1,
+      flexDirection: 'row',
+      borderRadius: 4,
+      overflow: 'hidden',
+    },
+    ivTimelineBlock: {
+      height: '100%',
+    },
+    ivTimelineMore: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '700',
+      color: c.textTertiary,
+      alignSelf: 'center',
+      marginLeft: 4,
+    },
+    ivTimelineLegend: {
+      flexDirection: 'row',
+      gap: SPACING.xl,
+      justifyContent: 'center',
+    },
+    ivLegendItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+    },
+    ivLegendDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    ivLegendText: {
+      fontSize: FONT_SIZES.xs,
+      fontWeight: '600',
+      color: c.textSecondary,
+    },
+    ivTotalTime: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '800',
+      color: c.primary,
+      textAlign: 'center',
     },
     // Computed pace banner
     pgPaceBanner: {

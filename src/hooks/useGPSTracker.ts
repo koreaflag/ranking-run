@@ -150,9 +150,14 @@ export function useGPSTracker() {
 
     // Initial check + poll every 3 seconds until locked
     pollStatus();
-    const pollInterval = setInterval(() => {
+    const pollIntervalRef = { id: setInterval(() => {
+      if (gpsLockedRef.current) {
+        // GPS locked — stop polling to save CPU
+        clearInterval(pollIntervalRef.id);
+        return;
+      }
       pollStatus();
-    }, 3000);
+    }, 3000) };
 
     // Heartbeat: if no GPS updates for 30s while in 'running' phase, restart tracking
     lastUpdateTimeRef.current = Date.now();
@@ -177,7 +182,7 @@ export function useGPSTracker() {
     return () => {
       subscriptionsRef.current.forEach((sub) => sub.remove());
       subscriptionsRef.current = [];
-      clearInterval(pollInterval);
+      clearInterval(pollIntervalRef.id);
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;

@@ -332,6 +332,15 @@ class WorkoutMirroringManager: NSObject, ObservableObject {
 
         let endDate = Date()
 
+        // Safety timeout: if async finalization hangs, clear isStopping after 10s
+        // to unblock startRunMinimal for the next run.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+            if self?.isStopping == true {
+                print("[WorkoutMirror] ⚠️ stopRun timeout — force-clearing isStopping")
+                self?.isStopping = false
+            }
+        }
+
         // Call session.end() FIRST to release HealthKit resources promptly.
         // This allows a new session to be created without "device busy" errors.
         // The builder finalization (samples, endCollection, finishWorkout) runs

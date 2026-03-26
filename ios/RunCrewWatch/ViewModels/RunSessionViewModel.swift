@@ -9,11 +9,19 @@ class RunSessionViewModel: ObservableObject {
     @Published var isStandaloneMode = false
     @Published var pendingSyncCount = 0
 
+    /// Cooldown after idle transition: block all external state updates for 3 seconds
+    /// to prevent stale WCSession/mirroring callbacks from restarting a phantom run.
+    private(set) var idleCooldownUntil: Date = .distantPast
+    var isInIdleCooldown: Bool { Date() < idleCooldownUntil }
+
     // Standalone run settings (forwarded from settingsManager)
     @Published var standaloneGoalType: String
     @Published var standaloneGoalDistance: Double
     @Published var standaloneGoalTime: Int
     @Published var standaloneGoalTargetTime: Int
+    @Published var standaloneIntervalRunSec: Int
+    @Published var standaloneIntervalWalkSec: Int
+    @Published var standaloneIntervalSets: Int
     @Published var isIndoorRun: Bool
     @Published var isAutoPauseEnabled: Bool
     @Published var isVoiceGuidanceEnabled: Bool
@@ -64,6 +72,9 @@ class RunSessionViewModel: ObservableObject {
         self.standaloneGoalDistance = settings.standaloneGoalDistance
         self.standaloneGoalTime = settings.standaloneGoalTime
         self.standaloneGoalTargetTime = settings.standaloneGoalTargetTime
+        self.standaloneIntervalRunSec = settings.standaloneIntervalRunSec
+        self.standaloneIntervalWalkSec = settings.standaloneIntervalWalkSec
+        self.standaloneIntervalSets = settings.standaloneIntervalSets
         self.isIndoorRun = settings.isIndoorRun
         self.isAutoPauseEnabled = settings.isAutoPauseEnabled
         self.isVoiceGuidanceEnabled = settings.isVoiceGuidanceEnabled
@@ -92,6 +103,9 @@ class RunSessionViewModel: ObservableObject {
                 self.standaloneGoalDistance = self.settingsManager.standaloneGoalDistance
                 self.standaloneGoalTime = self.settingsManager.standaloneGoalTime
                 self.standaloneGoalTargetTime = self.settingsManager.standaloneGoalTargetTime
+                self.standaloneIntervalRunSec = self.settingsManager.standaloneIntervalRunSec
+                self.standaloneIntervalWalkSec = self.settingsManager.standaloneIntervalWalkSec
+                self.standaloneIntervalSets = self.settingsManager.standaloneIntervalSets
                 self.isIndoorRun = self.settingsManager.isIndoorRun
                 self.isAutoPauseEnabled = self.settingsManager.isAutoPauseEnabled
                 self.isVoiceGuidanceEnabled = self.settingsManager.isVoiceGuidanceEnabled
@@ -157,6 +171,9 @@ class RunSessionViewModel: ObservableObject {
         }
         companionManager.setPhaseLockedUntil = { [weak self] date in
             self?.phaseLockedUntil = date
+        }
+        companionManager.isInIdleCooldown = { [weak self] in
+            self?.isInIdleCooldown ?? false
         }
     }
 
@@ -237,17 +254,29 @@ class RunSessionViewModel: ObservableObject {
             self?.isPhoneReachable = reachable
             if reachable {
                 self?.syncPendingRuns()
-                self?.startStatePollTimer()
+                // Only start polling if in an active companion run — don't poll while idle
+                // (prevents stale phone state from accidentally starting a phantom run)
+                if let phase = self?.state.phase,
+                   phase == "running" || phase == "paused" || phase == "countdown" || phase == "navigating",
+                   self?.isStandaloneMode == false {
+                    self?.startStatePollTimer()
+                }
             } else {
                 self?.timerManager.stopStatePollTimer()
             }
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.isPhoneReachable = WCSession.default.isReachable
-            if WCSession.default.isReachable {
-                self?.companionManager.pollPhoneState()
-                self?.startStatePollTimer()
+            guard let self = self else { return }
+            self.isPhoneReachable = WCSession.default.isReachable
+            // Only poll if not in idle cooldown and not standalone
+            if WCSession.default.isReachable && !self.isInIdleCooldown && !self.isStandaloneMode {
+                self.companionManager.pollPhoneState()
+                // Only start polling if in an active run phase
+                let phase = self.state.phase
+                if phase == "running" || phase == "paused" || phase == "countdown" {
+                    self.startStatePollTimer()
+                }
             }
         }
     }
@@ -334,6 +363,14 @@ class RunSessionViewModel: ObservableObject {
             state.programRequiredPace = 0
             state.programStatus = ""
             state.metronomeBPM = 0
+            // Reset interval state
+            state.intervalPhase = ""
+            state.intervalCurrentSet = 0
+            state.intervalTotalSets = 0
+            state.intervalRunSeconds = 0
+            state.intervalWalkSeconds = 0
+            state.intervalPhaseRemaining = 0
+            state.intervalCompleted = false
             // Reset all manager internal state (haptic tracking, session tracking, standalone splits)
             standaloneManager.resetForNewRun()
             companionManager.resetForNewRun()
@@ -386,7 +423,12 @@ class RunSessionViewModel: ObservableObject {
 
         case "completed":
             timerManager.cancelCountdownAutoTransition()
-            HapticManager.shared.runCompleted()
+            // Interval mode already announced "인터벌 완료" — skip "운동 종료" TTS
+            if state.goalType == "interval" {
+                HapticManager.shared.runCompleted(skipVoice: true)
+            } else {
+                HapticManager.shared.runCompleted()
+            }
             HapticManager.shared.stopCadenceHaptic()
             timerManager.stopDurationTimer()
             stopHeartRateMonitoring()
@@ -429,6 +471,9 @@ class RunSessionViewModel: ObservableObject {
             }
             state = WatchRunState()
             isStandaloneMode = false
+            // Block all external state updates for 3s to prevent phantom runs
+            // from stale WCSession/mirroring callbacks arriving after reset
+            idleCooldownUntil = Date().addingTimeInterval(3.0)
             timerManager.resetAnchors()
             timerManager.stopReachabilityTimer()
 
@@ -461,13 +506,22 @@ class RunSessionViewModel: ObservableObject {
     private func scheduleCountdownAutoTransition() {
         let startedAtMs = state.countdownStartedAt
         let totalSec = state.countdownTotal
-        guard startedAtMs > 0, totalSec > 0 else { return }
+        guard startedAtMs > 0, totalSec > 0 else {
+            print("[RunSessionVM] scheduleCountdownAutoTransition SKIP: startedAt=\(startedAtMs) total=\(totalSec)")
+            return
+        }
 
         let countdownEndMs = startedAtMs + Double(totalSec * 1000)
         let nowMs = Date().timeIntervalSince1970 * 1000
         let delayMs = countdownEndMs - nowMs
-        let delay = max(delayMs / 1000.0, 0.05)
 
+        // If countdown already expired (stale data from previous run), don't schedule
+        if delayMs < -2000 {
+            print("[RunSessionVM] scheduleCountdownAutoTransition SKIP: countdown already expired (\(delayMs)ms ago)")
+            return
+        }
+
+        let delay = max(delayMs / 1000.0, 0.05)
         timerManager.scheduleCountdownAutoTransition(delay: delay)
     }
 
@@ -580,6 +634,9 @@ class RunSessionViewModel: ObservableObject {
     func setGoalDistance(_ km: Double) { settingsManager.setGoalDistance(km) }
     func setGoalTime(_ minutes: Int) { settingsManager.setGoalTime(minutes) }
     func setGoalTargetTime(_ minutes: Int) { settingsManager.setGoalTargetTime(minutes) }
+    func setIntervalRunSec(_ sec: Int) { settingsManager.setIntervalRunSec(sec) }
+    func setIntervalWalkSec(_ sec: Int) { settingsManager.setIntervalWalkSec(sec) }
+    func setIntervalSets(_ sets: Int) { settingsManager.setIntervalSets(sets) }
     func setIndoorRun(_ value: Bool) { settingsManager.setIndoorRun(value) }
     func setAutoPause(_ value: Bool) { settingsManager.setAutoPause(value) }
     func setVoiceGuidance(_ value: Bool) { settingsManager.setVoiceGuidance(value) }

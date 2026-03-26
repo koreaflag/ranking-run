@@ -43,9 +43,12 @@ function formatPace(secondsPerKm: number): string {
 function formatTime(totalSeconds: number): string {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
-  if (h > 0 && m > 0) return `${h}h ${m}m`;
-  if (h > 0) return `${h}h`;
-  return `${m}m`;
+  const s = totalSeconds % 60;
+  if (h > 0 && m > 0) return `${h}시간 ${m}분`;
+  if (h > 0) return `${h}시간`;
+  if (m > 0 && s > 0) return `${m}분 ${s}초`;
+  if (m > 0) return `${m}분`;
+  return `${s}초`;
 }
 
 /** Goal type display info */
@@ -55,8 +58,18 @@ function getGoalTypeInfo(type: string): { icon: IoniconsName; label: string } {
     case 'time': return { icon: 'timer-outline', label: '시간 목표' };
     case 'pace': return { icon: 'speedometer-outline', label: '페이스 목표' };
     case 'program': return { icon: 'trophy-outline', label: '목표 러닝' };
+    case 'interval': return { icon: 'repeat-outline', label: '인터벌' };
     default: return { icon: 'flag-outline', label: '목표' };
   }
+}
+
+/** Format seconds as human-readable time for interval display */
+function formatIntervalTime(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  if (m > 0 && s > 0) return `${m}분${s}초`;
+  if (m > 0) return `${m}분`;
+  return `${s}초`;
 }
 
 /** Format goal main value */
@@ -71,6 +84,11 @@ function formatGoalValue(goal: RunGoal): string {
       return `${formatPace(goal.value)} /km`;
     case 'program':
       return `${(goal.value / 1000).toFixed(1)} km`;
+    case 'interval': {
+      const runLabel = formatIntervalTime(goal.intervalRunSeconds ?? 0);
+      const walkLabel = formatIntervalTime(goal.intervalWalkSeconds ?? 0);
+      return `달리기 ${runLabel}\n걷기 ${walkLabel}`;
+    }
     default:
       return '';
   }
@@ -211,10 +229,10 @@ export default function WelcomeOverlay({
       style={[styles.container, { opacity }]}
       pointerEvents={visible ? 'box-none' : 'none'}
     >
-      <View style={[styles.backdrop, { backgroundColor: overlayBg }]} />
+      <View style={[styles.backdrop, { backgroundColor: overlayBg }]} pointerEvents="none" />
 
       {/* ===== Greeting phase ===== */}
-      <Animated.View style={[styles.centerArea, { opacity: greetingGroupOpacity }]}>
+      <Animated.View style={[styles.centerArea, { opacity: greetingGroupOpacity }]} pointerEvents="none">
         {/* Greeting label */}
         <Animated.Text
           style={[
@@ -257,7 +275,7 @@ export default function WelcomeOverlay({
       </Animated.View>
 
       {/* ===== Goal phase ===== */}
-      <Animated.View style={[styles.centerArea, { opacity: goalOpacity, transform: [{ scale: goalScale }] }]}>
+      <Animated.View style={[styles.centerArea, { opacity: goalOpacity, transform: [{ scale: goalScale }] }]} pointerEvents="none">
         {/* Goal type label with icon */}
         {goalTypeInfo && (
           <View style={styles.goalTypeRow}>
@@ -268,10 +286,36 @@ export default function WelcomeOverlay({
           </View>
         )}
 
-        {/* Big goal value */}
-        <Text style={[styles.greetingName, { color: textColor }]}>
-          {goalValue}
-        </Text>
+        {/* Big goal value — interval uses custom layout */}
+        {runGoal.type === 'interval' ? (
+          <View style={styles.intervalGoalCard}>
+            <View style={styles.intervalGoalRow}>
+              <View style={[styles.intervalGoalDot, { backgroundColor: accentColor }]} />
+              <Text style={[styles.intervalGoalPhase, { color: textColor }]}>달리기</Text>
+              <Text style={[styles.intervalGoalTime, { color: accentColor }]}>
+                {formatIntervalTime(runGoal.intervalRunSeconds ?? 0)}
+              </Text>
+            </View>
+            <View style={[styles.intervalGoalDivider, { backgroundColor: dividerColor }]} />
+            <View style={styles.intervalGoalRow}>
+              <View style={[styles.intervalGoalDot, { backgroundColor: COLORS.success }]} />
+              <Text style={[styles.intervalGoalPhase, { color: textColor }]}>걷기</Text>
+              <Text style={[styles.intervalGoalTime, { color: COLORS.success }]}>
+                {formatIntervalTime(runGoal.intervalWalkSeconds ?? 0)}
+              </Text>
+            </View>
+            <View style={[styles.intervalGoalDivider, { backgroundColor: dividerColor }]} />
+            <View style={styles.intervalGoalRow}>
+              <Text style={[styles.intervalGoalSetLabel, { color: subTextColor }]}>
+                ×{runGoal.intervalSets ?? 0}세트 · 총 {formatTime(((runGoal.intervalRunSeconds ?? 0) + (runGoal.intervalWalkSeconds ?? 0)) * (runGoal.intervalSets ?? 0))}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <Text style={[styles.greetingName, { color: textColor }]}>
+            {goalValue}
+          </Text>
+        )}
 
         {/* Goal details row */}
         {runGoal.type === 'program' && (
@@ -312,14 +356,23 @@ export default function WelcomeOverlay({
           </View>
         )}
 
+        {/* Interval details — integrated into card above */}
+
         {/* For simple goals (distance/time/pace), show "Ready" below */}
-        {runGoal.type && runGoal.type !== 'program' && (
+        {runGoal.type && runGoal.type !== 'program' && runGoal.type !== 'interval' && (
           <>
             <View style={[styles.divider, { backgroundColor: dividerColor }]} />
             <Text style={[styles.readyText, { color: subTextColor }]}>
               {t('world.welcome.readyToGo')}
             </Text>
           </>
+        )}
+
+        {/* For interval, show "Ready" after card */}
+        {runGoal.type === 'interval' && (
+          <Text style={[styles.readyText, { color: subTextColor, marginTop: 20 }]}>
+            {t('world.welcome.readyToGo')}
+          </Text>
         )}
 
         {/* For program, show "Ready" after details */}
@@ -420,6 +473,43 @@ const createStyles = (_c: ThemeColors) =>
       fontSize: 16,
       fontWeight: '500',
       letterSpacing: 0.5,
+    },
+    intervalGoalCard: {
+      width: '100%',
+      maxWidth: 240,
+      gap: 0,
+      marginBottom: 12,
+    },
+    intervalGoalRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+    },
+    intervalGoalDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      marginRight: 10,
+    },
+    intervalGoalPhase: {
+      fontSize: 17,
+      fontWeight: '600',
+      flex: 1,
+    },
+    intervalGoalTime: {
+      fontSize: 26,
+      fontWeight: '800',
+      letterSpacing: -0.5,
+    },
+    intervalGoalDivider: {
+      height: 1,
+      width: '100%',
+    },
+    intervalGoalSetLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+      textAlign: 'center',
+      flex: 1,
     },
     tourButton: {
       position: 'absolute',

@@ -278,8 +278,9 @@ export default function HomeScreen() {
   }, [loadPrimaryData, loadSecondaryData]);
 
   // --- Poll friends running every 30s when there are active runners ---
+  const hasFriendsRunning = friendsRunning.length > 0;
   useEffect(() => {
-    if (friendsRunning.length === 0) return;
+    if (!hasFriendsRunning) return;
     const interval = setInterval(async () => {
       try {
         const res = await userService.getFriendsRunning();
@@ -287,7 +288,7 @@ export default function HomeScreen() {
       } catch { /* ignore */ }
     }, 30_000);
     return () => clearInterval(interval);
-  }, [friendsRunning.length]);
+  }, [hasFriendsRunning]);
 
   // --- Pulsing dot animation for friends running banner ---
   const friendsDotOpacity = useRef(new Animated.Value(1)).current;
@@ -831,7 +832,18 @@ export default function HomeScreen() {
                 const d = new Date(run.finished_at);
                 const dayLabel = t(WEEKDAY_KEYS[d.getDay()]);
                 const timeLabel = `${dayLabel} ${getTimeOfDay(run.finished_at, t)}`;
-                const runTitle = run.course?.title || t('home.freeRunning');
+                const goalLabel = run.goal_data?.type
+                  ? run.goal_data.type === 'interval'
+                    ? `인터벌 ${Math.floor((run.goal_data.intervalRunSeconds ?? 0) / 60)}분/${Math.floor((run.goal_data.intervalWalkSeconds ?? 0) / 60)}분 ×${run.goal_data.intervalSets ?? 0}`
+                    : run.goal_data.type === 'program'
+                      ? `목표 러닝 ${((run.goal_data.value ?? 0) / 1000).toFixed(1)}km`
+                      : run.goal_data.type === 'distance'
+                        ? `거리 목표 ${((run.goal_data.value ?? 0) / 1000).toFixed(1)}km`
+                        : run.goal_data.type === 'time'
+                          ? `시간 목표 ${formatDuration(run.goal_data.value ?? 0)}`
+                          : null
+                  : null;
+                const runTitle = run.course?.title || goalLabel || t('home.freeRunning');
 
                 return (
                   <TouchableOpacity
