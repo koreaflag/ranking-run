@@ -22,6 +22,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useCourseListStore } from '../../stores/courseListStore';
 import { useRunningStore } from '../../stores/runningStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { courseService } from '../../services/courseService';
 import { rankingService } from '../../services/rankingService';
@@ -43,6 +44,7 @@ import { useCheckpointTracker } from '../../hooks/useCheckpointTracker';
 import { usePaceCoaching } from '../../hooks/usePaceCoaching';
 import { useVoiceGuidance } from '../../hooks/useVoiceGuidance';
 import { useLiveActivity } from '../../hooks/useLiveActivity';
+import { useIntervalTraining } from '../../hooks/useIntervalTraining';
 
 import * as Location from 'expo-location';
 import { useTheme } from '../../hooks/useTheme';
@@ -148,6 +150,18 @@ function calcBearing(a: LatLng, b: LatLng): number {
 }
 
 // ============================================================
+// Interval summary helper
+// ============================================================
+
+function formatIntervalSummaryTime(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  if (m > 0 && s > 0) return `${m}분${s}초`;
+  if (m > 0) return `${m}분`;
+  return `${s}초`;
+}
+
+// ============================================================
 // Goal helpers
 // ============================================================
 
@@ -174,16 +188,8 @@ function formatGoalLabel(goal: RunGoal, t: (key: string, opts?: Record<string, u
       const targetMins = goal.targetTime ? Math.floor(goal.targetTime / 60) : 0;
       return `${km}km · ${targetMins}분`;
     }
-    case 'interval': {
-      const runMin = Math.floor((goal.intervalRunSeconds ?? 0) / 60);
-      const runSec = (goal.intervalRunSeconds ?? 0) % 60;
-      const walkMin = Math.floor((goal.intervalWalkSeconds ?? 0) / 60);
-      const walkSec = (goal.intervalWalkSeconds ?? 0) % 60;
-      const sets = goal.intervalSets ?? 0;
-      const runLabel = runSec > 0 ? `${runMin}분${runSec}초` : `${runMin}분`;
-      const walkLabel = walkSec > 0 ? `${walkMin}분${walkSec}초` : `${walkMin}분`;
-      return `${runLabel}/${walkLabel} ×${sets}`;
-    }
+    case 'interval':
+      return t('world.goalSetting');
     default:
       return t('world.goalSetting');
   }
@@ -254,7 +260,10 @@ export default function WorldScreen() {
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const { mapMarkers, fetchMapMarkers, pendingFocusCourseId, pendingStartCourseId } = useCourseListStore();
-  const { map3DStyle, countdownSeconds, hapticFeedback, voiceGuidance } = useSettingsStore();
+  const map3DStyle = useSettingsStore((s) => s.map3DStyle);
+  const countdownSeconds = useSettingsStore((s) => s.countdownSeconds);
+  const hapticFeedback = useSettingsStore((s) => s.hapticFeedback);
+  const voiceGuidance = useSettingsStore((s) => s.voiceGuidance);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<RouteMapViewHandle>(null);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -302,7 +311,7 @@ export default function WorldScreen() {
     durationSeconds,
     avgPaceSecondsPerKm,
     gpsStatus,
-    routePoints: runRoutePoints,
+    runRoutePoints,
     calories,
     heartRate,
     cadence,
@@ -314,19 +323,42 @@ export default function WorldScreen() {
     isNearStart,
     loopDetected,
     distanceToStart,
-    courseId: runCourseId,
-    runGoal: storeRunGoal,
+    runCourseId,
+    storeRunGoal,
     splits,
-    startSession,
-    updateSessionId,
-    pause: storePause,
-    resume: storeResume,
-    complete,
-    reset,
-    setPhase,
-    setRunGoal: setStoreRunGoal,
-    addDeviationPoint,
-  } = useRunningStore();
+  } = useRunningStore(useShallow((s) => ({
+    phase: s.phase,
+    distanceMeters: s.distanceMeters,
+    durationSeconds: s.durationSeconds,
+    avgPaceSecondsPerKm: s.avgPaceSecondsPerKm,
+    gpsStatus: s.gpsStatus,
+    runRoutePoints: s.routePoints,
+    calories: s.calories,
+    heartRate: s.heartRate,
+    cadence: s.cadence,
+    elevationGainMeters: s.elevationGainMeters,
+    watchConnected: s.watchConnected,
+    currentLocation: s.currentLocation,
+    isAutoPaused: s.isAutoPaused,
+    isApproachingStart: s.isApproachingStart,
+    isNearStart: s.isNearStart,
+    loopDetected: s.loopDetected,
+    distanceToStart: s.distanceToStart,
+    runCourseId: s.courseId,
+    storeRunGoal: s.runGoal,
+    splits: s.splits,
+  })));
+
+  // Actions don't change — subscribe outside useShallow to avoid object recreation
+  const startSession = useRunningStore((s) => s.startSession);
+  const updateSessionId = useRunningStore((s) => s.updateSessionId);
+  const storePause = useRunningStore((s) => s.pause);
+  const storeResume = useRunningStore((s) => s.resume);
+  const complete = useRunningStore((s) => s.complete);
+  const reset = useRunningStore((s) => s.reset);
+  const setPhase = useRunningStore((s) => s.setPhase);
+  const setStoreRunGoal = useRunningStore((s) => s.setRunGoal);
+  const addDeviationPoint = useRunningStore((s) => s.addDeviationPoint);
 
   const isInRun = phase !== 'idle';  // includes completed to keep route visible
 
@@ -373,6 +405,16 @@ export default function WorldScreen() {
     }
     return () => { MetronomeModule.stop(); };
   }, [phase, storeRunGoal?.type, storeRunGoal?.cadenceBPM, metronomeMuted]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Interval training
+  const intervalState = useIntervalTraining({
+    enabled: storeRunGoal?.type === 'interval',
+    runSeconds: storeRunGoal?.intervalRunSeconds ?? 0,
+    walkSeconds: storeRunGoal?.intervalWalkSeconds ?? 0,
+    sets: storeRunGoal?.intervalSets ?? 0,
+    elapsedSeconds: durationSeconds,
+    phase,
+  });
 
   // Countdown state
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -633,6 +675,7 @@ export default function WorldScreen() {
   // Close result and return to world mode
   const handleCloseResult = useCallback(() => {
     setWelcomeVisible(true); // Show welcome overlay again
+    setRunGoal({ type: null, value: null }); // Reset goal settings
     setResultUploading(false);
     setResultRunRecordId(null);
     setResultSavedLocally(false);
@@ -1282,6 +1325,7 @@ export default function WorldScreen() {
 
   // Long-press stop: hold for 1.5s to end run (no Alert confirmation)
   const [stopProgressAnim] = useState(() => new Animated.Value(0));
+  const [stopProgressVisible, setStopProgressVisible] = useState(false);
   const stopHapticTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopUnlockedRef = useRef(false);
   const stopPressStart = useRef(0);
@@ -1308,6 +1352,7 @@ export default function WorldScreen() {
     setShowStopHint(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     stopProgressAnim.setValue(0);
+    setStopProgressVisible(true);
     stopHapticTimer.current = setInterval(() => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }, 400);
@@ -1332,6 +1377,7 @@ export default function WorldScreen() {
     cleanupStopTimers();
     stopProgressAnim.stopAnimation();
     stopProgressAnim.setValue(0);
+    setStopProgressVisible(false);
     // 짧게 탭한 경우 힌트 표시
     if (Date.now() - stopPressStart.current < 300) {
       setShowStopHint(true);
@@ -1353,7 +1399,7 @@ export default function WorldScreen() {
     passedCount: cpPassedCount,
     totalCount: cpTotalCount,
     justPassed: !!cpJustPassed,
-  });
+  }, intervalState);
 
   // Cleanup on unmount
   const phaseRef = useRef(phase);
@@ -1383,6 +1429,19 @@ export default function WorldScreen() {
       }
     }
   }, [goalProgress?.reached, goalReachedShown, phase, hapticFeedback]);
+
+  // Auto-finish when interval training completes
+  const intervalFinishRef = useRef(false);
+  useEffect(() => {
+    if (intervalState?.isCompleted && phase === 'running' && !intervalFinishRef.current) {
+      intervalFinishRef.current = true;
+      // Wait for completion TTS ("인터벌 훈련 완료") to finish before auto-ending
+      setTimeout(() => finishRun(), 2500);
+    }
+    if (phase === 'idle') {
+      intervalFinishRef.current = false;
+    }
+  }, [intervalState?.isCompleted, phase, finishRun]);
 
   // ============================================================
   // WORLD MAP HANDLERS
@@ -1788,16 +1847,8 @@ export default function WorldScreen() {
                 )}
               </View>
             ) : <View />}
-            {touring && phase === 'idle' && (
-              <TouchableOpacity
-                style={styles.tourBackBtn}
-                onPress={() => { setTouring(false); setWelcomeVisible(true); setFollowUser(true); }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="arrow-back" size={16} color={colors.text} />
-                <Text style={styles.tourBackText}>{t('world.welcome.tourBack')}</Text>
-              </TouchableOpacity>
-            )}
+            {/* Empty spacer — tourBack button removed */}
+            <View />
           </View>
         </SafeAreaView>
       )}
@@ -1981,21 +2032,21 @@ export default function WorldScreen() {
 
       </Animated.View>
 
-      {/* Run Start Overlay */}
+      {/* Welcome overlay — rendered BEFORE RunStartOverlay so buttons are on top (Android uses JSX order for touch priority) */}
+      <WelcomeOverlay
+        visible={welcomeVisible && phase === 'idle' && !selectedMarker && !navigatingToStart && !touring}
+        nickname={userNickname ?? undefined}
+        runGoal={runGoal}
+        onTour={() => { setTouring(true); setWelcomeVisible(false); setFollowUser(false); }}
+      />
+
+      {/* Run Start Overlay — must render AFTER WelcomeOverlay for Android touch priority */}
       <RunStartOverlay
         visible={phase === 'idle' && !selectedMarker && !is3DMode && !navigatingToStart && !touring}
         onStart={handleStartFreeRun}
         onGoalPress={() => setGoalSheetVisible(true)}
         onSettingsPress={() => setSettingsSheetVisible(true)}
         goalLabel={formatGoalLabel(runGoal, t)}
-      />
-
-      {/* Welcome overlay — hidden during tour mode */}
-      <WelcomeOverlay
-        visible={welcomeVisible && phase === 'idle' && !selectedMarker && !navigatingToStart && !touring}
-        nickname={userNickname ?? undefined}
-        runGoal={runGoal}
-        onTour={() => { setTouring(true); setWelcomeVisible(false); setFollowUser(false); }}
       />
 
 
@@ -2074,6 +2125,7 @@ export default function WorldScreen() {
                   <Text style={styles.goalReachedText}>목표 달성!</Text>
                 </View>
               )}
+              {/* Interval training banner — moved to runPanel */}
 {/* Floating pace coaching banner removed — now shown inside runPanel */}
               {loopDetected && distanceMeters >= 300 && (
                 <View style={styles.loopBanner}>
@@ -2150,6 +2202,25 @@ export default function WorldScreen() {
               <View style={styles.resultHeader}>
                 <Ionicons name="checkmark-circle" size={28} color={colors.success} />
                 <Text style={styles.resultTitle}>러닝 완료!</Text>
+              </View>
+            )}
+
+            {/* Interval training banner — compact horizontal inside panel */}
+            {intervalState && !intervalState.isCompleted && (phase === 'running' || phase === 'paused') && (
+              <View style={[
+                styles.intervalBanner,
+                { backgroundColor: intervalState.currentPhase === 'run' ? colors.primary : colors.success },
+                phase === 'paused' && { opacity: 0.6 },
+              ]}>
+                <Text style={styles.intervalPhaseLabel}>
+                  {intervalState.currentPhase === 'run' ? 'RUN' : 'WALK'}
+                </Text>
+                <Text style={styles.intervalTimer}>
+                  {formatDuration(intervalState.phaseRemainingSeconds)}
+                </Text>
+                <Text style={styles.intervalSetInfo}>
+                  {intervalState.currentSet}/{intervalState.totalSets}
+                </Text>
               </View>
             )}
 
@@ -2288,9 +2359,13 @@ export default function WorldScreen() {
             <View style={styles.runMetricsGrid}>
               <View style={styles.runMetricRow}>
                 <View style={styles.runMetricCell}>
-                  <Text style={styles.runMetricLabel}>시간</Text>
+                  <Text style={styles.runMetricLabel}>
+                    {intervalState && !intervalState.isCompleted ? '남은 시간' : '시간'}
+                  </Text>
                   <Text style={[styles.runMetricValue, (phase === 'paused' || isAutoPaused) && { color: '#FFD60A' }]}>
-                    {formatDuration(durationSeconds)}
+                    {intervalState && !intervalState.isCompleted
+                      ? formatDuration(intervalState.totalRemainingSeconds)
+                      : formatDuration(durationSeconds)}
                   </Text>
                 </View>
                 <View style={styles.runMetricDivider} />
@@ -2327,6 +2402,41 @@ export default function WorldScreen() {
               </View>
             </View>
 
+            {/* Interval summary — after completion */}
+            {phase === 'completed' && storeRunGoal?.type === 'interval' && (() => {
+              const runSec = storeRunGoal.intervalRunSeconds ?? 0;
+              const walkSec = storeRunGoal.intervalWalkSeconds ?? 0;
+              const sets = storeRunGoal.intervalSets ?? 0;
+              const totalRunSec = runSec * sets;
+              const totalWalkSec = walkSec * sets;
+              return (
+                <View style={styles.intervalSummary}>
+                  <Text style={styles.intervalSummaryTitle}>인터벌 완료</Text>
+                  <View style={styles.intervalSummaryRow}>
+                    <View style={[styles.intervalSummaryDot, { backgroundColor: colors.primary }]} />
+                    <Text style={styles.intervalSummaryLabel}>달리기</Text>
+                    <Text style={styles.intervalSummaryValue}>
+                      {formatIntervalSummaryTime(runSec)} × {sets} = {formatIntervalSummaryTime(totalRunSec)}
+                    </Text>
+                  </View>
+                  <View style={styles.intervalSummaryRow}>
+                    <View style={[styles.intervalSummaryDot, { backgroundColor: colors.success }]} />
+                    <Text style={styles.intervalSummaryLabel}>걷기</Text>
+                    <Text style={styles.intervalSummaryValue}>
+                      {formatIntervalSummaryTime(walkSec)} × {sets} = {formatIntervalSummaryTime(totalWalkSec)}
+                    </Text>
+                  </View>
+                  <View style={styles.intervalSummaryDivider} />
+                  <View style={styles.intervalSummaryRow}>
+                    <Text style={styles.intervalSummaryLabel}>총 운동</Text>
+                    <Text style={[styles.intervalSummaryValue, { color: colors.primary }]}>
+                      {sets}세트 · {formatIntervalSummaryTime(totalRunSec + totalWalkSec)}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
+
             {/* Controls — during active run */}
             {(phase === 'running' || phase === 'paused') && (
               <View style={styles.runControls}>
@@ -2346,9 +2456,11 @@ export default function WorldScreen() {
                       onPressOut={handleStopPressOut}
                       activeOpacity={0.9}
                     >
-                      <Animated.View style={[styles.stopProgress, {
-                        transform: [{ scaleX: stopProgressAnim }],
-                      }]} />
+                      {stopProgressVisible && (
+                        <Animated.View style={[styles.stopProgress, {
+                          transform: [{ scaleX: stopProgressAnim }],
+                        }]} />
+                      )}
                       <Ionicons name="stop" size={28} color={colors.white} />
                       <Text style={styles.runStopBtnLabel}>종료</Text>
                     </TouchableOpacity>
@@ -2365,9 +2477,11 @@ export default function WorldScreen() {
                       onPressOut={handleStopPressOut}
                       activeOpacity={0.9}
                     >
-                      <Animated.View style={[styles.stopProgress, {
-                        transform: [{ scaleX: stopProgressAnim }],
-                      }]} />
+                      {stopProgressVisible && (
+                        <Animated.View style={[styles.stopProgress, {
+                          transform: [{ scaleX: stopProgressAnim }],
+                        }]} />
+                      )}
                       <Ionicons name="stop" size={28} color={colors.white} />
                       <Text style={styles.runStopBtnLabel}>종료</Text>
                     </TouchableOpacity>
@@ -3011,6 +3125,72 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '900',
     color: '#000',
     letterSpacing: 1,
+  },
+  intervalBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 22,
+    marginBottom: SPACING.sm,
+  },
+  intervalPhaseLabel: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: COLORS.white,
+    letterSpacing: Platform.OS === 'android' ? 0.8 : 1.5,
+  },
+  intervalTimer: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.white,
+    fontVariant: ['tabular-nums'] as const,
+  },
+  intervalSetInfo: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.8)',
+  },
+  intervalSummary: {
+    backgroundColor: c.card,
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 8,
+    gap: 10,
+  },
+  intervalSummaryTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: c.text,
+    marginBottom: 2,
+  },
+  intervalSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  intervalSummaryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  intervalSummaryLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: c.textSecondary,
+    flex: 1,
+  },
+  intervalSummaryValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: c.text,
+  },
+  intervalSummaryDivider: {
+    height: 1,
+    backgroundColor: c.border,
+    marginVertical: 2,
   },
   goalReachedBanner: {
     position: 'absolute',
