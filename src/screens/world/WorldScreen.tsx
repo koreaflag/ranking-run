@@ -1802,7 +1802,7 @@ export default function WorldScreen() {
             onPress={() => { setTouring(false); setWelcomeVisible(true); }}
             activeOpacity={0.85}
           >
-            <Ionicons name="fitness" size={20} color={COLORS.white} />
+            <Ionicons name="walk" size={20} color={COLORS.white} />
           </TouchableOpacity>
         )}
 
