@@ -31,7 +31,7 @@ import type { RouteMapViewHandle, CourseMarkerData, Region } from '../../compone
 import type { WorldStackParamList } from '../../types/navigation';
 import type { GeoJSONLineString, CourseCheckpoint, RankingEntry } from '../../types/api';
 import type { CheckpointMarkerData } from '../../components/map/RouteMapView';
-import { RunGoalSheet, RunSettingsSheet, WelcomeOverlay } from '../../components/running';
+import { RunStartOverlay, RunGoalSheet, RunSettingsSheet, WelcomeOverlay } from '../../components/running';
 import type { RunGoal } from '../../components/running/RunGoalSheet';
 
 // Running hooks
@@ -150,6 +150,34 @@ function calcBearing(a: LatLng, b: LatLng): number {
 // ============================================================
 // Goal helpers
 // ============================================================
+
+function formatGoalLabel(goal: RunGoal, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (!goal.type || goal.value === null) return t('world.goalSetting');
+  switch (goal.type) {
+    case 'distance':
+      return t('world.distanceGoalLabel', { value: (goal.value / 1000).toFixed(1) });
+    case 'time': {
+      const mins = Math.floor(goal.value / 60);
+      if (mins >= 60) {
+        const hours = Math.floor(mins / 60);
+        const remainder = mins % 60;
+        return remainder > 0
+          ? t('world.timeGoalLabelHM', { hours, minutes: remainder })
+          : t('world.timeGoalLabelH', { hours });
+      }
+      return t('world.timeGoalLabelM', { minutes: mins });
+    }
+    case 'pace':
+      return t('world.paceGoalLabel', { pace: `${Math.floor(goal.value / 60)}'${String(Math.floor(goal.value % 60)).padStart(2, '0')}"` });
+    case 'program': {
+      const km = (goal.value / 1000).toFixed(1);
+      const targetMins = goal.targetTime ? Math.floor(goal.targetTime / 60) : 0;
+      return `${km}km · ${targetMins}분`;
+    }
+    default:
+      return t('world.goalSetting');
+  }
+}
 
 function getGoalProgress(
   goal: { type: 'distance' | 'time' | 'pace' | 'program' | null; value: number | null; targetTime?: number | null },
@@ -1767,31 +1795,15 @@ export default function WorldScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ===== Run FAB column: settings / goal / start ===== */}
-        {phase === 'idle' && !selectedMarker && !is3DMode && !navigatingToStart && !touring && (
-          <>
-            <TouchableOpacity
-              style={styles.fabSettings}
-              onPress={() => setSettingsSheetVisible(true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="settings-outline" size={18} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.fabGoal}
-              onPress={() => setGoalSheetVisible(true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="flag-outline" size={18} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.fabRun}
-              onPress={handleStartFreeRun}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="fitness" size={20} color={COLORS.white} />
-            </TouchableOpacity>
-          </>
+        {/* Run FAB — visible during tour mode to quickly start running */}
+        {touring && phase === 'idle' && (
+          <TouchableOpacity
+            style={styles.fabRun}
+            onPress={() => { setTouring(false); setWelcomeVisible(true); }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="fitness" size={20} color={COLORS.white} />
+          </TouchableOpacity>
         )}
 
         {/* ===== HUD overlay when marker selected ===== */}
@@ -1950,7 +1962,14 @@ export default function WorldScreen() {
 
       </Animated.View>
 
-      {/* RunStartOverlay removed — replaced by run FAB on recenter column */}
+      {/* Run Start Overlay */}
+      <RunStartOverlay
+        visible={phase === 'idle' && !selectedMarker && !is3DMode && !navigatingToStart && !touring}
+        onStart={handleStartFreeRun}
+        onGoalPress={() => setGoalSheetVisible(true)}
+        onSettingsPress={() => setSettingsSheetVisible(true)}
+        goalLabel={formatGoalLabel(runGoal, t)}
+      />
 
       {/* Welcome overlay — hidden during tour mode */}
       <WelcomeOverlay
@@ -2940,35 +2959,9 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
 
   // Run FAB (below recenter)
-  fabSettings: {
-    position: 'absolute',
-    top: 210,
-    right: SPACING.xl,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: c.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 95,
-    ...SHADOWS.md,
-  },
-  fabGoal: {
-    position: 'absolute',
-    top: 260,
-    right: SPACING.xl,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: c.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 95,
-    ...SHADOWS.md,
-  },
   fabRun: {
     position: 'absolute',
-    top: 310,
+    top: 210,
     right: SPACING.xl,
     width: 40,
     height: 40,
