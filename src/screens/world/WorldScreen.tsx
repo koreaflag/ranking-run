@@ -1757,7 +1757,7 @@ export default function WorldScreen() {
 
       {/* ===== WORLD MODE OVERLAYS (fade out during running) ===== */}
       <Animated.View
-        style={[StyleSheet.absoluteFill, { opacity: worldOverlayOpacity }]}
+        style={[StyleSheet.absoluteFill, { opacity: worldOverlayOpacity, zIndex: 95 }]}
         pointerEvents={isInRun ? 'none' : 'box-none'}
       >
         {/* ===== Unified recenter button (always visible) ===== */}
@@ -2950,7 +2950,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 60,
+    zIndex: 95,
     ...SHADOWS.md,
   },
   fabGoal: {
@@ -2963,7 +2963,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 60,
+    zIndex: 95,
     ...SHADOWS.md,
   },
   fabRun: {
@@ -2976,7 +2976,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 60,
+    zIndex: 95,
     ...SHADOWS.md,
   },
 
