@@ -54,51 +54,64 @@ export default function RunStartOverlay({
 
   const hasGoal = goalLabel != null && goalLabel !== defaultGoalLabel && goalLabel !== t('world.goalSetting');
 
+  const hitSlop = { top: 12, bottom: 12, left: 12, right: 12 };
+
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        {
-          transform: [{ translateY }],
-          opacity,
-        },
-      ]}
-      pointerEvents={visible ? 'auto' : 'none'}
-    >
-      {/* Main row: settings / start / goal */}
-      <View style={styles.row}>
-        {/* Settings button */}
-        <TouchableOpacity
-          style={styles.sideButton}
-          onPress={onSettingsPress}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="settings-outline" size={24} color={colors.textSecondary} />
-        </TouchableOpacity>
+    <View style={styles.container} pointerEvents={visible ? 'box-none' : 'none'}>
+      <Animated.View
+        style={[
+          styles.innerContainer,
+          {
+            transform: [{ translateY }],
+            opacity,
+          },
+        ]}
+      >
+        {/* Goal label chip — shown when a goal is set */}
+        {hasGoal && (
+          <TouchableOpacity style={styles.goalChip} onPress={onGoalPress} activeOpacity={0.7} hitSlop={hitSlop}>
+            <Ionicons name="flag" size={14} color={colors.primary} />
+            <Text style={styles.goalChipText} numberOfLines={1}>{goalLabel}</Text>
+          </TouchableOpacity>
+        )}
 
-        {/* Big start button */}
-        <TouchableOpacity
-          style={styles.startButton}
-          onPress={onStart}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.startText}>{t('running.controls.start')}</Text>
-        </TouchableOpacity>
+        {/* Main row: settings / start / goal */}
+        <View style={styles.row}>
+          {/* Settings button */}
+          <TouchableOpacity
+            style={styles.sideButton}
+            onPress={onSettingsPress}
+            activeOpacity={0.7}
+            hitSlop={hitSlop}
+          >
+            <Ionicons name="settings-outline" size={24} color={colors.textSecondary} />
+          </TouchableOpacity>
 
-        {/* Goal button */}
-        <TouchableOpacity
-          style={[styles.sideButton, hasGoal && styles.sideButtonActive]}
-          onPress={onGoalPress}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={hasGoal ? 'flag' : 'flag-outline'}
-            size={24}
-            color={hasGoal ? colors.primary : colors.textSecondary}
-          />
-        </TouchableOpacity>
-      </View>
-    </Animated.View>
+          {/* Big start button */}
+          <TouchableOpacity
+            style={styles.startButton}
+            onPress={onStart}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.startText}>{t('running.controls.start')}</Text>
+          </TouchableOpacity>
+
+          {/* Goal button */}
+          <TouchableOpacity
+            style={[styles.sideButton, hasGoal && styles.sideButtonActive]}
+            onPress={onGoalPress}
+            activeOpacity={0.7}
+            hitSlop={hitSlop}
+          >
+            <Ionicons
+              name={hasGoal ? 'flag' : 'flag-outline'}
+              size={24}
+              color={hasGoal ? colors.primary : colors.textSecondary}
+            />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -110,6 +123,8 @@ const createStyles = (c: ThemeColors) =>
       left: 0,
       right: 0,
       zIndex: 100,
+    },
+    innerContainer: {
       alignItems: 'center',
       gap: SPACING.md,
     },
@@ -156,5 +171,21 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '900',
       color: COLORS.white,
       letterSpacing: 2,
+    },
+    goalChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xs,
+      backgroundColor: c.card,
+      paddingHorizontal: SPACING.lg,
+      paddingVertical: SPACING.sm,
+      borderRadius: 20,
+      ...SHADOWS.sm,
+    },
+    goalChipText: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '700',
+      color: c.text,
+      maxWidth: 200,
     },
   });
