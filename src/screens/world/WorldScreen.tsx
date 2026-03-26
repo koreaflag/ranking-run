@@ -1767,21 +1767,26 @@ export default function WorldScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ===== Run start FAB + settings FAB ===== */}
+        {/* ===== Run FAB column: settings / goal / start ===== */}
         {phase === 'idle' && !selectedMarker && !is3DMode && !navigatingToStart && !touring && (
           <>
             <TouchableOpacity
-              style={styles.runSettingsFab}
+              style={styles.fabSettings}
               onPress={() => setSettingsSheetVisible(true)}
-              onLongPress={() => setGoalSheetVisible(true)}
               activeOpacity={0.7}
             >
-              <Ionicons name="options" size={15} color={colors.textSecondary} />
+              <Ionicons name="settings-outline" size={18} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.runFab}
+              style={styles.fabGoal}
+              onPress={() => setGoalSheetVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="flag-outline" size={18} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.fabRun}
               onPress={handleStartFreeRun}
-              onLongPress={() => setGoalSheetVisible(true)}
               activeOpacity={0.85}
             >
               <Ionicons name="fitness" size={20} color={COLORS.white} />
@@ -2935,22 +2940,35 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
 
   // Run FAB (below recenter)
-  runSettingsFab: {
+  fabSettings: {
     position: 'absolute',
-    top: 210, // recenter(160) + height(40) + gap(10)
+    top: 210,
     right: SPACING.xl,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 60,
-    ...SHADOWS.sm,
+    ...SHADOWS.md,
   },
-  runFab: {
+  fabGoal: {
     position: 'absolute',
-    top: 250, // settings(210) + height(30) + gap(10)
+    top: 260,
+    right: SPACING.xl,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: c.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 60,
+    ...SHADOWS.md,
+  },
+  fabRun: {
+    position: 'absolute',
+    top: 310,
     right: SPACING.xl,
     width: 40,
     height: 40,
