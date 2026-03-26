@@ -225,11 +225,12 @@ export default function WelcomeOverlay({
     : null;
 
   return (
-    <Animated.View
-      style={[styles.container, { opacity }]}
+    <View
+      style={styles.container}
       pointerEvents={visible ? 'box-none' : 'none'}
     >
-      <View style={[styles.backdrop, { backgroundColor: overlayBg }]} pointerEvents="none" />
+      <Animated.View style={[StyleSheet.absoluteFillObject, { opacity }]} pointerEvents="none">
+        <View style={[styles.backdrop, { backgroundColor: overlayBg }]} />
 
       {/* ===== Greeting phase ===== */}
       <Animated.View style={[styles.centerArea, { opacity: greetingGroupOpacity }]} pointerEvents="none">
@@ -382,21 +383,24 @@ export default function WelcomeOverlay({
           </Text>
         )}
       </Animated.View>
+      </Animated.View>
 
-      {/* Tour button */}
+      {/* Tour button — outside the pointerEvents="none" Animated.View so it remains tappable */}
       {onTour && (
-        <TouchableOpacity
-          style={[styles.tourButton, { backgroundColor: tourBtnBg }]}
-          onPress={onTour}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="compass-outline" size={16} color={tourBtnText} />
-          <Text style={[styles.tourText, { color: tourBtnText }]}>
-            {t('world.welcome.tour')}
-          </Text>
-        </TouchableOpacity>
+        <Animated.View style={{ opacity }} pointerEvents="auto">
+          <TouchableOpacity
+            style={[styles.tourButton, { backgroundColor: tourBtnBg }]}
+            onPress={onTour}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="compass-outline" size={16} color={tourBtnText} />
+            <Text style={[styles.tourText, { color: tourBtnText }]}>
+              {t('world.welcome.tour')}
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
       )}
-    </Animated.View>
+    </View>
   );
 }
 
