@@ -174,13 +174,23 @@ function formatGoalLabel(goal: RunGoal, t: (key: string, opts?: Record<string, u
       const targetMins = goal.targetTime ? Math.floor(goal.targetTime / 60) : 0;
       return `${km}km · ${targetMins}분`;
     }
+    case 'interval': {
+      const runMin = Math.floor((goal.intervalRunSeconds ?? 0) / 60);
+      const runSec = (goal.intervalRunSeconds ?? 0) % 60;
+      const walkMin = Math.floor((goal.intervalWalkSeconds ?? 0) / 60);
+      const walkSec = (goal.intervalWalkSeconds ?? 0) % 60;
+      const sets = goal.intervalSets ?? 0;
+      const runLabel = runSec > 0 ? `${runMin}분${runSec}초` : `${runMin}분`;
+      const walkLabel = walkSec > 0 ? `${walkMin}분${walkSec}초` : `${walkMin}분`;
+      return `${runLabel}/${walkLabel} ×${sets}`;
+    }
     default:
       return t('world.goalSetting');
   }
 }
 
 function getGoalProgress(
-  goal: { type: 'distance' | 'time' | 'pace' | 'program' | null; value: number | null; targetTime?: number | null },
+  goal: { type: 'distance' | 'time' | 'pace' | 'program' | 'interval' | null; value: number | null; targetTime?: number | null; intervalRunSeconds?: number; intervalWalkSeconds?: number; intervalSets?: number },
   distanceMeters: number,
   durationSeconds: number,
   avgPace: number,
@@ -218,6 +228,15 @@ function getGoalProgress(
         label: `${metersToKm(distanceMeters)} / ${targetKm} km${deltaLabel}`,
         reached: distanceMeters >= goal.value,
       };
+    }
+    case 'interval': {
+      const totalSecs = goal.value ?? 0;
+      if (totalSecs <= 0) return null;
+      const pct = Math.min(100, (durationSeconds / totalSecs) * 100);
+      const sets = goal.intervalSets ?? 0;
+      const cycleDur = (goal.intervalRunSeconds ?? 0) + (goal.intervalWalkSeconds ?? 0);
+      const currentSet = cycleDur > 0 ? Math.min(Math.floor(durationSeconds / cycleDur) + 1, sets) : 0;
+      return { percent: pct, label: `${currentSet}/${sets} 세트`, reached: pct >= 100 };
     }
     default:
       return null;

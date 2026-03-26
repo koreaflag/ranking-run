@@ -34,6 +34,7 @@ import { useLiveActivity } from '../../hooks/useLiveActivity';
 import { useRunningChunkUpload } from '../../hooks/useRunningChunkUpload';
 import { useRunningSessionPersistence } from '../../hooks/useRunningSessionPersistence';
 import { usePaceCoaching } from '../../hooks/usePaceCoaching';
+import { useIntervalTraining } from '../../hooks/useIntervalTraining';
 import { useTheme } from '../../hooks/useTheme';
 import SplitHistoryPanel from '../../components/running/SplitHistoryPanel';
 import i18n from '../../i18n';
@@ -125,6 +126,16 @@ export default function RunningScreen() {
     avgPace: avgPaceSecondsPerKm,
     phase,
     splits,
+  });
+
+  // Interval training
+  const intervalState = useIntervalTraining({
+    enabled: runGoal?.type === 'interval',
+    runSeconds: runGoal?.intervalRunSeconds ?? 0,
+    walkSeconds: runGoal?.intervalWalkSeconds ?? 0,
+    sets: runGoal?.intervalSets ?? 0,
+    elapsedSeconds: durationSeconds,
+    phase,
   });
 
   // Metronome auto-start/stop
@@ -495,6 +506,8 @@ export default function RunningScreen() {
       reached = true;
     } else if (runGoal.type === 'program' && distanceMeters >= runGoal.value) {
       reached = true;
+    } else if (runGoal.type === 'interval' && intervalState?.isCompleted) {
+      reached = true;
     }
 
     if (reached) {
@@ -515,7 +528,7 @@ export default function RunningScreen() {
         }
       })();
     }
-  }, [phase, runGoal, distanceMeters, durationSeconds, hapticFeedback, stopTracking, complete, navigation, checkpointPasses, setCheckpointPasses, t]);
+  }, [phase, runGoal, distanceMeters, durationSeconds, hapticFeedback, stopTracking, complete, navigation, checkpointPasses, setCheckpointPasses, t, intervalState?.isCompleted]);
 
   // Voice guidance for course navigation + program goal pace coaching
   const paceCoachingTTSMessage: string | null = paceCoaching
@@ -676,7 +689,7 @@ export default function RunningScreen() {
               </Text>
             </TouchableOpacity>
           )}
-          {(courseId || runGoal?.type === 'program') && (
+          {(courseId || runGoal?.type === 'program' || runGoal?.type === 'interval') && (
             <TouchableOpacity
               style={styles.voiceChip}
               onPress={() => setVoiceGuidance(!voiceGuidance)}
@@ -803,6 +816,28 @@ export default function RunningScreen() {
                 : `-${Math.abs(Math.round(paceCoaching.timeDelta))}s`}
               {' · '}
               {formatPace(paceCoaching.requiredPace)} → {formatPace(paceCoaching.currentPace)}
+            </Text>
+          </View>
+        )}
+
+        {/* Interval training banner */}
+        {intervalState && phase === 'running' && !intervalState.isCompleted && (
+          <View style={[
+            styles.paceCoachingBanner,
+            { backgroundColor: intervalState.currentPhase === 'run' ? colors.primary + 'DD' : colors.success + 'DD' },
+          ]}>
+            <Ionicons
+              name={intervalState.currentPhase === 'run' ? 'flash' : 'walk'}
+              size={16}
+              color={colors.white}
+            />
+            <Text style={styles.paceCoachingText}>
+              {intervalState.currentPhase === 'run' ? t('running.interval.run') : t('running.interval.walk')}
+              {' · '}
+              {formatDuration(intervalState.phaseRemainingSeconds)}
+            </Text>
+            <Text style={[styles.paceCoachingText, { opacity: 0.8 }]}>
+              {intervalState.currentSet}/{intervalState.totalSets}
             </Text>
           </View>
         )}

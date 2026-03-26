@@ -72,10 +72,13 @@ export interface PersistedRunningSession {
 
   // Run goal
   runGoal: {
-    type: 'distance' | 'time' | 'pace' | 'program' | null;
+    type: 'distance' | 'time' | 'pace' | 'program' | 'interval' | null;
     value: number | null;
     targetTime?: number | null;
     cadenceBPM?: number | null;
+    intervalRunSeconds?: number;
+    intervalWalkSeconds?: number;
+    intervalSets?: number;
   };
 
   // Metadata

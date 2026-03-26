@@ -99,10 +99,13 @@ interface RunningState {
 
   // Run goal
   runGoal: {
-    type: 'distance' | 'time' | 'pace' | 'program' | null;
+    type: 'distance' | 'time' | 'pace' | 'program' | 'interval' | null;
     value: number | null;
     targetTime?: number | null;
     cadenceBPM?: number | null;
+    intervalRunSeconds?: number;
+    intervalWalkSeconds?: number;
+    intervalSets?: number;
   };
 
   // Actions
@@ -124,7 +127,7 @@ interface RunningState {
   setWatchConnected: (connected: boolean) => void;
   setCheckpointPasses: (passes: CheckpointPass[]) => void;
   setAutoPaused: (paused: boolean) => void;
-  setRunGoal: (goal: { type: 'distance' | 'time' | 'pace' | 'program' | null; value: number | null; targetTime?: number | null; cadenceBPM?: number | null }) => void;
+  setRunGoal: (goal: { type: 'distance' | 'time' | 'pace' | 'program' | 'interval' | null; value: number | null; targetTime?: number | null; cadenceBPM?: number | null; intervalRunSeconds?: number; intervalWalkSeconds?: number; intervalSets?: number }) => void;
   addSnappedPoint: (coord: { latitude: number; longitude: number }) => void;
   restoreSession: (data: {
     sessionId: string;
@@ -153,7 +156,7 @@ interface RunningState {
     snappedRoutePoints: Array<{ latitude: number; longitude: number }>;
     deviationLog: Array<{ index: number; deviation: number }>;
     startPoint: { latitude: number; longitude: number } | null;
-    runGoal: { type: 'distance' | 'time' | 'pace' | 'program' | null; value: number | null; targetTime?: number | null; cadenceBPM?: number | null };
+    runGoal: { type: 'distance' | 'time' | 'pace' | 'program' | 'interval' | null; value: number | null; targetTime?: number | null; cadenceBPM?: number | null; intervalRunSeconds?: number; intervalWalkSeconds?: number; intervalSets?: number };
   }) => void;
 }
 

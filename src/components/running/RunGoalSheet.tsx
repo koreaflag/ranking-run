@@ -23,10 +23,13 @@ import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constan
 // ---- Types ----
 
 export interface RunGoal {
-  type: 'distance' | 'time' | 'pace' | 'program' | null;
-  value: number | null; // meters for distance, seconds for time, seconds/km for pace, meters for program
+  type: 'distance' | 'time' | 'pace' | 'program' | 'interval' | null;
+  value: number | null; // meters for distance, seconds for time, seconds/km for pace, meters for program, total seconds for interval
   targetTime?: number | null; // program: target time in seconds
   cadenceBPM?: number | null; // program: metronome BPM (null/0 = off)
+  intervalRunSeconds?: number; // interval: run phase duration
+  intervalWalkSeconds?: number; // interval: walk phase duration
+  intervalSets?: number; // interval: number of sets
 }
 
 interface RunGoalSheetProps {
@@ -68,14 +71,31 @@ const PROGRAM_DISTANCE_PRESETS = [
   { label: '21km', value: 21097 },
 ];
 
-type GoalType = 'distance' | 'time' | 'pace' | 'program';
+type GoalType = 'distance' | 'time' | 'pace' | 'program' | 'interval';
 
 const GOAL_TYPES: Array<{ type: GoalType; label: string; icon: string }> = [
   { type: 'distance', label: '거리', icon: 'flag-outline' },
   { type: 'time', label: '시간', icon: 'timer-outline' },
   { type: 'pace', label: '페이스', icon: 'speedometer-outline' },
   { type: 'program', label: '목표 러닝', icon: 'trophy-outline' },
+  { type: 'interval', label: '인터벌', icon: 'repeat-outline' },
 ];
+
+const INTERVAL_RUN_PRESETS = [
+  { label: '1분', value: 60 },
+  { label: '2분', value: 120 },
+  { label: '3분', value: 180 },
+  { label: '5분', value: 300 },
+];
+
+const INTERVAL_WALK_PRESETS = [
+  { label: '30초', value: 30 },
+  { label: '1분', value: 60 },
+  { label: '2분', value: 120 },
+  { label: '3분', value: 180 },
+];
+
+const INTERVAL_SET_PRESETS = [3, 5, 8, 10];
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -327,6 +347,12 @@ export default function RunGoalSheet({
   const [selectedValue, setSelectedValue] = useState<number | null>(goal.value);
   const [customInput, setCustomInput] = useState('');
 
+  // Interval-specific local state
+  const [intervalRunSec, setIntervalRunSec] = useState(goal.type === 'interval' ? (goal.intervalRunSeconds ?? 180) : 180);
+  const [intervalWalkSec, setIntervalWalkSec] = useState(goal.type === 'interval' ? (goal.intervalWalkSeconds ?? 60) : 60);
+  const [intervalSets, setIntervalSets] = useState(goal.type === 'interval' ? (goal.intervalSets ?? 5) : 5);
+  const [intervalCustomSets, setIntervalCustomSets] = useState('');
+
   // Program-specific local state
   const [programDistance, setProgramDistance] = useState<number | null>(
     goal.type === 'program' ? goal.value : null,
@@ -345,6 +371,12 @@ export default function RunGoalSheet({
     setSelectedType(goal.type);
     setSelectedValue(goal.value);
     setCustomInput('');
+    if (goal.type === 'interval') {
+      setIntervalRunSec(goal.intervalRunSeconds ?? 180);
+      setIntervalWalkSec(goal.intervalWalkSeconds ?? 60);
+      setIntervalSets(goal.intervalSets ?? 5);
+      setIntervalCustomSets('');
+    }
     if (goal.type === 'program') {
       setProgramDistance(goal.value);
       setProgramDistanceCustom(
@@ -402,6 +434,12 @@ export default function RunGoalSheet({
         setManualBpmInput('');
         setIsAutoCadence(true);
       }
+      if (type === 'interval') {
+        setIntervalRunSec(180);
+        setIntervalWalkSec(60);
+        setIntervalSets(5);
+        setIntervalCustomSets('');
+      }
     }
     setCustomInput('');
   };
@@ -453,11 +491,26 @@ export default function RunGoalSheet({
     setSelectedCadence(0);
     setManualBpmInput('');
     setIsAutoCadence(true);
+    setIntervalRunSec(180);
+    setIntervalWalkSec(60);
+    setIntervalSets(5);
+    setIntervalCustomSets('');
     onGoalChange({ type: null, value: null, targetTime: null, cadenceBPM: null });
   };
 
   const handleConfirm = () => {
-    if (selectedType === 'program') {
+    if (selectedType === 'interval') {
+      const totalSecs = (intervalRunSec + intervalWalkSec) * intervalSets;
+      onGoalChange({
+        type: 'interval',
+        value: totalSecs,
+        targetTime: null,
+        cadenceBPM: null,
+        intervalRunSeconds: intervalRunSec,
+        intervalWalkSeconds: intervalWalkSec,
+        intervalSets,
+      });
+    } else if (selectedType === 'program') {
       const totalSecs = programTimeHours * 3600 + programTimeMinutes * 60 + programTimeSeconds;
       onGoalChange({
         type: 'program',
@@ -842,6 +895,159 @@ export default function RunGoalSheet({
                     <Text style={styles.pgSummaryText}>
                       {(programDistance! / 1000).toFixed(1)}km · {formatTimeInput(programTargetTime)} · {formatPaceValue(computedPace!)} /km
                       {selectedCadence > 0 ? ` · ${selectedCadence} BPM` : ''}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Interval goal type: run time + walk time + sets */}
+            {selectedType === 'interval' && (
+              <View style={styles.valueSection}>
+                {/* ① Run duration */}
+                <View style={styles.pgSection}>
+                  <View style={styles.pgHeader}>
+                    <View style={styles.pgBadge}><Text style={styles.pgBadgeText}>1</Text></View>
+                    <Ionicons name="flash-outline" size={16} color={colors.primary} />
+                    <Text style={styles.pgHeaderText}>달리기 시간</Text>
+                    <Text style={styles.pgTimeTag}>{formatTimeInput(intervalRunSec)}</Text>
+                  </View>
+                  <View style={styles.pgChipRow}>
+                    {INTERVAL_RUN_PRESETS.map((preset) => {
+                      const isActive = intervalRunSec === preset.value;
+                      return (
+                        <TouchableOpacity
+                          key={preset.value}
+                          style={[styles.pgChip, isActive && styles.pgChipActive]}
+                          onPress={() => setIntervalRunSec(preset.value)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.pgChipText, isActive && styles.pgChipTextActive]}>
+                            {preset.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <View style={styles.pgWheelRow}>
+                    <WheelPicker
+                      values={MINUTES_RANGE}
+                      selected={Math.floor(intervalRunSec / 60)}
+                      onSelect={(m) => setIntervalRunSec(m * 60 + (intervalRunSec % 60))}
+                      label="분"
+                      colors={colors}
+                    />
+                    <Text style={styles.pgWheelSep}>:</Text>
+                    <WheelPicker
+                      values={SECONDS_RANGE}
+                      selected={intervalRunSec % 60}
+                      onSelect={(s) => setIntervalRunSec(Math.floor(intervalRunSec / 60) * 60 + s)}
+                      label="초"
+                      colors={colors}
+                    />
+                  </View>
+                </View>
+
+                {/* ② Walk duration */}
+                <View style={styles.pgSection}>
+                  <View style={styles.pgHeader}>
+                    <View style={styles.pgBadge}><Text style={styles.pgBadgeText}>2</Text></View>
+                    <Ionicons name="walk-outline" size={16} color={colors.primary} />
+                    <Text style={styles.pgHeaderText}>걷기 시간</Text>
+                    <Text style={styles.pgTimeTag}>{formatTimeInput(intervalWalkSec)}</Text>
+                  </View>
+                  <View style={styles.pgChipRow}>
+                    {INTERVAL_WALK_PRESETS.map((preset) => {
+                      const isActive = intervalWalkSec === preset.value;
+                      return (
+                        <TouchableOpacity
+                          key={preset.value}
+                          style={[styles.pgChip, isActive && styles.pgChipActive]}
+                          onPress={() => setIntervalWalkSec(preset.value)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.pgChipText, isActive && styles.pgChipTextActive]}>
+                            {preset.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <View style={styles.pgWheelRow}>
+                    <WheelPicker
+                      values={MINUTES_RANGE}
+                      selected={Math.floor(intervalWalkSec / 60)}
+                      onSelect={(m) => setIntervalWalkSec(m * 60 + (intervalWalkSec % 60))}
+                      label="분"
+                      colors={colors}
+                    />
+                    <Text style={styles.pgWheelSep}>:</Text>
+                    <WheelPicker
+                      values={SECONDS_RANGE}
+                      selected={intervalWalkSec % 60}
+                      onSelect={(s) => setIntervalWalkSec(Math.floor(intervalWalkSec / 60) * 60 + s)}
+                      label="초"
+                      colors={colors}
+                    />
+                  </View>
+                </View>
+
+                {/* ③ Number of sets */}
+                <View style={styles.pgSection}>
+                  <View style={styles.pgHeader}>
+                    <View style={styles.pgBadge}><Text style={styles.pgBadgeText}>3</Text></View>
+                    <Ionicons name="repeat-outline" size={16} color={colors.primary} />
+                    <Text style={styles.pgHeaderText}>세트 수</Text>
+                  </View>
+                  <View style={styles.pgChipRow}>
+                    {INTERVAL_SET_PRESETS.map((n) => {
+                      const isActive = intervalSets === n && !intervalCustomSets;
+                      return (
+                        <TouchableOpacity
+                          key={n}
+                          style={[styles.pgChip, isActive && styles.pgChipActive]}
+                          onPress={() => { setIntervalSets(n); setIntervalCustomSets(''); }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.pgChipText, isActive && styles.pgChipTextActive]}>
+                            {n}세트
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <View style={styles.pgCustomRow}>
+                    <View style={styles.pgCustomInputWrap}>
+                      <TextInput
+                        style={styles.pgCustomInput}
+                        keyboardType="number-pad"
+                        value={intervalCustomSets}
+                        onChangeText={(v) => {
+                          const cleaned = v.replace(/[^0-9]/g, '');
+                          setIntervalCustomSets(cleaned);
+                          const num = parseInt(cleaned, 10);
+                          if (!isNaN(num) && num > 0 && num <= 99) {
+                            setIntervalSets(num);
+                          }
+                        }}
+                        placeholder="직접 입력"
+                        placeholderTextColor={colors.textTertiary}
+                        returnKeyType="done"
+                        selectTextOnFocus
+                      />
+                      <Text style={styles.pgCustomUnit}>세트</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Summary banner */}
+                {intervalRunSec > 0 && intervalWalkSec > 0 && intervalSets > 0 && (
+                  <View style={styles.pgSummary}>
+                    <Text style={styles.pgSummaryText}>
+                      {formatTimeInput(intervalRunSec)} 달리기 / {formatTimeInput(intervalWalkSec)} 걷기 × {intervalSets}세트
+                    </Text>
+                    <Text style={[styles.pgSummaryText, { marginTop: 2, opacity: 0.8 }]}>
+                      총 {formatTimeInput((intervalRunSec + intervalWalkSec) * intervalSets)}
                     </Text>
                   </View>
                 )}

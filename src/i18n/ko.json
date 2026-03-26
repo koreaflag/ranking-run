@@ -140,6 +140,10 @@
       "loopComplete": "완주! 루프 완성",
       "approachingStart": "출발점 접근 ~{{distance}}m"
     },
+    "interval": {
+      "run": "달리기",
+      "walk": "걷기"
+    },
     "countdown": {
       "ready": "준비하세요"
     },
@@ -750,7 +754,10 @@
     "paceBehind": "속도를 올리세요. 목표보다 {{seconds}}초 느립니다",
     "paceCritical": "목표 달성이 어렵습니다. 더 빨리 뛰세요",
     "uphillAhead": "전방 {{meters}}미터 오르막이 있습니다",
-    "downhillAhead": "전방 {{meters}}미터 내리막이 있습니다"
+    "downhillAhead": "전방 {{meters}}미터 내리막이 있습니다",
+    "intervalRun": "달리기 구간. {{set}}세트 중 {{total}}세트",
+    "intervalWalk": "걷기 구간",
+    "intervalComplete": "인터벌 훈련 완료"
   },
   "directions": {
     "straight": "직진",

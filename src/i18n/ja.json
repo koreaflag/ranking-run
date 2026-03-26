@@ -140,6 +140,10 @@
       "loopComplete": "完走！ループ完成",
       "approachingStart": "スタート地点に接近 ~{{distance}}m"
     },
+    "interval": {
+      "run": "ラン",
+      "walk": "ウォーク"
+    },
     "countdown": {
       "ready": "準備してください"
     },
@@ -803,7 +807,10 @@
     "paceBehind": "スピードアップしてください。目標より{{seconds}}秒遅れています",
     "paceCritical": "目標達成が困難です。もっと速く走ってください",
     "uphillAhead": "前方{{meters}}mの上り坂があります",
-    "downhillAhead": "前方{{meters}}mの下り坂があります"
+    "downhillAhead": "前方{{meters}}mの下り坂があります",
+    "intervalRun": "ランニング区間。セット{{set}}/{{total}}",
+    "intervalWalk": "ウォーキング区間",
+    "intervalComplete": "インターバルトレーニング完了"
   },
   "directions": {
     "straight": "直進",

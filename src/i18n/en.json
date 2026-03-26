@@ -140,6 +140,10 @@
       "loopComplete": "Finish! Loop complete",
       "approachingStart": "Approaching start ~{{distance}}m"
     },
+    "interval": {
+      "run": "RUN",
+      "walk": "WALK"
+    },
     "countdown": {
       "ready": "Get Ready"
     },
@@ -803,7 +807,10 @@
     "paceBehind": "Speed up. You're {{seconds}} seconds behind target",
     "paceCritical": "Target is at risk. Run faster",
     "uphillAhead": "{{meters}}m uphill ahead",
-    "downhillAhead": "{{meters}}m downhill ahead"
+    "downhillAhead": "{{meters}}m downhill ahead",
+    "intervalRun": "Run phase. Set {{set}} of {{total}}",
+    "intervalWalk": "Walk phase",
+    "intervalComplete": "Interval training complete"
   },
   "directions": {
     "straight": "go straight",
