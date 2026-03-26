@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo, useState } from 'react';
-import { StyleSheet, View, Text, Platform, Animated, Image } from 'react-native';
+import { StyleSheet, View, Text, Platform, Animated, Easing, Image } from 'react-native';
 import Mapbox, { UserTrackingMode } from '@rnmapbox/maps';
 import { Ionicons } from '../../lib/icons';
 import { COLORS, DIFFICULTY_COLORS, type DifficultyLevel } from '../../utils/constants';
@@ -249,7 +249,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
   const colors = useTheme();
   const isDark = colors.statusBar === 'light-content';
   const mapBearingRef = useRef(0);
-  const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM);
+  const currentZoomRef = useRef(DEFAULT_ZOOM);
 
   // Smooth heading rotation animation
   const headingAnimRef = useRef(new Animated.Value(0));
@@ -280,6 +280,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
     const startTime = Date.now();
     const duration = Platform.OS === 'android' ? 800 : 500;
 
+    let frameCount = 0;
     const animate = () => {
       const elapsed = Date.now() - startTime;
       const t = Math.min(elapsed / duration, 1);
@@ -288,7 +289,11 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
       const lng = startLng + (target.lng - startLng) * ease;
       const lat = startLat + (target.lat - startLat) * ease;
       markerCurrentRef.current = { lng, lat };
-      setSmoothMarkerPos([lng, lat]);
+      frameCount++;
+      // Throttle state updates to every 2nd frame (~33ms) to reduce re-renders
+      if (frameCount % 2 === 0 || t >= 1) {
+        setSmoothMarkerPos([lng, lat]);
+      }
       if (t < 1) {
         markerAnimFrameRef.current = requestAnimationFrame(animate);
       }
@@ -561,9 +566,9 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
       const bearing = feature?.properties?.heading;
       if (bearing != null) mapBearingRef.current = bearing;
 
-      // Track zoom level for conditional marker rendering
+      // Track zoom level (ref — no re-render needed)
       const zoom = feature?.properties?.zoomLevel;
-      if (zoom != null) setCurrentZoom(zoom);
+      if (zoom != null) currentZoomRef.current = zoom;
 
       // Detect user-initiated map gesture (pan/zoom/rotate)
       const isUserInteraction = feature?.properties?.isUserInteraction;
@@ -859,6 +864,8 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
                 key={`course-${m.id}`}
                 coordinate={[m.start_lng, m.start_lat]}
                 anchor={{ x: 0.5, y: 0.5 }}
+                allowOverlap={true}
+                allowOverlapWithPuck={true}
               >
                 <View
                   style={styles.courseBadgeWrapper}
@@ -884,8 +891,11 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             );
           })}
 
-        {/* User location — show native puck when no custom marker, hide when custom is active */}
-        {(showUserLocation || onUserLocationChange) && (
+        {/* User location — unmount native puck entirely on Android when custom marker is active
+            to prevent double-layer issue (visible=false still renders native puck on some Android devices).
+            On iOS, keep it mounted with visible=false so onUpdate still fires for location callbacks. */}
+        {(showUserLocation || onUserLocationChange) &&
+         !(customUserLocation && Platform.OS === 'android') && (
           <Mapbox.UserLocation
             visible={showUserLocation && !customUserLocation}
             showsUserHeadingIndicator={showUserLocation && !customUserLocation}
@@ -906,7 +916,8 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             prevHeadingRef.current = newVal;
             Animated.timing(headingAnimRef.current, {
               toValue: newVal,
-              duration: 200,
+              duration: 300,
+              easing: Easing.out(Easing.cubic),
               useNativeDriver: true,
             }).start();
           }

@@ -8,6 +8,7 @@ export type RunEnvironment = 'outdoor' | 'indoor';
 export type VoiceGender = 'female' | 'male';
 export type ScreenOrientation = 'portrait' | 'landscape';
 export type AppLanguage = 'ko' | 'en' | 'ja';
+export type ThemeMode = 'auto' | 'light' | 'dark';
 
 interface SettingsState {
   // Language
@@ -19,7 +20,8 @@ interface SettingsState {
 
   // Preferences
   notificationsEnabled: boolean;
-  darkMode: boolean;
+  darkMode: boolean; // legacy, kept for backward compatibility
+  themeMode: ThemeMode;
   hapticFeedback: boolean;
   autoLockDisabled: boolean;
 
@@ -48,6 +50,7 @@ interface SettingsState {
   setPaceUnit: (unit: PaceUnit) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   setDarkMode: (enabled: boolean) => void;
+  setThemeMode: (mode: ThemeMode) => void;
   setHapticFeedback: (enabled: boolean) => void;
   setAutoLockDisabled: (disabled: boolean) => void;
   setAutoPause: (enabled: boolean) => void;
@@ -74,6 +77,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       notificationsEnabled: true,
       darkMode: true,
+      themeMode: 'auto',
       hapticFeedback: true,
       autoLockDisabled: true,
 
@@ -97,6 +101,7 @@ export const useSettingsStore = create<SettingsState>()(
       setPaceUnit: (unit) => set({ paceUnit: unit }),
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
       setDarkMode: (enabled) => set({ darkMode: enabled }),
+      setThemeMode: (mode) => set({ themeMode: mode }),
       setHapticFeedback: (enabled) => set({ hapticFeedback: enabled }),
       setAutoLockDisabled: (disabled) => set({ autoLockDisabled: disabled }),
       setAutoPause: (enabled) => set({ autoPause: enabled }),
@@ -125,6 +130,7 @@ export const useSettingsStore = create<SettingsState>()(
         paceUnit: state.paceUnit,
         notificationsEnabled: state.notificationsEnabled,
         darkMode: state.darkMode,
+        themeMode: state.themeMode,
         hapticFeedback: state.hapticFeedback,
         autoLockDisabled: state.autoLockDisabled,
         backgroundImageUri: state.backgroundImageUri,

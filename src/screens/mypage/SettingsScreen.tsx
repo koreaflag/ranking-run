@@ -19,7 +19,7 @@ import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
 import type { MyPageStackParamList } from '../../types/navigation';
 import { useSettingsStore } from '../../stores/settingsStore';
-import type { AppLanguage } from '../../stores/settingsStore';
+import type { AppLanguage, ThemeMode } from '../../stores/settingsStore';
 import { useAuthStore } from '../../stores/authStore';
 import i18n from '../../i18n';
 import { useTheme } from '../../hooks/useTheme';
@@ -36,8 +36,8 @@ export default function SettingsScreen() {
   const {
     language,
     setLanguage,
-    darkMode,
-    setDarkMode,
+    themeMode,
+    setThemeMode,
     voiceGuidance,
     setVoiceGuidance,
     map3DStyle,
@@ -131,24 +131,40 @@ export default function SettingsScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t('settings.appSettings')}</Text>
             <View style={styles.card}>
-              <View style={styles.toggleRow}>
+              <View style={styles.themeRow}>
                 <View style={styles.toggleLeft}>
                   <View style={styles.iconCircle}>
                     <Ionicons name="moon-outline" size={20} color={colors.primary} />
                   </View>
                   <View style={styles.toggleInfo}>
-                    <Text style={styles.toggleLabel}>{t('settings.darkMode')}</Text>
+                    <Text style={styles.toggleLabel}>{t('settings.theme')}</Text>
                     <Text style={styles.toggleDescription}>
-                      {darkMode ? t('settings.darkModeOnDesc') : t('settings.darkModeOffDesc')}
+                      {t(`settings.themeDesc_${themeMode ?? 'auto'}`)}
                     </Text>
                   </View>
                 </View>
-                <Switch
-                  value={darkMode}
-                  onValueChange={setDarkMode}
-                  trackColor={{ false: '#D1D5DB', true: '#FF7A33' }}
-                  thumbColor="#FFFFFF"
-                />
+              </View>
+              <View style={styles.segmentContainer}>
+                {(['auto', 'light', 'dark'] as ThemeMode[]).map((mode) => (
+                  <TouchableOpacity
+                    key={mode}
+                    style={[
+                      styles.segmentButton,
+                      (themeMode ?? 'auto') === mode && styles.segmentButtonActive,
+                    ]}
+                    onPress={() => setThemeMode(mode)}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.segmentLabel,
+                        (themeMode ?? 'auto') === mode && styles.segmentLabelActive,
+                      ]}
+                    >
+                      {t(`settings.themeMode_${mode}`)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
 
               <View style={styles.divider} />
@@ -385,6 +401,42 @@ const createStyles = (c: ThemeColors) =>
     toggleDescription: {
       fontSize: FONT_SIZES.sm,
       color: c.textTertiary,
+    },
+
+    // Theme segment control
+    themeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingTop: SPACING.lg,
+      paddingHorizontal: SPACING.xl,
+    },
+    segmentContainer: {
+      flexDirection: 'row',
+      marginHorizontal: SPACING.xl,
+      marginTop: SPACING.md,
+      marginBottom: SPACING.lg,
+      backgroundColor: c.surfaceLight,
+      borderRadius: BORDER_RADIUS.md,
+      padding: 3,
+    },
+    segmentButton: {
+      flex: 1,
+      paddingVertical: SPACING.sm,
+      alignItems: 'center',
+      borderRadius: BORDER_RADIUS.md - 2,
+    },
+    segmentButtonActive: {
+      backgroundColor: c.primary,
+    },
+    segmentLabel: {
+      fontSize: FONT_SIZES.sm,
+      fontWeight: '600',
+      color: c.textSecondary,
+    },
+    segmentLabelActive: {
+      color: '#FFFFFF',
+      fontWeight: '700',
     },
 
     // Language

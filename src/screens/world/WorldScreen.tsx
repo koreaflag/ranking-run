@@ -31,7 +31,7 @@ import type { RouteMapViewHandle, CourseMarkerData, Region } from '../../compone
 import type { WorldStackParamList } from '../../types/navigation';
 import type { GeoJSONLineString, CourseCheckpoint, RankingEntry } from '../../types/api';
 import type { CheckpointMarkerData } from '../../components/map/RouteMapView';
-import { RunStartOverlay, RunGoalSheet, RunSettingsSheet, WelcomeOverlay } from '../../components/running';
+import { RunGoalSheet, RunSettingsSheet, WelcomeOverlay } from '../../components/running';
 import type { RunGoal } from '../../components/running/RunGoalSheet';
 
 // Running hooks
@@ -151,34 +151,6 @@ function calcBearing(a: LatLng, b: LatLng): number {
 // Goal helpers
 // ============================================================
 
-function formatGoalLabel(goal: RunGoal, t: (key: string, opts?: Record<string, unknown>) => string): string {
-  if (!goal.type || goal.value === null) return t('world.goalSetting');
-  switch (goal.type) {
-    case 'distance':
-      return t('world.distanceGoalLabel', { value: (goal.value / 1000).toFixed(1) });
-    case 'time': {
-      const mins = Math.floor(goal.value / 60);
-      if (mins >= 60) {
-        const hours = Math.floor(mins / 60);
-        const remainder = mins % 60;
-        return remainder > 0
-          ? t('world.timeGoalLabelHM', { hours, minutes: remainder })
-          : t('world.timeGoalLabelH', { hours });
-      }
-      return t('world.timeGoalLabelM', { minutes: mins });
-    }
-    case 'pace':
-      return t('world.paceGoalLabel', { pace: `${Math.floor(goal.value / 60)}'${String(Math.floor(goal.value % 60)).padStart(2, '0')}"` });
-    case 'program': {
-      const km = (goal.value / 1000).toFixed(1);
-      const targetMins = goal.targetTime ? Math.floor(goal.targetTime / 60) : 0;
-      return `${km}km · ${targetMins}분`;
-    }
-    default:
-      return t('world.goalSetting');
-  }
-}
-
 function getGoalProgress(
   goal: { type: 'distance' | 'time' | 'pace' | 'program' | null; value: number | null; targetTime?: number | null },
   distanceMeters: number,
@@ -238,7 +210,6 @@ export default function WorldScreen() {
   const { map3DStyle, countdownSeconds, hapticFeedback, voiceGuidance } = useSettingsStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mapRef = useRef<RouteMapViewHandle>(null);
-  const [userRegion, setUserRegion] = useState<Region | null>(null);
   const [myLocation, setMyLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const myLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
   useEffect(() => { myLocationRef.current = myLocation; }, [myLocation]);
@@ -1413,8 +1384,8 @@ export default function WorldScreen() {
   }, []);
 
   const handleRegionChange = useCallback(
-    (region: Region) => {
-      setUserRegion(region);
+    (_region: Region) => {
+      // Region tracking removed — no longer needed for rendering
     },
     [],
   );
@@ -1698,7 +1669,7 @@ export default function WorldScreen() {
       {/* ===== FULL-SCREEN MAP (always visible) ===== */}
       <RouteMapView
         ref={mapRef}
-        markers={isInRun || navigatingToStart ? [] : mapMarkers}
+        markers={isInRun || navigatingToStart || is3DMode ? [] : mapMarkers}
         routePoints={isInRun && !runCourseId ? runRoutePoints : undefined}
         previewPolyline={
           isInRun
@@ -1795,6 +1766,28 @@ export default function WorldScreen() {
             <Ionicons name="locate" size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
+
+        {/* ===== Run start FAB + settings FAB ===== */}
+        {phase === 'idle' && !selectedMarker && !is3DMode && !navigatingToStart && !touring && (
+          <>
+            <TouchableOpacity
+              style={styles.runSettingsFab}
+              onPress={() => setSettingsSheetVisible(true)}
+              onLongPress={() => setGoalSheetVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="options" size={15} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.runFab}
+              onPress={handleStartFreeRun}
+              onLongPress={() => setGoalSheetVisible(true)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="fitness" size={20} color={COLORS.white} />
+            </TouchableOpacity>
+          </>
+        )}
 
         {/* ===== HUD overlay when marker selected ===== */}
         {selectedMarker && (
@@ -1952,14 +1945,7 @@ export default function WorldScreen() {
 
       </Animated.View>
 
-      {/* Run Start Overlay — hidden during tour mode */}
-      <RunStartOverlay
-        visible={phase === 'idle' && !selectedMarker && !is3DMode && !navigatingToStart && !touring}
-        onStart={handleStartFreeRun}
-        onGoalPress={() => setGoalSheetVisible(true)}
-        onSettingsPress={() => setSettingsSheetVisible(true)}
-        goalLabel={formatGoalLabel(runGoal, t)}
-      />
+      {/* RunStartOverlay removed — replaced by run FAB on recenter column */}
 
       {/* Welcome overlay — hidden during tour mode */}
       <WelcomeOverlay
@@ -2945,6 +2931,34 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.card,
     alignItems: 'center',
     justifyContent: 'center',
+    ...SHADOWS.md,
+  },
+
+  // Run FAB (below recenter)
+  runSettingsFab: {
+    position: 'absolute',
+    top: 210, // recenter(160) + height(40) + gap(10)
+    right: SPACING.xl,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: c.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 60,
+    ...SHADOWS.sm,
+  },
+  runFab: {
+    position: 'absolute',
+    top: 250, // settings(210) + height(30) + gap(10)
+    right: SPACING.xl,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 60,
     ...SHADOWS.md,
   },
 

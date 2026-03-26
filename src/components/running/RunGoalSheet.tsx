@@ -8,6 +8,7 @@ import {
   Modal,
   TextInput,
   Keyboard,
+  KeyboardAvoidingView,
   Platform,
   Dimensions,
   ScrollView,
@@ -522,7 +523,10 @@ export default function RunGoalSheet({
 
   return (
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
-      <View style={styles.modalRoot}>
+      <KeyboardAvoidingView
+        style={styles.modalRoot}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         {/* Overlay */}
         <Animated.View
           style={[styles.overlay, { opacity: overlayOpacity }]}
@@ -865,7 +869,7 @@ export default function RunGoalSheet({
             </TouchableOpacity>
           </View>
         </Animated.View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
