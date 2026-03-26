@@ -213,42 +213,6 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* Integration Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('settings.integration')}</Text>
-            <View style={styles.card}>
-              <TouchableOpacity
-                style={styles.actionRow}
-                onPress={() => navigation.navigate('ImportActivity')}
-                activeOpacity={0.7}
-              >
-                <View style={styles.toggleLeft}>
-                  <View style={styles.iconCircle}>
-                    <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
-                  </View>
-                  <Text style={styles.actionLabel}>{t('mypage.menuImport')}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-              </TouchableOpacity>
-
-              <View style={styles.divider} />
-
-              <TouchableOpacity
-                style={styles.actionRow}
-                onPress={() => navigation.navigate('StravaConnect')}
-                activeOpacity={0.7}
-              >
-                <View style={styles.toggleLeft}>
-                  <View style={[styles.iconCircle, { backgroundColor: '#FC4C0220' }]}>
-                    <Text style={{ color: '#FC4C02', fontWeight: '900', fontSize: 10 }}>STR</Text>
-                  </View>
-                  <Text style={styles.actionLabel}>{t('mypage.menuStrava')}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textTertiary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
           {/* Legal Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t('settings.legal')}</Text>

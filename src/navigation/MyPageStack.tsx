@@ -6,8 +6,6 @@ import ProfileEditScreen from '../screens/mypage/ProfileEditScreen';
 import MyCoursesScreen from '../screens/mypage/MyCoursesScreen';
 import CourseDetailScreen from '../screens/course/CourseDetailScreen';
 import UserProfileScreen from '../screens/profile/UserProfileScreen';
-import ImportActivityScreen from '../screens/mypage/ImportActivityScreen';
-import StravaConnectScreen from '../screens/mypage/StravaConnectScreen';
 import GearManageScreen from '../screens/mypage/GearManageScreen';
 import FindFriendsScreen from '../screens/mypage/FindFriendsScreen';
 import FollowListScreen from '../screens/profile/FollowListScreen';
@@ -39,8 +37,6 @@ export default function MyPageStack() {
       <Stack.Screen name="MyCourses" component={MyCoursesScreen} />
       <Stack.Screen name="CourseDetail" component={CourseDetailScreen} />
       <Stack.Screen name="UserProfile" component={UserProfileScreen} />
-      <Stack.Screen name="ImportActivity" component={ImportActivityScreen} />
-      <Stack.Screen name="StravaConnect" component={StravaConnectScreen} />
       <Stack.Screen name="GearManage" component={GearManageScreen} />
       <Stack.Screen name="FindFriends" component={FindFriendsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Settings" component={SettingsScreen} />

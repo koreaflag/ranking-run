@@ -124,8 +124,6 @@ export type MyPageStackParamList = {
   TermsOfService: undefined;
   ProfileEdit: undefined;
   UserProfile: { userId: string };
-  ImportActivity: undefined;
-  StravaConnect: undefined;
   GearManage: undefined;
   FindFriends: undefined;
   FollowList: { userId: string; type: 'followers' | 'following' };
