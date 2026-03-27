@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import * as Haptics from 'expo-haptics';
 import type { CourseCheckpoint, CheckpointPass } from '../types/api';
 
@@ -58,9 +58,10 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
 export function useCheckpointTracker(
   checkpoints: CourseCheckpoint[] | null | undefined,
 ): CheckpointTrackerResult {
-  const sorted = checkpoints
-    ? [...checkpoints].sort((a, b) => a.order - b.order)
-    : [];
+  const sorted = useMemo(
+    () => checkpoints ? [...checkpoints].sort((a, b) => a.order - b.order) : [],
+    [checkpoints],
+  );
   const total = sorted.length;
 
   const [passedSet, setPassedSet] = useState<Set<number>>(new Set());
@@ -184,14 +185,17 @@ export function useCheckpointTracker(
 
   const nextCheckpoint = nextIndexRef.current < total ? sorted[nextIndexRef.current] : null;
 
-  const markerData = sorted.map((cp) => ({
-    id: cp.id,
-    order: cp.order,
-    lat: cp.lat,
-    lng: cp.lng,
-    passed: passedSet.has(cp.id),
-    isNext: cp.id === nextCheckpoint?.id,
-  }));
+  const markerData = useMemo(
+    () => sorted.map((cp) => ({
+      id: cp.id,
+      order: cp.order,
+      lat: cp.lat,
+      lng: cp.lng,
+      passed: passedSet.has(cp.id),
+      isNext: cp.id === nextCheckpoint?.id,
+    })),
+    [sorted, passedSet, nextCheckpoint],
+  );
 
   return {
     nextCheckpoint,

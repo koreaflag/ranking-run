@@ -189,6 +189,8 @@ class RunCompleteRequest(BaseModel):
     filter_config: FilterConfig | None = None
     checkpoint_passes: list[CheckpointPass] | None = None
 
+    goal_data: dict | None = None
+
     total_chunks: int = 0
     uploaded_chunk_sequences: list[int] = []
 
@@ -271,6 +273,7 @@ class RunRecordDetail(BaseModel):
     finished_at: datetime
     course: RunCourseInfo | None = None
     course_completion: RunCourseCompletion | None = None
+    goal_data: dict | None = None
 
 
 # --- Run History ---
@@ -286,6 +289,7 @@ class RunHistoryItem(BaseModel):
     course: RunCourseInfo | None = None
     device_model: str | None = None
     route_preview: list[list[float]] | None = None
+    goal_data: dict | None = None
 
 
 class RunHistoryResponse(BaseModel):
@@ -304,6 +308,7 @@ class RecentRun(BaseModel):
     started_at: datetime
     finished_at: datetime
     course: RunCourseInfo | None = None
+    goal_data: dict | None = None
 
 
 # --- Analytics ---

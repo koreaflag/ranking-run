@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Animated,
   Modal,
@@ -13,6 +13,7 @@ import {
   Dimensions,
   ScrollView,
   Switch,
+  BackHandler,
 } from 'react-native';
 import { Ionicons } from '../../lib/icons';
 import * as Haptics from 'expo-haptics';
@@ -94,6 +95,7 @@ function buildIntervalWalkPresets(fmt: (s: number) => string) {
 const INTERVAL_SET_PRESETS = [3, 5, 7, 10];
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const IS_ANDROID = Platform.OS === 'android';
 
 /** Format seconds as M'SS" pace string */
 function formatPaceValue(secondsPerKm: number): string {
@@ -333,30 +335,30 @@ export default function RunGoalSheet({
   const INTERVAL_WALK_PRESETS = useMemo(() => buildIntervalWalkPresets(formatTimeInput), [formatTimeInput]);
 
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  const overlayOpacity = useRef(new Animated.Value(0)).current;
   const isClosingRef = useRef(false);
+
+  // Derive overlay opacity from sheet position — synced so no "extra layer" flash
+  const overlayOpacity = useMemo(
+    () => slideAnim.interpolate({ inputRange: [0, SCREEN_HEIGHT], outputRange: [1, 0] }),
+    [slideAnim],
+  );
+  const [androidShowSheet, setAndroidShowSheet] = useState(false);
 
   // Animate out then call onClose — prevents instant disappearance
   const animateClose = useCallback(() => {
     if (isClosingRef.current) return;
     isClosingRef.current = true;
     Keyboard.dismiss();
-    Animated.parallel([
-      Animated.timing(slideAnim, {
-        toValue: SCREEN_HEIGHT,
-        duration: 280,
-        useNativeDriver: true,
-      }),
-      Animated.timing(overlayOpacity, {
-        toValue: 0,
-        duration: 220,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
+    Animated.timing(slideAnim, {
+      toValue: SCREEN_HEIGHT,
+      duration: 280,
+      useNativeDriver: true,
+    }).start(() => {
       isClosingRef.current = false;
+      if (IS_ANDROID) setAndroidShowSheet(false);
       onClose();
     });
-  }, [slideAnim, overlayOpacity, onClose]);
+  }, [slideAnim, onClose]);
 
   // Local state for editing before confirming
   // Filter out legacy 'pace' type (removed from UI)
@@ -410,29 +412,31 @@ export default function RunGoalSheet({
     }
   }, [goal.type, goal.value, goal.targetTime, goal.cadenceBPM]);
 
-  // Animate sheet
+  // Animate in / reset on close
   useEffect(() => {
     if (visible) {
-      Animated.parallel([
-        Animated.spring(slideAnim, {
-          toValue: 0,
-          damping: 22,
-          stiffness: 180,
-          useNativeDriver: true,
-        }),
-        Animated.timing(overlayOpacity, {
-          toValue: 1,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      if (IS_ANDROID) setAndroidShowSheet(true);
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        damping: 22,
+        stiffness: 180,
+        useNativeDriver: true,
+      }).start();
     } else {
-      // Reset position instantly when closed (animateClose handles the animation)
       slideAnim.setValue(SCREEN_HEIGHT);
-      overlayOpacity.setValue(0);
       isClosingRef.current = false;
     }
-  }, [visible, slideAnim, overlayOpacity]);
+  }, [visible, slideAnim]);
+
+  // Android back button (replaces Modal's onRequestClose)
+  useEffect(() => {
+    if (!IS_ANDROID || !visible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      animateClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, animateClose]);
 
   const handleTypeSelect = (type: GoalType) => {
     if (selectedType === type) {
@@ -583,22 +587,17 @@ export default function RunGoalSheet({
     }
   }, [recommendedBPM, isAutoCadence, selectedType]);
 
-  return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
-      <KeyboardAvoidingView
-        style={styles.modalRoot}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        {/* Overlay */}
-        <Animated.View
-          style={[styles.overlay, { opacity: overlayOpacity }]}
-        >
-          <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
-            onPress={animateClose}
-          />
-        </Animated.View>
+  const sheetInner = (
+    <KeyboardAvoidingView
+      style={styles.modalRoot}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={styles.gestureRoot}>
+        {/* Full-screen overlay — outside dismissArea so it covers behind the sheet too */}
+        <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]} pointerEvents="none" />
+
+        {/* Dismiss area (touch target only, no background) */}
+        <Pressable style={styles.dismissArea} onPress={animateClose} />
 
         {/* Sheet */}
         <Animated.View
@@ -613,9 +612,9 @@ export default function RunGoalSheet({
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>{t('goal.title')}</Text>
-            <TouchableOpacity onPress={animateClose} activeOpacity={0.7}>
+            <Pressable onPress={animateClose}>
               <Ionicons name="close" size={24} color={colors.textSecondary} />
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
           {/* Goal type selector */}
@@ -623,14 +622,14 @@ export default function RunGoalSheet({
             {GOAL_TYPES.map(({ type, label, icon }) => {
               const isSelected = selectedType === type;
               return (
-                <TouchableOpacity
+                <Pressable
                   key={type}
                   style={[
                     styles.typeCard,
                     isSelected && styles.typeCardSelected,
                   ]}
+                  android_ripple={{ color: colors.surfaceLight, foreground: true }}
                   onPress={() => handleTypeSelect(type)}
-                  activeOpacity={0.7}
                 >
                   <Ionicons
                     name={icon as any}
@@ -645,7 +644,7 @@ export default function RunGoalSheet({
                   >
                     {label}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>
@@ -654,7 +653,7 @@ export default function RunGoalSheet({
             style={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             bounces={false}
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps="always"
           >
             {/* Simple goal types: distance/time */}
             {selectedType && selectedType !== 'program' && selectedType !== 'interval' && (
@@ -663,14 +662,14 @@ export default function RunGoalSheet({
                   {getPresets().map((preset) => {
                     const isActive = selectedValue === preset.value && !customInput;
                     return (
-                      <TouchableOpacity
+                      <Pressable
                         key={preset.value}
                         style={[
                           styles.presetChip,
                           isActive && styles.presetChipActive,
                         ]}
+                        android_ripple={{ color: colors.surfaceLight, foreground: true }}
                         onPress={() => handlePresetSelect(preset.value)}
-                        activeOpacity={0.7}
                       >
                         <Text
                           style={[
@@ -680,7 +679,7 @@ export default function RunGoalSheet({
                         >
                           {preset.label}
                         </Text>
-                      </TouchableOpacity>
+                      </Pressable>
                     );
                   })}
                 </View>
@@ -699,13 +698,13 @@ export default function RunGoalSheet({
                     />
                     <Text style={styles.customUnit}>{getCustomUnit()}</Text>
                   </View>
-                  <TouchableOpacity
+                  <Pressable
                     style={[
                       styles.customConfirmBtn,
                       !customInput && styles.customConfirmBtnDisabled,
                     ]}
+                    android_ripple={{ color: colors.surfaceLight, foreground: true }}
                     onPress={handleCustomSubmit}
-                    activeOpacity={0.7}
                     disabled={!customInput}
                   >
                     <Ionicons
@@ -713,7 +712,7 @@ export default function RunGoalSheet({
                       size={18}
                       color={customInput ? colors.white : colors.textTertiary}
                     />
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               </View>
             )}
@@ -732,19 +731,19 @@ export default function RunGoalSheet({
                     {PROGRAM_DISTANCE_PRESETS.map((preset) => {
                       const isActive = programDistance === preset.value && !programDistanceCustom;
                       return (
-                        <TouchableOpacity
+                        <Pressable
                           key={preset.value}
                           style={[styles.pgChip, isActive && styles.pgChipActive]}
+                          android_ripple={{ color: colors.surfaceLight, foreground: true }}
                           onPress={() => {
                             setProgramDistance(preset.value);
                             setProgramDistanceCustom('');
                           }}
-                          activeOpacity={0.7}
                         >
                           <Text style={[styles.pgChipText, isActive && styles.pgChipTextActive]}>
                             {preset.label}
                           </Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       );
                     })}
                   </View>
@@ -926,16 +925,16 @@ export default function RunGoalSheet({
                     {INTERVAL_RUN_PRESETS.map((preset) => {
                       const isActive = intervalRunSec === preset.value;
                       return (
-                        <TouchableOpacity
+                        <Pressable
                           key={preset.value}
                           style={[styles.pgChip, isActive && styles.pgChipActive]}
+                          android_ripple={{ color: colors.surfaceLight, foreground: true }}
                           onPress={() => setIntervalRunSec(preset.value)}
-                          activeOpacity={0.7}
                         >
                           <Text style={[styles.pgChipText, isActive && styles.pgChipTextActive]}>
                             {preset.label}
                           </Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       );
                     })}
                   </View>
@@ -954,16 +953,16 @@ export default function RunGoalSheet({
                     {INTERVAL_WALK_PRESETS.map((preset) => {
                       const isActive = intervalWalkSec === preset.value;
                       return (
-                        <TouchableOpacity
+                        <Pressable
                           key={preset.value}
                           style={[styles.pgChip, isActive && styles.pgChipActive]}
+                          android_ripple={{ color: colors.surfaceLight, foreground: true }}
                           onPress={() => setIntervalWalkSec(preset.value)}
-                          activeOpacity={0.7}
                         >
                           <Text style={[styles.pgChipText, isActive && styles.pgChipTextActive]}>
                             {preset.label}
                           </Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       );
                     })}
                   </View>
@@ -982,16 +981,16 @@ export default function RunGoalSheet({
                     {INTERVAL_SET_PRESETS.map((n) => {
                       const isActive = intervalSets === n;
                       return (
-                        <TouchableOpacity
+                        <Pressable
                           key={n}
                           style={[styles.pgChip, isActive && styles.pgChipActive]}
+                          android_ripple={{ color: colors.surfaceLight, foreground: true }}
                           onPress={() => setIntervalSets(n)}
-                          activeOpacity={0.7}
                         >
                           <Text style={[styles.pgChipText, isActive && styles.pgChipTextActive]}>
                             {t('goal.setsLabel', { count: n })}
                           </Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       );
                     })}
                   </View>
@@ -1037,25 +1036,42 @@ export default function RunGoalSheet({
 
           {/* Bottom buttons */}
           <View style={styles.bottomRow}>
-            <TouchableOpacity
+            <Pressable
               style={styles.resetButton}
+              android_ripple={{ color: colors.surfaceLight, foreground: true }}
               onPress={handleReset}
-              activeOpacity={0.7}
             >
               <Ionicons name="refresh-outline" size={18} color={colors.textSecondary} />
               <Text style={styles.resetText}>{t('goal.reset')}</Text>
-            </TouchableOpacity>
+            </Pressable>
 
-            <TouchableOpacity
+            <Pressable
               style={styles.confirmButton}
+              android_ripple={{ color: 'rgba(255,255,255,0.2)', foreground: true }}
               onPress={handleConfirm}
-              activeOpacity={0.8}
             >
               <Text style={styles.confirmText}>{t('goal.confirm')}</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </Animated.View>
-      </KeyboardAvoidingView>
+      </View>
+    </KeyboardAvoidingView>
+  );
+
+  // Android: absolute overlay (no Dialog = no touch desync)
+  // iOS: native Modal (proper UIViewController)
+  if (IS_ANDROID) {
+    if (!androidShowSheet) return null;
+    return (
+      <View style={styles.androidRoot}>
+        {sheetInner}
+      </View>
+    );
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={animateClose}>
+      {sheetInner}
     </Modal>
   );
 }
@@ -1064,13 +1080,25 @@ export default function RunGoalSheet({
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
+    androidRoot: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 9999,
+      elevation: 9999,
+    },
     modalRoot: {
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
+    gestureRoot: {
       flex: 1,
       justifyContent: 'flex-end',
     },
     overlay: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    dismissArea: {
+      flex: 1,
     },
     sheet: {
       backgroundColor: c.card,

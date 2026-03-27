@@ -33,9 +33,25 @@ type Nav = NativeStackNavigationProp<MyPageStackParamList, 'RunHistory'>;
 
 const PAGE_SIZE = 20;
 
-function getRunLabel(run: RunHistoryItem, t: (key: string) => string): string {
+function getRunLabel(run: RunHistoryItem, t: (key: string, opts?: Record<string, unknown>) => string): string {
   if (run.course) return run.course.title;
   if (run.device_model === 'Apple Watch') return t('mypage.watchRunning');
+  if (run.goal_data?.type) {
+    const km = ((run.goal_data.value ?? 0) / 1000).toFixed(1);
+    switch (run.goal_data.type) {
+      case 'interval': {
+        const rm = Math.floor((run.goal_data.intervalRunSeconds ?? 0) / 60);
+        const wm = Math.floor((run.goal_data.intervalWalkSeconds ?? 0) / 60);
+        return t('runHistory.intervalLabel', { run: rm, walk: wm, sets: run.goal_data.intervalSets ?? 0 });
+      }
+      case 'program':
+        return t('runHistory.programLabel', { km });
+      case 'distance':
+        return t('runHistory.distanceLabel', { km });
+      case 'time':
+        return t('runHistory.timeLabel');
+    }
+  }
   return t('mypage.freeRunning');
 }
 

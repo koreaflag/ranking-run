@@ -65,28 +65,26 @@ export default function RunResultScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const mapRef = useRef<RouteMapViewHandle>(null);
 
-  const {
-    distanceMeters,
-    durationSeconds,
-    avgPaceSecondsPerKm,
-    calories,
-    routePoints,
-    splits,
-    elevationGainMeters,
-    elevationLossMeters,
-    courseId,
-    loopDetected,
-    stopLocation,
-    heartRate,
-    cadence,
-    checkpointPasses,
-    chunkSequence,
-    uploadedChunkSequences,
-    deviationLog,
-    filteredLocations,
-    runGoal,
-    reset,
-  } = useRunningStore();
+  const distanceMeters = useRunningStore((s) => s.distanceMeters);
+  const durationSeconds = useRunningStore((s) => s.durationSeconds);
+  const avgPaceSecondsPerKm = useRunningStore((s) => s.avgPaceSecondsPerKm);
+  const calories = useRunningStore((s) => s.calories);
+  const routePoints = useRunningStore((s) => s.routePoints);
+  const splits = useRunningStore((s) => s.splits);
+  const elevationGainMeters = useRunningStore((s) => s.elevationGainMeters);
+  const elevationLossMeters = useRunningStore((s) => s.elevationLossMeters);
+  const courseId = useRunningStore((s) => s.courseId);
+  const loopDetected = useRunningStore((s) => s.loopDetected);
+  const stopLocation = useRunningStore((s) => s.stopLocation);
+  const heartRate = useRunningStore((s) => s.heartRate);
+  const cadence = useRunningStore((s) => s.cadence);
+  const checkpointPasses = useRunningStore((s) => s.checkpointPasses);
+  const chunkSequence = useRunningStore((s) => s.chunkSequence);
+  const uploadedChunkSequences = useRunningStore((s) => s.uploadedChunkSequences);
+  const deviationLog = useRunningStore((s) => s.deviationLog);
+  const filteredLocations = useRunningStore((s) => s.filteredLocations);
+  const runGoal = useRunningStore((s) => s.runGoal);
+  const reset = useRunningStore((s) => s.reset);
 
   // Auto-dismiss result screen when user switches to another tab
   useEffect(() => {
@@ -301,6 +299,21 @@ export default function RunResultScreen() {
         total_chunks: finalChunkSequence,
         uploaded_chunk_sequences: finalUploadedSequences,
         ...(checkpointPasses.length > 0 ? { checkpoint_passes: checkpointPasses } : {}),
+        ...(runGoal?.type ? {
+          goal_data: {
+            type: runGoal.type,
+            value: runGoal.value,
+            ...(runGoal.type === 'interval' ? {
+              intervalRunSeconds: runGoal.intervalRunSeconds,
+              intervalWalkSeconds: runGoal.intervalWalkSeconds,
+              intervalSets: runGoal.intervalSets,
+            } : {}),
+            ...(runGoal.type === 'program' ? {
+              targetTime: runGoal.targetTime,
+              cadenceBPM: runGoal.cadenceBPM,
+            } : {}),
+          },
+        } : {}),
       };
 
       // 1) Save locally first (instant — prevents data loss)

@@ -38,7 +38,10 @@ async function performTokenRefresh(): Promise<string> {
 
       if (!refreshResponse.ok) {
         const errorData = await refreshResponse.json().catch(() => null);
-        if (refreshResponse.status >= 400 && refreshResponse.status < 500) {
+        // Only delete tokens on definitive auth rejection (401 Unauthorized).
+        // Other 4xx (429 rate-limit, 400 malformed, 403 forbidden) may be transient
+        // — deleting tokens on these causes unnecessary logout on flaky networks.
+        if (refreshResponse.status === 401) {
           await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.ACCESS_TOKEN);
           await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.REFRESH_TOKEN);
         }

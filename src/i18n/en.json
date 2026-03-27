@@ -156,8 +156,8 @@
       "switchBtn": "Switch"
     },
     "speedAnomaly": {
-      "title": "Abnormal Speed Detected",
-      "message": "Your speed is abnormally fast. Vehicle movement detected — your run will be ended.",
+      "title": "Run Ended",
+      "message": "Your run was ended due to abnormal speed detected.",
       "stop": "End Run"
     },
     "exitTitle": "Leave Running?",

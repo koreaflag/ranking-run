@@ -15,6 +15,7 @@ import {
   StatusBar,
   TextInput,
   Animated,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -50,6 +51,7 @@ import { calcRunnerLevel, getRunnerTier, getRunnerXpProgress } from '../../utils
 import { getCache, setCache } from '../../utils/apiCache';
 
 // Period option values (labels resolved via t() inside component)
+const IS_ANDROID = Platform.OS === 'android';
 const PERIOD_VALUES: StatsPeriod[] = ['week', 'month', 'year', 'all'];
 const PERIOD_KEYS: Record<StatsPeriod, string> = {
   week: 'mypage.periodWeek',
@@ -82,6 +84,7 @@ export default function MyPageScreen() {
   const [checkedInToday, setCheckedInToday] = useState(true); // default hidden until we check
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [showGoalModal, setShowGoalModal] = useState(false);
+  const [androidShowGoalModal, setAndroidShowGoalModal] = useState(false);
   const [customGoalInput, setCustomGoalInput] = useState('');
   const [isSavingGoal, setIsSavingGoal] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(_cachedStats === null);
@@ -106,6 +109,28 @@ export default function MyPageScreen() {
       useNativeDriver: false,
     }).start();
   }, [runnerXp.ratio]);
+
+  // Android: sync overlay mount/unmount with showGoalModal
+  useEffect(() => {
+    if (!IS_ANDROID) return;
+    if (showGoalModal) {
+      setAndroidShowGoalModal(true);
+    } else {
+      // Small delay so close animation can play before unmount
+      const timer = setTimeout(() => setAndroidShowGoalModal(false), 200);
+      return () => clearTimeout(timer);
+    }
+  }, [showGoalModal]);
+
+  // Android: handle hardware back button for goal modal
+  useEffect(() => {
+    if (!IS_ANDROID || !showGoalModal) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setShowGoalModal(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [showGoalModal]);
 
   // Check if already checked in today (calendar day)
   useEffect(() => {
@@ -752,74 +777,142 @@ export default function MyPageScreen() {
       </ScrollView>
       )}
       {/* Weekly Goal Setting Modal */}
-      <Modal
-        visible={showGoalModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowGoalModal(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowGoalModal(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>
-              {t('mypage.weeklyGoalTitle')}
-            </Text>
+      {IS_ANDROID ? (
+        androidShowGoalModal ? (
+          <View style={styles.androidModalRoot}>
+            <TouchableOpacity
+              style={styles.modalOverlay}
+              activeOpacity={1}
+              onPress={() => setShowGoalModal(false)}
+            >
+              <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>
+                  {t('mypage.weeklyGoalTitle')}
+                </Text>
 
-            <View style={styles.goalPresets}>
-              {[10, 20, 30, 50, 100].map((km) => (
-                <TouchableOpacity
-                  key={km}
-                  style={[
-                    styles.goalPresetBtn,
-                    { backgroundColor: colors.surfaceLight, borderColor: colors.border },
-                    analytics?.weekly_goal_km === km && { backgroundColor: colors.primary, borderColor: colors.primary },
-                  ]}
-                  onPress={() => handleSaveGoal(km)}
-                  disabled={isSavingGoal}
-                >
-                  <Text style={[
-                    styles.goalPresetText,
-                    { color: colors.text },
-                    analytics?.weekly_goal_km === km && { color: '#fff' },
-                  ]}>
-                    {km} km
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                <View style={styles.goalPresets}>
+                  {[10, 20, 30, 50, 100].map((km) => (
+                    <TouchableOpacity
+                      key={km}
+                      style={[
+                        styles.goalPresetBtn,
+                        { backgroundColor: colors.surfaceLight, borderColor: colors.border },
+                        analytics?.weekly_goal_km === km && { backgroundColor: colors.primary, borderColor: colors.primary },
+                      ]}
+                      onPress={() => handleSaveGoal(km)}
+                      disabled={isSavingGoal}
+                    >
+                      <Text style={[
+                        styles.goalPresetText,
+                        { color: colors.text },
+                        analytics?.weekly_goal_km === km && { color: '#fff' },
+                      ]}>
+                        {km} km
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
-            <Text style={[styles.customGoalLabel, { color: colors.textSecondary }]}>
-              {t('mypage.customGoal')}
-            </Text>
-            <View style={styles.customGoalRow}>
-              <TextInput
-                style={[styles.customGoalInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceLight }]}
-                placeholder="km"
-                placeholderTextColor={colors.textTertiary}
-                keyboardType="decimal-pad"
-                value={customGoalInput}
-                onChangeText={setCustomGoalInput}
-                returnKeyType="done"
-              />
-              <TouchableOpacity
-                style={[styles.saveGoalBtn, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  const val = parseFloat(customGoalInput);
-                  if (!isNaN(val) && val >= 1 && val <= 500) {
-                    handleSaveGoal(val);
-                  }
-                }}
-                disabled={isSavingGoal || !customGoalInput}
-              >
-                <Text style={styles.saveGoalText}>{t('mypage.saveGoal')}</Text>
+                <Text style={[styles.customGoalLabel, { color: colors.textSecondary }]}>
+                  {t('mypage.customGoal')}
+                </Text>
+                <View style={styles.customGoalRow}>
+                  <TextInput
+                    style={[styles.customGoalInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceLight }]}
+                    placeholder="km"
+                    placeholderTextColor={colors.textTertiary}
+                    keyboardType="decimal-pad"
+                    value={customGoalInput}
+                    onChangeText={setCustomGoalInput}
+                    returnKeyType="done"
+                  />
+                  <TouchableOpacity
+                    style={[styles.saveGoalBtn, { backgroundColor: colors.primary }]}
+                    onPress={() => {
+                      const val = parseFloat(customGoalInput);
+                      if (!isNaN(val) && val >= 1 && val <= 500) {
+                        handleSaveGoal(val);
+                      }
+                    }}
+                    disabled={isSavingGoal || !customGoalInput}
+                  >
+                    <Text style={styles.saveGoalText}>{t('mypage.saveGoal')}</Text>
+                  </TouchableOpacity>
+                </View>
               </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
+          </View>
+        ) : null
+      ) : (
+        <Modal
+          visible={showGoalModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowGoalModal(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowGoalModal(false)}
+          >
+            <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                {t('mypage.weeklyGoalTitle')}
+              </Text>
+
+              <View style={styles.goalPresets}>
+                {[10, 20, 30, 50, 100].map((km) => (
+                  <TouchableOpacity
+                    key={km}
+                    style={[
+                      styles.goalPresetBtn,
+                      { backgroundColor: colors.surfaceLight, borderColor: colors.border },
+                      analytics?.weekly_goal_km === km && { backgroundColor: colors.primary, borderColor: colors.primary },
+                    ]}
+                    onPress={() => handleSaveGoal(km)}
+                    disabled={isSavingGoal}
+                  >
+                    <Text style={[
+                      styles.goalPresetText,
+                      { color: colors.text },
+                      analytics?.weekly_goal_km === km && { color: '#fff' },
+                    ]}>
+                      {km} km
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={[styles.customGoalLabel, { color: colors.textSecondary }]}>
+                {t('mypage.customGoal')}
+              </Text>
+              <View style={styles.customGoalRow}>
+                <TextInput
+                  style={[styles.customGoalInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.surfaceLight }]}
+                  placeholder="km"
+                  placeholderTextColor={colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={customGoalInput}
+                  onChangeText={setCustomGoalInput}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity
+                  style={[styles.saveGoalBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    const val = parseFloat(customGoalInput);
+                    if (!isNaN(val) && val >= 1 && val <= 500) {
+                      handleSaveGoal(val);
+                    }
+                  }}
+                  disabled={isSavingGoal || !customGoalInput}
+                >
+                  <Text style={styles.saveGoalText}>{t('mypage.saveGoal')}</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        </Modal>
+      )}
 
       </SafeAreaView>
     </BlurredBackground>
@@ -1250,6 +1343,11 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   menuDivider: {
     height: StyleSheet.hairlineWidth, backgroundColor: c.divider,
     marginLeft: SPACING.lg + 36 + SPACING.md,
+  },
+  androidModalRoot: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
+    elevation: 9999,
   },
   modalOverlay: {
     flex: 1,

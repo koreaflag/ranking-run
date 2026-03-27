@@ -74,6 +74,15 @@ struct WatchMessageKeys {
     static let programStatus = "programStatus"
     static let metronomeBPM = "metronomeBPM"
 
+    // Interval training
+    static let intervalPhase = "intervalPhase"               // "run"/"walk"/""
+    static let intervalCurrentSet = "intervalCurrentSet"     // 1-based
+    static let intervalTotalSets = "intervalTotalSets"
+    static let intervalRunSeconds = "intervalRunSeconds"
+    static let intervalWalkSeconds = "intervalWalkSeconds"
+    static let intervalPhaseRemaining = "intervalPhaseRemaining" // seconds left in current phase
+    static let intervalCompleted = "intervalCompleted"
+
     // Timer sync (startTime-based)
     static let runStartTime = "runStartTime"           // epoch ms — when run actually started
     static let elapsedBeforePause = "elapsedBeforePause" // seconds accumulated before current segment

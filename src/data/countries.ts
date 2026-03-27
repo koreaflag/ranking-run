@@ -1,12 +1,15 @@
 /**
  * Shared country list used across profile, ranking filters, etc.
+ * Country names are i18n-aware via getCountryName().
  */
+import i18n from '../i18n';
 
 export interface CountryItem {
   code: string;
   name: string;
 }
 
+/** Country codes in display order. `name` is the Korean fallback. */
 export const COUNTRIES: CountryItem[] = [
   { code: 'KR', name: '대한민국' },
   { code: 'US', name: '미국' },
@@ -62,6 +65,13 @@ export function getCountryFlag(code: string): string {
     .join('');
 }
 
+/** Returns localized country name using current i18n language. */
 export function getCountryName(code: string): string {
-  return COUNTRIES.find((c) => c.code === code)?.name ?? code;
+  const key = `countries.${code}`;
+  const translated = i18n.t(key);
+  // If no translation found, i18n returns the key itself — fall back to COUNTRIES array
+  if (translated === key) {
+    return COUNTRIES.find((c) => c.code === code)?.name ?? code;
+  }
+  return translated;
 }

@@ -234,8 +234,9 @@ class LocationEngine(
             .build()
 
         try {
+            val cb = locationCallback ?: return
             if (hasLocationPermission()) {
-                fusedLocationClient?.requestLocationUpdates(request, locationCallback!!, Looper.getMainLooper())
+                fusedLocationClient?.requestLocationUpdates(request, cb, Looper.getMainLooper())
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "SecurityException updating location interval", e)
@@ -278,8 +279,9 @@ class LocationEngine(
         }
 
         try {
+            val cb = locationCallback ?: return
             if (hasLocationPermission()) {
-                fusedLocationClient?.requestLocationUpdates(request, locationCallback!!, Looper.getMainLooper())
+                fusedLocationClient?.requestLocationUpdates(request, cb, Looper.getMainLooper())
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "SecurityException requesting location updates", e)
@@ -426,8 +428,9 @@ class LocationEngine(
 
         if (isStationary) {
             // Safety net: if detector says stationary but movement is clearly
-            // significant (> 2m), the detector is wrong — still count distance and update position
-            if (rawDist > 2.0) {
+            // significant (> 3m), the detector is wrong — still count distance and update position
+            // Raised from 2m to 3m to better suppress Android indoor GPS drift
+            if (rawDist > 3.0) {
                 emitLat = filterResult.latitude
                 emitLng = filterResult.longitude
                 distFromPrev = rawDist
@@ -440,8 +443,9 @@ class LocationEngine(
         } else {
             emitLat = filterResult.latitude
             emitLng = filterResult.longitude
-            // Normal case: ignore tiny movements (< 0.3m) as noise
-            distFromPrev = if (rawDist >= 0.3) rawDist else 0.0
+            // Normal case: ignore tiny movements (< 0.5m) as noise
+            // Android FusedLocationProvider has more drift than iOS — use higher threshold
+            distFromPrev = if (rawDist >= 0.5) rawDist else 0.0
         }
 
         val cumulativeDistance = session.totalDistance + distFromPrev

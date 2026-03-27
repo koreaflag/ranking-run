@@ -8,6 +8,7 @@ import {
   Linking,
   Platform,
   StatusBar,
+  NativeModules,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -40,6 +41,18 @@ export default function WatchSettingsScreen() {
   const [locationGranted, setLocationGranted] = useState(false);
   const [notificationGranted] = useState(true);
   const watchConnected = useRunningStore((s) => s.watchConnected);
+  const setWatchConnected = useRunningStore((s) => s.setWatchConnected);
+
+  // Query watch paired status on mount (isPaired = 워치 페어링 여부, isReachable = 앱 포그라운드)
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      NativeModules.WatchBridgeModule?.getWatchStatus?.()
+        .then((status: { isPaired: boolean; isReachable: boolean }) => {
+          setWatchConnected(status.isPaired);
+        })
+        .catch(() => {});
+    }
+  }, [setWatchConnected]);
 
   // Staggered entrance animations — one per row + footer + button
   const rowAnims = useRef([

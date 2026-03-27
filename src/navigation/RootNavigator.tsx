@@ -8,7 +8,6 @@ import TabNavigator from './TabNavigator';
 import OnboardingScreen from '../screens/auth/OnboardingScreen';
 import { useTheme } from '../hooks/useTheme';
 import { Alert, View, StatusBar } from 'react-native';
-import { syncPendingData } from '../services/pendingSyncService';
 import ToastContainer from '../components/common/ToastContainer';
 import {
   loadPersistedSession,
@@ -17,7 +16,7 @@ import {
 import { useRunningStore, type RunningPhase } from '../stores/runningStore';
 import { runService } from '../services/runService';
 import { formatDistance, formatDuration } from '../utils/format';
-import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { useNetworkStore } from '../stores/networkStore';
 import OfflineBanner from '../components/common/OfflineBanner';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -55,7 +54,6 @@ export default function RootNavigator() {
   const { isAuthenticated, isLoading, isNewUser, loadStoredAuth } =
     useAuthStore();
   const colors = useTheme();
-  const isOnline = useNetworkStatus();
   const navRef = useNavigationContainerRef<RootStackParamList>();
   const navReadyRef = useRef(false);
   const recoveryCheckedRef = useRef(false);
@@ -64,10 +62,16 @@ export default function RootNavigator() {
     loadStoredAuth();
   }, [loadStoredAuth]);
 
-  // Attempt to sync any pending offline data when app starts
+  // Initialize network monitoring + auto-sync on network recovery
+  useEffect(() => {
+    const unsubscribe = useNetworkStore.getState().startListening();
+    return unsubscribe;
+  }, []);
+
+  // Trigger sync when authenticated
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      syncPendingData().catch(() => {});
+      useNetworkStore.getState().triggerSync();
     }
   }, [isLoading, isAuthenticated]);
 
@@ -199,7 +203,7 @@ export default function RootNavigator() {
 
   return (
     <View style={{ flex: 1 }}>
-      <OfflineBanner isOnline={isOnline} />
+      <OfflineBanner />
       <NavigationContainer theme={navTheme} ref={navRef} onReady={handleNavReady} linking={linking}>
         <StatusBar barStyle={colors.statusBar} />
         <Stack.Navigator screenOptions={{ headerShown: false }}>

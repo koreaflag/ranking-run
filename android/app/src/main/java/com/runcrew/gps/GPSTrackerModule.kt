@@ -275,7 +275,10 @@ class GPSTrackerModule(
             }
 
             // Sanity check: if smoothed covers < half original, fall back
-            val sessionRef = engine.session
+            val sessionRef = engine.session ?: run {
+                promise.resolve(null)
+                return
+            }
             val origCount = sessionRef.filteredLocations.size
             if (origCount > 10 && smoothed.size < origCount / 2) {
                 engine.kalmanFilter.clearHistory()
@@ -394,7 +397,7 @@ class GPSTrackerModule(
         // session.isMoving (which only updates on state transitions via listener).
         // This ensures isMoving accurately reflects the current movement state
         // for every GPS update, critical for auto-pause in JS.
-        val isCurrentlyMoving = sensorFusion?.let { !it.isStationary() } ?: session.isMoving
+        val isCurrentlyMoving = sensorFusion?.let { !it.isStationary() } ?: session?.isMoving ?: true
         val cadenceSPM = if (isCurrentlyMoving && sensorFusion != null) {
             val stepDetector = sensorFusion.stepDetector
             val now = System.currentTimeMillis()

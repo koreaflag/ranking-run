@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo, useState } from 'react';
-import { StyleSheet, View, Text, Platform, Animated, Easing, Image } from 'react-native';
+import { StyleSheet, View, Text, Platform, Animated, Easing, Image, Pressable } from 'react-native';
 import Mapbox, { UserTrackingMode } from '@rnmapbox/maps';
 import { Ionicons } from '../../lib/icons';
 import { COLORS, DIFFICULTY_COLORS, type DifficultyLevel } from '../../utils/constants';
@@ -867,12 +867,10 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
                 allowOverlap={true}
                 allowOverlapWithPuck={true}
               >
-                <View
+                <Pressable
                   style={styles.courseBadgeWrapper}
-                  onStartShouldSetResponder={() => {
-                    onMarkerPress?.(m.id);
-                    return true;
-                  }}
+                  onPress={() => onMarkerPress?.(m.id)}
+                  hitSlop={8}
                 >
                   {m.dominion?.crew_logo_url ? (
                     <Image
@@ -886,7 +884,7 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
                       <Ionicons name={icon} size={14} color={COLORS.white} />
                     </View>
                   )}
-                </View>
+                </Pressable>
               </Mapbox.MarkerView>
             );
           })}
@@ -957,19 +955,17 @@ const RouteMapView = forwardRef<RouteMapViewHandle, RouteMapViewProps>(function 
             coordinate={[event.center_lng, event.center_lat]}
             anchor={{ x: 0.5, y: 0.5 }}
           >
-            <View
+            <Pressable
               style={styles.eventMarkerWrapper}
-              onStartShouldSetResponder={() => {
-                onEventMarkerPress?.(event.id);
-                return true;
-              }}
+              onPress={() => onEventMarkerPress?.(event.id)}
+              hitSlop={8}
             >
               <View style={[styles.eventMarkerOuter, { borderColor: event.badge_color || COLORS.accent }]}>
                 <View style={[styles.eventMarkerInner, { backgroundColor: event.badge_color || COLORS.accent }]}>
                   <Ionicons name={(event.badge_icon || 'flash') as any} size={16} color={COLORS.white} />
                 </View>
               </View>
-            </View>
+            </Pressable>
           </Mapbox.MarkerView>
         ))}
 

@@ -248,7 +248,8 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         "goalType", "goalValue",
         "programTargetDistance", "programTargetTime", "programTimeDelta",
         "programRequiredPace", "programStatus", "metronomeBPM",
-        "countdownStartedAt", "countdownTotal"
+        "countdownStartedAt", "countdownTotal",
+        "intervalRunSeconds", "intervalWalkSeconds", "intervalTotalSets"
     ]
 
     func sendRunStateUpdate(_ state: [String: Any], authoritative: Bool = true) {

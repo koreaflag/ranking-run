@@ -22,7 +22,7 @@ let cachedVoiceLang: string | null = null;
 let voiceSearchDone = false;
 
 /** Map i18n language code to BCP 47 locale for TTS */
-function getTTSLocale(): string {
+export function getTTSLocale(): string {
   const localeMap: Record<string, string> = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP' };
   return localeMap[i18n.language] ?? 'en-US';
 }
@@ -46,10 +46,10 @@ async function getBestVoice(): Promise<string | undefined> {
 
     // iOS: prefer premium > enhanced > compact
     if (Platform.OS === 'ios') {
-      const premium = matchedVoices.find((v) => v.identifier.includes('.premium.'));
+      const premium = matchedVoices.find((v) => v.identifier.includes('.premium'));
       if (premium) { cachedVoice = premium.identifier; return premium.identifier; }
 
-      const enhanced = matchedVoices.find((v) => v.identifier.includes('.enhanced.'));
+      const enhanced = matchedVoices.find((v) => v.identifier.includes('.enhanced'));
       if (enhanced) { cachedVoice = enhanced.identifier; return enhanced.identifier; }
     }
 
@@ -60,6 +60,11 @@ async function getBestVoice(): Promise<string | undefined> {
     cachedVoice = null;
     return undefined;
   }
+}
+
+/** Get the currently cached voice identifier (sync — returns undefined if not yet resolved) */
+export function getCachedVoiceId(): string | undefined {
+  return cachedVoice ?? undefined;
 }
 
 interface UseVoiceGuidanceProps {
@@ -93,7 +98,6 @@ export function useVoiceGuidance({
   const wasOffCourseRef = useRef(false);
   const lastOffCourseLevelRef = useRef(0);
   const lastElevationAlertIdxRef = useRef(-999);
-
   // Pre-fetch best voice on mount
   useEffect(() => {
     getBestVoice().then((id) => { voiceIdRef.current = id; });

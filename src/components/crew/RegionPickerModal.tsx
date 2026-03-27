@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,12 @@ import {
   TouchableOpacity,
   FlatList,
   SafeAreaView,
+  Platform,
+  BackHandler,
+  StatusBar,
 } from 'react-native';
+
+const IS_ANDROID = Platform.OS === 'android';
 import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../hooks/useTheme';
@@ -45,7 +50,39 @@ export default function RegionPickerModal({
   const [step, setStep] = useState<'province' | 'district'>('province');
   const [pickedProvince, setPickedProvince] = useState<string | null>(selectedProvince);
 
-  // Reset state when modal opens
+  // Android: use absolute overlay instead of native Modal
+  const [androidMounted, setAndroidMounted] = useState(false);
+
+  useEffect(() => {
+    if (IS_ANDROID) {
+      if (visible) {
+        setAndroidMounted(true);
+        // Equivalent of onShow for Android overlay
+        setStep('province');
+        setPickedProvince(null);
+      } else {
+        setAndroidMounted(false);
+      }
+    }
+  }, [visible]);
+
+  // Android: handle hardware back button
+  useEffect(() => {
+    if (!IS_ANDROID || !androidMounted) return;
+    const onBack = () => {
+      if (step === 'district') {
+        setStep('province');
+        setPickedProvince(null);
+      } else {
+        onClose();
+      }
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [androidMounted, step, onClose]);
+
+  // Reset state when modal opens (iOS only — Android handled above)
   const handleShow = useCallback(() => {
     setStep('province');
     setPickedProvince(null);
@@ -116,6 +153,73 @@ export default function RegionPickerModal({
     );
   }, [styles, colors, selectedDistrict, selectedProvince, pickedProvince, handleSelectDistrict]);
 
+  const modalContent = (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        {step === 'district' ? (
+          <TouchableOpacity style={styles.headerBtn} onPress={handleBack} activeOpacity={0.6}>
+            <Ionicons name="chevron-back" size={22} color={colors.text} />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.headerBtn} onPress={onClose} activeOpacity={0.6}>
+            <Ionicons name="close" size={22} color={colors.text} />
+          </TouchableOpacity>
+        )}
+        <Text style={styles.headerTitle}>
+          {step === 'province'
+            ? t('crew.selectRegion')
+            : pickedProvince ?? ''}
+        </Text>
+        <TouchableOpacity style={styles.headerBtn} onPress={handleClear} activeOpacity={0.6}>
+          <Text style={styles.clearText}>{t('crew.resetRegion')}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {step === 'province' ? (
+        <FlatList
+          data={PROVINCE_LIST}
+          keyExtractor={(item) => item}
+          renderItem={renderProvince}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      ) : (
+        <>
+          {/* "Province only" option */}
+          <TouchableOpacity
+            style={[styles.row, styles.allRow]}
+            onPress={handleSelectProvinceOnly}
+            activeOpacity={0.6}
+          >
+            <Text style={[styles.rowText, { color: colors.primary, fontWeight: '700' }]}>
+              {pickedProvince} {t('crew.allRegion')}
+            </Text>
+          </TouchableOpacity>
+          <FlatList
+            data={districts}
+            keyExtractor={(item) => item}
+            renderItem={renderDistrict}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+        </>
+      )}
+    </SafeAreaView>
+  );
+
+  // Android: render as absolute overlay to avoid native Modal touch issues
+  if (IS_ANDROID) {
+    if (!androidMounted) return null;
+    return (
+      <View style={styles.androidOverlay}>
+        <StatusBar backgroundColor={colors.background} barStyle="light-content" />
+        {modalContent}
+      </View>
+    );
+  }
+
+  // iOS: use native Modal
   return (
     <Modal
       visible={visible}
@@ -124,58 +228,7 @@ export default function RegionPickerModal({
       onRequestClose={onClose}
       onShow={handleShow}
     >
-      <SafeAreaView style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          {step === 'district' ? (
-            <TouchableOpacity style={styles.headerBtn} onPress={handleBack} activeOpacity={0.6}>
-              <Ionicons name="chevron-back" size={22} color={colors.text} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.headerBtn} onPress={onClose} activeOpacity={0.6}>
-              <Ionicons name="close" size={22} color={colors.text} />
-            </TouchableOpacity>
-          )}
-          <Text style={styles.headerTitle}>
-            {step === 'province'
-              ? t('crew.selectRegion')
-              : pickedProvince ?? ''}
-          </Text>
-          <TouchableOpacity style={styles.headerBtn} onPress={handleClear} activeOpacity={0.6}>
-            <Text style={styles.clearText}>{t('crew.resetRegion')}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {step === 'province' ? (
-          <FlatList
-            data={PROVINCE_LIST}
-            keyExtractor={(item) => item}
-            renderItem={renderProvince}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        ) : (
-          <>
-            {/* "Province only" option */}
-            <TouchableOpacity
-              style={[styles.row, styles.allRow]}
-              onPress={handleSelectProvinceOnly}
-              activeOpacity={0.6}
-            >
-              <Text style={[styles.rowText, { color: colors.primary, fontWeight: '700' }]}>
-                {pickedProvince} {t('crew.allRegion')}
-              </Text>
-            </TouchableOpacity>
-            <FlatList
-              data={districts}
-              keyExtractor={(item) => item}
-              renderItem={renderDistrict}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-            />
-          </>
-        )}
-      </SafeAreaView>
+      {modalContent}
     </Modal>
   );
 }
@@ -244,5 +297,15 @@ const createStyles = (c: ThemeColors) =>
       backgroundColor: c.surface,
       borderRadius: BORDER_RADIUS.md,
       borderBottomWidth: 0,
+    },
+    androidOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 1000,
+      elevation: 1000,
+      backgroundColor: c.background,
     },
   });

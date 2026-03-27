@@ -15,6 +15,7 @@ import {
   UIManager,
   LayoutAnimation,
   StatusBar,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -31,7 +32,9 @@ import type { MyCourse } from '../../types/api';
 import { formatDistance, formatNumber, formatDate, formatPace } from '../../utils/format';
 import { COLORS, FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+const IS_ANDROID = Platform.OS === 'android';
+
+if (IS_ANDROID && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
@@ -166,6 +169,7 @@ export default function MyCoursesScreen() {
   const nickname = useAuthStore((s) => s.user?.nickname ?? '나');
 
   // Edit modal state
+  const [androidEditVisible, setAndroidEditVisible] = useState(false);
   const [editCourse, setEditCourse] = useState<MyCourse | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -178,6 +182,11 @@ export default function MyCoursesScreen() {
     fetchMyCourses();
   }, [fetchMyCourses]);
 
+  const handleCloseEdit = useCallback(() => {
+    setEditCourse(null);
+    if (IS_ANDROID) setAndroidEditVisible(false);
+  }, []);
+
   const handleOpenEdit = useCallback((course: MyCourse) => {
     setEditCourse(course);
     setEditTitle(course.title);
@@ -185,7 +194,18 @@ export default function MyCoursesScreen() {
     setEditPublic(course.is_public);
     setEditCourseType(course.course_type === 'loop' ? 'loop' : 'normal');
     setEditLapCount(course.lap_count ?? 1);
+    if (IS_ANDROID) setAndroidEditVisible(true);
   }, []);
+
+  // Android back button handler for overlay
+  useEffect(() => {
+    if (!IS_ANDROID || !androidEditVisible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleCloseEdit();
+      return true;
+    });
+    return () => sub.remove();
+  }, [androidEditVisible, handleCloseEdit]);
 
   const handleDetail = useCallback(
     (courseId: string) => {
@@ -212,7 +232,7 @@ export default function MyCoursesScreen() {
           lap_count: editCourseType === 'loop' ? editLapCount : undefined,
         } : {}),
       });
-      setEditCourse(null);
+      handleCloseEdit();
     } catch {
       Alert.alert(t('common.error'), t('common.errorRetry'));
     } finally {
@@ -260,21 +280,13 @@ export default function MyCoursesScreen() {
         />
       )}
 
-      {/* Edit Modal */}
-      <Modal
-        visible={editCourse !== null}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setEditCourse(null)}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+      {/* Edit Modal — shared content */}
+      {(() => {
+        const editModalContent = (
           <View style={styles.modalSheet}>
             {/* Modal header */}
             <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setEditCourse(null)}>
+              <TouchableOpacity onPress={handleCloseEdit}>
                 <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <Text style={styles.modalTitle}>{t('course.detail.editTitle')}</Text>
@@ -405,8 +417,47 @@ export default function MyCoursesScreen() {
               />
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        );
+
+        if (IS_ANDROID) {
+          // Android: absolute overlay instead of native Modal to avoid touch desync
+          if (!androidEditVisible) return null;
+          return (
+            <View style={styles.androidOverlay}>
+              <StatusBar backgroundColor="rgba(0,0,0,0.4)" barStyle="light-content" />
+              <TouchableOpacity
+                style={styles.androidOverlayBackdrop}
+                activeOpacity={1}
+                onPress={handleCloseEdit}
+              />
+              <KeyboardAvoidingView
+                style={styles.androidOverlayContent}
+                behavior="height"
+                pointerEvents="box-none"
+              >
+                {editModalContent}
+              </KeyboardAvoidingView>
+            </View>
+          );
+        }
+
+        // iOS: native Modal (no touch issues)
+        return (
+          <Modal
+            visible={editCourse !== null}
+            transparent
+            animationType="slide"
+            onRequestClose={handleCloseEdit}
+          >
+            <KeyboardAvoidingView
+              style={styles.modalOverlay}
+              behavior="padding"
+            >
+              {editModalContent}
+            </KeyboardAvoidingView>
+          </Modal>
+        );
+      })()}
     </SafeAreaView>
   );
 }
@@ -705,6 +756,21 @@ const createStyles = (c: ThemeColors) =>
       fontVariant: ['tabular-nums'] as any,
       minWidth: 28,
       textAlign: 'center',
+    },
+
+    // Android overlay (replaces Modal)
+    androidOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 9999,
+      elevation: 9999,
+    },
+    androidOverlayBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(0,0,0,0.4)',
+    },
+    androidOverlayContent: {
+      flex: 1,
+      justifyContent: 'flex-end' as const,
     },
 
     toggleRow: {

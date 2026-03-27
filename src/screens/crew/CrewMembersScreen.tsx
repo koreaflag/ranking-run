@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Image,
   StatusBar,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -33,6 +34,8 @@ import { getGradeName, getGradeColor } from '../../utils/crewGrade';
 type Nav = NativeStackNavigationProp<HomeStackParamList, 'CrewMembers'>;
 type Route = RouteProp<HomeStackParamList, 'CrewMembers'>;
 
+const IS_ANDROID = Platform.OS === 'android';
+
 export default function CrewMembersScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
@@ -47,6 +50,7 @@ export default function CrewMembersScreen() {
 
   // Invite modal state
   const [showInvite, setShowInvite] = useState(false);
+  const [androidShowInvite, setAndroidShowInvite] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [isInviting, setIsInviting] = useState(false);
 
@@ -68,6 +72,28 @@ export default function CrewMembersScreen() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Android: sync mount/unmount of overlay with showInvite state
+  useEffect(() => {
+    if (IS_ANDROID) {
+      if (showInvite) {
+        setAndroidShowInvite(true);
+      } else {
+        setAndroidShowInvite(false);
+      }
+    }
+  }, [showInvite]);
+
+  // Android: handle hardware back button when invite modal is open
+  useEffect(() => {
+    if (!IS_ANDROID || !showInvite) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setShowInvite(false);
+      setInviteCode('');
+      return true;
+    });
+    return () => sub.remove();
+  }, [showInvite]);
 
   const isOwner = crew?.my_role === 'owner';
   const isAdmin = crew?.my_role === 'admin';
@@ -307,70 +333,87 @@ export default function CrewMembersScreen() {
           />
         )}
 
-        {/* Invite Modal */}
-        <Modal
-          visible={showInvite}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowInvite(false)}
-        >
-          <KeyboardAvoidingView
-            style={styles.modalOverlay}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <TouchableOpacity
+        {/* Invite Modal — platform-specific rendering */}
+        {(() => {
+          const inviteContent = (
+            <KeyboardAvoidingView
               style={styles.modalOverlay}
-              activeOpacity={1}
-              onPress={() => setShowInvite(false)}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             >
-              <TouchableOpacity activeOpacity={1} style={styles.modalCard}>
-                <Text style={styles.modalTitle}>{t('crew.inviteTitle')}</Text>
-                <Text style={styles.modalDesc}>{t('crew.inviteDesc')}</Text>
+              <TouchableOpacity
+                style={styles.modalOverlay}
+                activeOpacity={1}
+                onPress={() => { setShowInvite(false); setInviteCode(''); }}
+              >
+                <TouchableOpacity activeOpacity={1} style={styles.modalCard}>
+                  <Text style={styles.modalTitle}>{t('crew.inviteTitle')}</Text>
+                  <Text style={styles.modalDesc}>{t('crew.inviteDesc')}</Text>
 
-                <View style={styles.modalInputRow}>
-                  <TextInput
-                    style={styles.modalInput}
-                    placeholder={t('crew.inviteCodePlaceholder')}
-                    placeholderTextColor={colors.textTertiary}
-                    value={inviteCode}
-                    onChangeText={setInviteCode}
-                    maxLength={20}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    autoFocus
-                    returnKeyType="done"
-                    onSubmitEditing={handleInvite}
-                  />
-                </View>
+                  <View style={styles.modalInputRow}>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder={t('crew.inviteCodePlaceholder')}
+                      placeholderTextColor={colors.textTertiary}
+                      value={inviteCode}
+                      onChangeText={setInviteCode}
+                      maxLength={20}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoFocus
+                      returnKeyType="done"
+                      onSubmitEditing={handleInvite}
+                    />
+                  </View>
 
-                <View style={styles.modalActions}>
-                  <TouchableOpacity
-                    style={styles.modalCancelBtn}
-                    onPress={() => { setShowInvite(false); setInviteCode(''); }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.modalInviteBtn,
-                      (!inviteCode.trim() || isInviting) && styles.modalInviteBtnDisabled,
-                    ]}
-                    onPress={handleInvite}
-                    disabled={!inviteCode.trim() || isInviting}
-                    activeOpacity={0.7}
-                  >
-                    {isInviting ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.modalInviteText}>{t('crew.invite')}</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity
+                      style={styles.modalCancelBtn}
+                      onPress={() => { setShowInvite(false); setInviteCode(''); }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.modalInviteBtn,
+                        (!inviteCode.trim() || isInviting) && styles.modalInviteBtnDisabled,
+                      ]}
+                      onPress={handleInvite}
+                      disabled={!inviteCode.trim() || isInviting}
+                      activeOpacity={0.7}
+                    >
+                      {isInviting ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.modalInviteText}>{t('crew.invite')}</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
               </TouchableOpacity>
-            </TouchableOpacity>
-          </KeyboardAvoidingView>
-        </Modal>
+            </KeyboardAvoidingView>
+          );
+
+          if (IS_ANDROID) {
+            if (!androidShowInvite) return null;
+            return (
+              <View style={styles.androidModalRoot}>
+                {inviteContent}
+              </View>
+            );
+          }
+
+          return (
+            <Modal
+              visible={showInvite}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setShowInvite(false)}
+            >
+              {inviteContent}
+            </Modal>
+          );
+        })()}
       </SafeAreaView>
     </BlurredBackground>
   );
@@ -381,6 +424,11 @@ export default function CrewMembersScreen() {
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
     container: { flex: 1 },
+    androidModalRoot: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 9999,
+      elevation: 9999,
+    },
 
     loadingContainer: {
       flex: 1,

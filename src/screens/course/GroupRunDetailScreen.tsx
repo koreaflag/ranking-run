@@ -12,6 +12,7 @@ import {
   TextInput,
   Platform,
   StatusBar,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -42,6 +43,7 @@ export default function GroupRunDetailScreen() {
   const route = useRoute<DetailRoute>();
   const { groupRunId } = route.params;
 
+  const IS_ANDROID = Platform.OS === 'android';
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const currentUser = useAuthStore((s) => s.user);
@@ -51,9 +53,34 @@ export default function GroupRunDetailScreen() {
 
   // Invite modal state
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [androidInviteModalMounted, setAndroidInviteModalMounted] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [invitedUsers, setInvitedUsers] = useState<Array<{ id: string; nickname: string }>>([]);
   const [isInviting, setIsInviting] = useState(false);
+
+  // Android: sync overlay mount state with showInviteModal
+  useEffect(() => {
+    if (IS_ANDROID) {
+      if (showInviteModal) {
+        setAndroidInviteModalMounted(true);
+      } else {
+        setAndroidInviteModalMounted(false);
+      }
+    }
+  }, [showInviteModal, IS_ANDROID]);
+
+  // Android: handle back button for invite modal
+  useEffect(() => {
+    if (!IS_ANDROID || !androidInviteModalMounted) return;
+    const onBack = () => {
+      setShowInviteModal(false);
+      setInvitedUsers([]);
+      setInviteCode('');
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [IS_ANDROID, androidInviteModalMounted]);
 
   const loadGroupRun = useCallback(async () => {
     try {
@@ -332,60 +359,118 @@ export default function GroupRunDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Invite Modal */}
-      <Modal visible={showInviteModal} animationType="slide">
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => { setShowInviteModal(false); setInvitedUsers([]); setInviteCode(''); }} activeOpacity={0.7}>
-              <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>{t('groupRun.inviteMore')}</Text>
-            <TouchableOpacity
-              onPress={handleSubmitInvite}
-              disabled={isInviting || invitedUsers.length === 0}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.modalSave, (isInviting || invitedUsers.length === 0) && { opacity: 0.4 }]}>
-                {isInviting ? t('common.saving') : t('common.save')}
-              </Text>
-            </TouchableOpacity>
-          </View>
+      {/* Invite Modal — iOS: native Modal, Android: absolute overlay */}
+      {IS_ANDROID ? (
+        androidInviteModalMounted && (
+          <View style={styles.androidOverlay}>
+            <SafeAreaView style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <TouchableOpacity onPress={() => { setShowInviteModal(false); setInvitedUsers([]); setInviteCode(''); }} activeOpacity={0.7}>
+                  <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>{t('groupRun.inviteMore')}</Text>
+                <TouchableOpacity
+                  onPress={handleSubmitInvite}
+                  disabled={isInviting || invitedUsers.length === 0}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.modalSave, (isInviting || invitedUsers.length === 0) && { opacity: 0.4 }]}>
+                    {isInviting ? t('common.saving') : t('common.save')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-          <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
-            <Text style={styles.modalLabel}>{t('groupRun.inviteByCode')}</Text>
-            <View style={styles.inviteRow}>
-              <TextInput
-                style={[styles.modalInput, { flex: 1 }]}
-                value={inviteCode}
-                onChangeText={setInviteCode}
-                placeholder={t('groupRun.codePlaceholder')}
-                placeholderTextColor={colors.textTertiary}
-                maxLength={20}
-                autoCapitalize="none"
-              />
-              <TouchableOpacity style={styles.inviteAddBtn} onPress={handleAddInvitee} activeOpacity={0.7}>
-                <Ionicons name="add" size={20} color={colors.white} />
+              <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
+                <Text style={styles.modalLabel}>{t('groupRun.inviteByCode')}</Text>
+                <View style={styles.inviteRow}>
+                  <TextInput
+                    style={[styles.modalInput, { flex: 1 }]}
+                    value={inviteCode}
+                    onChangeText={setInviteCode}
+                    placeholder={t('groupRun.codePlaceholder')}
+                    placeholderTextColor={colors.textTertiary}
+                    maxLength={20}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity style={styles.inviteAddBtn} onPress={handleAddInvitee} activeOpacity={0.7}>
+                    <Ionicons name="add" size={20} color={colors.white} />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.inviteHint}>
+                  {`${(groupRun?.member_count ?? 0) + invitedUsers.length}/5 ${t('groupRun.members')}`}
+                </Text>
+
+                {invitedUsers.map((user) => (
+                  <View key={user.id} style={styles.invitedUserRow}>
+                    <View style={styles.invitedUserAvatar}>
+                      <Ionicons name="person" size={14} color={colors.textTertiary} />
+                    </View>
+                    <Text style={styles.invitedUserName}>{user.nickname}</Text>
+                    <TouchableOpacity onPress={() => setInvitedUsers((prev) => prev.filter((u) => u.id !== user.id))} activeOpacity={0.7}>
+                      <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            </SafeAreaView>
+          </View>
+        )
+      ) : (
+        <Modal visible={showInviteModal} animationType="slide">
+          <SafeAreaView style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => { setShowInviteModal(false); setInvitedUsers([]); setInviteCode(''); }} activeOpacity={0.7}>
+                <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>{t('groupRun.inviteMore')}</Text>
+              <TouchableOpacity
+                onPress={handleSubmitInvite}
+                disabled={isInviting || invitedUsers.length === 0}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.modalSave, (isInviting || invitedUsers.length === 0) && { opacity: 0.4 }]}>
+                  {isInviting ? t('common.saving') : t('common.save')}
+                </Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.inviteHint}>
-              {`${(groupRun?.member_count ?? 0) + invitedUsers.length}/5 ${t('groupRun.members')}`}
-            </Text>
-
-            {invitedUsers.map((user) => (
-              <View key={user.id} style={styles.invitedUserRow}>
-                <View style={styles.invitedUserAvatar}>
-                  <Ionicons name="person" size={14} color={colors.textTertiary} />
-                </View>
-                <Text style={styles.invitedUserName}>{user.nickname}</Text>
-                <TouchableOpacity onPress={() => setInvitedUsers((prev) => prev.filter((u) => u.id !== user.id))} activeOpacity={0.7}>
-                  <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
+              <Text style={styles.modalLabel}>{t('groupRun.inviteByCode')}</Text>
+              <View style={styles.inviteRow}>
+                <TextInput
+                  style={[styles.modalInput, { flex: 1 }]}
+                  value={inviteCode}
+                  onChangeText={setInviteCode}
+                  placeholder={t('groupRun.codePlaceholder')}
+                  placeholderTextColor={colors.textTertiary}
+                  maxLength={20}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity style={styles.inviteAddBtn} onPress={handleAddInvitee} activeOpacity={0.7}>
+                  <Ionicons name="add" size={20} color={colors.white} />
                 </TouchableOpacity>
               </View>
-            ))}
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
+
+              <Text style={styles.inviteHint}>
+                {`${(groupRun?.member_count ?? 0) + invitedUsers.length}/5 ${t('groupRun.members')}`}
+              </Text>
+
+              {invitedUsers.map((user) => (
+                <View key={user.id} style={styles.invitedUserRow}>
+                  <View style={styles.invitedUserAvatar}>
+                    <Ionicons name="person" size={14} color={colors.textTertiary} />
+                  </View>
+                  <Text style={styles.invitedUserName}>{user.nickname}</Text>
+                  <TouchableOpacity onPress={() => setInvitedUsers((prev) => prev.filter((u) => u.id !== user.id))} activeOpacity={0.7}>
+                    <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          </SafeAreaView>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -675,6 +760,18 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     fontWeight: '600',
     color: c.primary,
+  },
+
+  // Android overlay (replaces native Modal)
+  androidOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+    elevation: 1000,
+    backgroundColor: c.background,
   },
 
   // Modal

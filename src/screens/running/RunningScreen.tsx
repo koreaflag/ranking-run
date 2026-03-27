@@ -17,12 +17,14 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '../../lib/icons';
 import * as Haptics from 'expo-haptics';
 import { useRunningStore, RunningPhase } from '../../stores/runningStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useGPSTracker } from '../../hooks/useGPSTracker';
 import { useRunTimer } from '../../hooks/useRunTimer';
 import { useWatchCompanion } from '../../hooks/useWatchCompanion';
 import { useCourseNavigation } from '../../hooks/useCourseNavigation';
-import { useVoiceGuidance } from '../../hooks/useVoiceGuidance';
+import { useVoiceGuidance, getCachedVoiceId, getTTSLocale } from '../../hooks/useVoiceGuidance';
+import * as Speech from 'expo-speech';
 import { turnDirectionIcon, formatTurnInstruction } from '../../utils/navigationHelpers';
 import { courseService } from '../../services/courseService';
 import { runService } from '../../services/runService';
@@ -34,7 +36,6 @@ import { useLiveActivity } from '../../hooks/useLiveActivity';
 import { useRunningChunkUpload } from '../../hooks/useRunningChunkUpload';
 import { useRunningSessionPersistence } from '../../hooks/useRunningSessionPersistence';
 import { usePaceCoaching } from '../../hooks/usePaceCoaching';
-import { useIntervalTraining } from '../../hooks/useIntervalTraining';
 import { useTheme } from '../../hooks/useTheme';
 import SplitHistoryPanel from '../../components/running/SplitHistoryPanel';
 import i18n from '../../i18n';
@@ -81,18 +82,46 @@ export default function RunningScreen() {
     speedAnomalyDetected,
     runGoal,
     splits,
-    startSession,
-    updateSessionId,
-    pause,
-    resume,
-    complete,
-    reset,
-    setPhase,
-    setCheckpointPasses,
-    addDeviationPoint,
     snappedRoutePoints,
-    addSnappedPoint,
-  } = useRunningStore();
+  } = useRunningStore(useShallow((s) => ({
+    phase: s.phase,
+    sessionId: s.sessionId,
+    distanceMeters: s.distanceMeters,
+    durationSeconds: s.durationSeconds,
+    currentPaceSecondsPerKm: s.currentPaceSecondsPerKm,
+    avgPaceSecondsPerKm: s.avgPaceSecondsPerKm,
+    gpsStatus: s.gpsStatus,
+    gpsAccuracy: s.gpsAccuracy,
+    distanceSource: s.distanceSource,
+    routePoints: s.routePoints,
+    calories: s.calories,
+    heartRate: s.heartRate,
+    cadence: s.cadence,
+    elevationGainMeters: s.elevationGainMeters,
+    watchConnected: s.watchConnected,
+    currentLocation: s.currentLocation,
+    isApproachingStart: s.isApproachingStart,
+    isNearStart: s.isNearStart,
+    loopDetected: s.loopDetected,
+    distanceToStart: s.distanceToStart,
+    isAutoPaused: s.isAutoPaused,
+    speedAnomalyDetected: s.speedAnomalyDetected,
+    runGoal: s.runGoal,
+    splits: s.splits,
+    snappedRoutePoints: s.snappedRoutePoints,
+  })));
+
+  // Actions — stable references, subscribe individually
+  const startSession = useRunningStore((s) => s.startSession);
+  const updateSessionId = useRunningStore((s) => s.updateSessionId);
+  const pause = useRunningStore((s) => s.pause);
+  const resume = useRunningStore((s) => s.resume);
+  const complete = useRunningStore((s) => s.complete);
+  const reset = useRunningStore((s) => s.reset);
+  const setPhase = useRunningStore((s) => s.setPhase);
+  const setCheckpointPasses = useRunningStore((s) => s.setCheckpointPasses);
+  const addDeviationPoint = useRunningStore((s) => s.addDeviationPoint);
+  const addSnappedPoint = useRunningStore((s) => s.addSnappedPoint);
 
   // Only use GPS course heading when actually moving. When stationary, magnetometer
   // heading shows PHONE direction (not user direction), so hide the cone entirely.
@@ -108,7 +137,10 @@ export default function RunningScreen() {
   const mapRef = useRef<RouteMapViewHandle>(null);
   const [followUser, setFollowUser] = useState(true);
 
-  const { hapticFeedback, countdownSeconds, voiceGuidance, setVoiceGuidance } = useSettingsStore();
+  const hapticFeedback = useSettingsStore((s) => s.hapticFeedback);
+  const countdownSeconds = useSettingsStore((s) => s.countdownSeconds);
+  const voiceGuidance = useSettingsStore((s) => s.voiceGuidance);
+  const setVoiceGuidance = useSettingsStore((s) => s.setVoiceGuidance);
   const { startTracking, stopTracking, pauseTracking, resumeTracking } =
     useGPSTracker();
   useRunTimer();
@@ -128,15 +160,29 @@ export default function RunningScreen() {
     splits,
   });
 
-  // Interval training
-  const intervalState = useIntervalTraining({
-    enabled: runGoal?.type === 'interval',
-    runSeconds: runGoal?.intervalRunSeconds ?? 0,
-    walkSeconds: runGoal?.intervalWalkSeconds ?? 0,
-    sets: runGoal?.intervalSets ?? 0,
-    elapsedSeconds: durationSeconds,
-    phase,
-  });
+  // Interval training — handled by WorldScreen (beep/TTS/haptic).
+  // Only compute display state here, no side effects.
+  const intervalState = (() => {
+    if (runGoal?.type !== 'interval') return null;
+    const runSec = runGoal.intervalRunSeconds ?? 0;
+    const walkSec = runGoal.intervalWalkSeconds ?? 0;
+    const sets = runGoal.intervalSets ?? 0;
+    const cycleDur = runSec + walkSec;
+    const totalDur = cycleDur * sets;
+    if (cycleDur <= 0 || sets <= 0) return null;
+    if (durationSeconds >= totalDur) return { currentPhase: 'walk' as const, currentSet: sets, totalSets: sets, phaseRemainingSeconds: 0, phaseTotalSeconds: walkSec, totalRemainingSeconds: 0, isCompleted: true };
+    const currentSet = Math.min(Math.floor(durationSeconds / cycleDur) + 1, sets);
+    const elapsed = durationSeconds % cycleDur;
+    const isRun = elapsed < runSec;
+    return {
+      currentPhase: (isRun ? 'run' : 'walk') as 'run' | 'walk',
+      currentSet, totalSets: sets,
+      phaseRemainingSeconds: Math.max(0, Math.ceil(isRun ? runSec - elapsed : cycleDur - elapsed)),
+      phaseTotalSeconds: isRun ? runSec : walkSec,
+      totalRemainingSeconds: Math.max(0, Math.ceil(totalDur - durationSeconds)),
+      isCompleted: false,
+    };
+  })();
 
   // Metronome auto-start/stop
   const [metronomeMuted, setMetronomeMuted] = useState(false);
@@ -207,31 +253,35 @@ export default function RunningScreen() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Speed anomaly: warn user and stop the run
+  // Speed anomaly: immediately stop both phone and watch, then show reason
   const speedAnomalyHandledRef = useRef(false);
   useEffect(() => {
     if (!speedAnomalyDetected || speedAnomalyHandledRef.current) return;
     speedAnomalyHandledRef.current = true;
 
-    Alert.alert(
-      t('running.speedAnomaly.title'),
-      t('running.speedAnomaly.message'),
-      [
-        {
-          text: t('running.speedAnomaly.stop'),
-          style: 'destructive',
-          onPress: async () => {
-            await stopTracking();
-            complete();
-            const currentSessionId = useRunningStore.getState().sessionId;
-            if (currentSessionId) {
-              navigation.replace('RunResult', { sessionId: currentSessionId });
-            }
+    // Immediately stop native GPS + watch (stopTracking sends "completed" to watch)
+    (async () => {
+      await stopTracking();
+      complete();
+
+      const currentSessionId = useRunningStore.getState().sessionId;
+
+      Alert.alert(
+        t('running.speedAnomaly.title'),
+        t('running.speedAnomaly.message'),
+        [
+          {
+            text: t('common.confirm'),
+            onPress: () => {
+              if (currentSessionId) {
+                navigation.replace('RunResult', { sessionId: currentSessionId });
+              }
+            },
           },
-        },
-      ],
-      { cancelable: false },
-    );
+        ],
+        { cancelable: false },
+      );
+    })();
   }, [speedAnomalyDetected, stopTracking, complete, navigation, t]);
 
   // Prevent accidental back navigation during active running
@@ -553,6 +603,33 @@ export default function RunningScreen() {
     elevationProfile: courseElevationProfile,
   });
 
+  // TTS: "운동 시작" / "운동 종료" for all modes except interval
+  const prevPhaseForTTS = useRef<string>(phase);
+  useEffect(() => {
+    const prev = prevPhaseForTTS.current;
+    prevPhaseForTTS.current = phase;
+    if (!voiceGuidance || runGoal?.type === 'interval') return;
+
+    const gps = Platform.OS === 'ios' ? NativeModules.GPSTrackerModule : null;
+    let msg: string | null = null;
+    if (phase === 'running' && (prev === 'countdown' || prev === 'idle')) {
+      msg = t('voice.workoutStart', { defaultValue: '운동 시작' });
+    } else if (phase === 'completed' && prev === 'running') {
+      msg = t('voice.workoutComplete', { defaultValue: '운동 종료' });
+    }
+    if (msg) {
+      Speech.stop();
+      gps?.configureAudioForSpeech?.().catch(() => {});
+      Speech.speak(msg, {
+        language: getTTSLocale(),
+        voice: getCachedVoiceId(),
+        rate: 1.0,
+        pitch: 1.0,
+        onDone: () => { gps?.restoreAudioAfterSpeech?.().catch(() => {}); },
+      });
+    }
+  }, [phase, voiceGuidance, runGoal?.type, t]);
+
   // Cleanup on unmount only — stop GPS if still running when user navigates away.
   // IMPORTANT: Must use refs, NOT state in deps. With phase in the dependency array,
   // the cleanup fires on every phase change (e.g. running→paused), which calls
@@ -820,24 +897,23 @@ export default function RunningScreen() {
           </View>
         )}
 
-        {/* Interval training banner */}
-        {intervalState && phase === 'running' && !intervalState.isCompleted && (
+        {/* Interval training banner — large & prominent */}
+        {intervalState && (phase === 'running' || phase === 'paused') && !intervalState.isCompleted && (
           <View style={[
-            styles.paceCoachingBanner,
-            { backgroundColor: intervalState.currentPhase === 'run' ? colors.primary + 'DD' : colors.success + 'DD' },
+            styles.intervalBanner,
+            { backgroundColor: intervalState.currentPhase === 'run' ? colors.primary : colors.success },
+            phase === 'paused' && { opacity: 0.6 },
           ]}>
-            <Ionicons
-              name={intervalState.currentPhase === 'run' ? 'flash' : 'walk'}
-              size={16}
-              color={colors.white}
-            />
-            <Text style={styles.paceCoachingText}>
-              {intervalState.currentPhase === 'run' ? t('running.interval.run') : t('running.interval.walk')}
-              {' · '}
+            <View style={styles.intervalBannerTop}>
+              <Text style={styles.intervalPhaseLabel}>
+                {intervalState.currentPhase === 'run' ? 'RUN' : 'WALK'}
+              </Text>
+            </View>
+            <Text style={styles.intervalTimer}>
               {formatDuration(intervalState.phaseRemainingSeconds)}
             </Text>
-            <Text style={[styles.paceCoachingText, { opacity: 0.8 }]}>
-              {intervalState.currentSet}/{intervalState.totalSets}
+            <Text style={styles.intervalSetInfo}>
+              {intervalState.currentSet} / {intervalState.totalSets} 세트
             </Text>
           </View>
         )}
@@ -1596,6 +1672,43 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '700',
     color: c.white,
     fontVariant: ['tabular-nums'] as const,
+  },
+
+  // Interval training banner (large)
+  intervalBanner: {
+    alignItems: 'center',
+    paddingVertical: SPACING.lg,
+    paddingHorizontal: SPACING.xxl,
+    borderRadius: BORDER_RADIUS.lg,
+    marginTop: SPACING.md,
+    marginHorizontal: SPACING.md,
+  },
+  intervalBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  intervalPhaseLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.85)',
+    letterSpacing: Platform.OS === 'android' ? 1.5 : 3,
+    textTransform: 'uppercase',
+  },
+  intervalTimer: {
+    fontSize: 44,
+    fontWeight: '800',
+    color: c.white,
+    fontVariant: ['tabular-nums'] as const,
+    letterSpacing: -1,
+    marginTop: 2,
+  },
+  intervalSetInfo: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: '700',
+    color: c.white,
+    marginTop: SPACING.xs,
+    letterSpacing: 0.5,
   },
 
   // Metronome chip

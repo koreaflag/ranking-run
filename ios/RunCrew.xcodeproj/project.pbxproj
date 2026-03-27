@@ -52,6 +52,7 @@
 		B70F8995DAADE426C72AF62F /* BatteryOptimizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED3B68D7E54F6B9A9CE010C /* BatteryOptimizer.swift */; };
 		B9D95FD262AEF5BC36FCCB3B /* RunningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F257DADDE52A1B98EA1A679 /* RunningView.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		BB33CC44DD55EE66FF778802 /* IntervalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB33CC44DD55EE66FF778801 /* IntervalView.swift */; };
 		C0750497B73D460CB0DD2E60 /* noop-file.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04EA1770F7404268825423FB /* noop-file.swift */; };
 		C44709053764FEE1BA111497 /* CompletedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2C54373AEC7799F16DD9F0D /* CompletedView.swift */; };
 		C5D6E7F8091A2B3C4D5E6F70 /* WatchLocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3B4C5D6E7F80912A3B4C5D6 /* WatchLocationManager.swift */; };
@@ -180,6 +181,7 @@
 		B4C5D6E7F8091A2B3C4D5E6F /* WatchRunStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRunStorage.swift; sourceTree = "<group>"; };
 		B4C5D6E7F8091A2B3C4D5E70 /* WatchPedometerManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPedometerManager.swift; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		BB33CC44DD55EE66FF778801 /* IntervalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntervalView.swift; sourceTree = "<group>"; };
 		CC11AA22BB33DD44EE55FF06 /* ComplicationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComplicationController.swift; sourceTree = "<group>"; };
 		CC30CCA13FB0CBAD7F791D16 /* WatchSessionManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
 		D0B6102106B4CC9C3977B726 /* AltimeterTracker.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AltimeterTracker.swift; sourceTree = "<group>"; };
@@ -328,6 +330,7 @@
 				03A1B2C3D4E5F60718293A4C /* NavigateToStartView.swift */,
 				02E1F2A3B4C5D6E70A1B2C3E /* PreparingView.swift */,
 				AA22BB33CC44DD55EE66FF01 /* PaceTargetView.swift */,
+				BB33CC44DD55EE66FF778801 /* IntervalView.swift */,
 				6F257DADDE52A1B98EA1A679 /* RunningView.swift */,
 			);
 			path = Views;
@@ -697,6 +700,7 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/RNCAsyncStorage/RNCAsyncStorage_resources.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/Sentry/Sentry.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/boost/boost_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-launcher/EXDevLauncher.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-menu/EXDevMenu.bundle",
@@ -718,6 +722,7 @@
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/RNCAsyncStorage_resources.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Sentry.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/boost_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevLauncher.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevMenu.bundle",
@@ -873,6 +878,7 @@
 				AA11BB22CC33DD44EE55FF01 /* WorkoutMirroringManager.swift in Sources */,
 				CC11AA22BB33DD44EE55FF05 /* ComplicationController.swift in Sources */,
 				AA22BB33CC44DD55EE66FF02 /* PaceTargetView.swift in Sources */,
+				BB33CC44DD55EE66FF778802 /* IntervalView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

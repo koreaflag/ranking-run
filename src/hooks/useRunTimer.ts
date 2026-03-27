@@ -14,8 +14,15 @@ import { useRunningStore } from '../stores/runningStore';
  */
 export function useRunTimer() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const { phase, isPaused, isAutoPaused, updateDuration, elapsedBeforePause, startTime } =
-    useRunningStore();
+
+  // Subscribe only to the fields that determine isRunning.
+  // Previously subscribed to entire store → every GPS update (distanceMeters,
+  // routePoints, filteredLocations, etc.) triggered a re-render here, which
+  // cascaded to all components mounting this hook.
+  const phase = useRunningStore((s) => s.phase);
+  const isPaused = useRunningStore((s) => s.isPaused);
+  const isAutoPaused = useRunningStore((s) => s.isAutoPaused);
+  const startTime = useRunningStore((s) => s.startTime);
 
   const isRunning = phase === 'running' && !isPaused && !isAutoPaused && !!startTime;
 

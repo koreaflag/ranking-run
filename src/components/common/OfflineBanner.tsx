@@ -3,36 +3,39 @@ import { Animated, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '../../lib/icons';
 import { useTheme } from '../../hooks/useTheme';
+import { useNetworkStore } from '../../stores/networkStore';
 import { FONT_SIZES, SPACING } from '../../utils/constants';
-
-interface OfflineBannerProps {
-  isOnline: boolean;
-}
 
 const BANNER_HEIGHT = 30;
 
 /**
  * A slim banner that slides in from the top when the device is offline.
- * Renders nothing when online (after the exit animation completes).
+ * Shows pending sync count when items are waiting to upload.
+ * No props needed — reads directly from networkStore.
  */
-export default function OfflineBanner({ isOnline }: OfflineBannerProps) {
+export default function OfflineBanner() {
   const colors = useTheme();
   const insets = useSafeAreaInsets();
+  const isOnline = useNetworkStore((s) => s.isOnline);
+  const pendingCount = useNetworkStore((s) => s.pendingCount);
+  const isSyncing = useNetworkStore((s) => s.isSyncing);
+
   const topOffset = insets.top + 4;
   const translateY = useRef(new Animated.Value(-(BANNER_HEIGHT + topOffset + 10))).current;
   const isVisible = useRef(false);
 
+  // Show banner when offline OR when syncing pending data
+  const shouldShow = !isOnline || (pendingCount > 0 && isSyncing);
+
   useEffect(() => {
-    if (!isOnline && !isVisible.current) {
-      // Slide in
+    if (shouldShow && !isVisible.current) {
       isVisible.current = true;
       Animated.timing(translateY, {
         toValue: topOffset,
         duration: 300,
         useNativeDriver: true,
       }).start();
-    } else if (isOnline && isVisible.current) {
-      // Slide out
+    } else if (!shouldShow && isVisible.current) {
       Animated.timing(translateY, {
         toValue: -(BANNER_HEIGHT + topOffset + 10),
         duration: 250,
@@ -41,15 +44,20 @@ export default function OfflineBanner({ isOnline }: OfflineBannerProps) {
         isVisible.current = false;
       });
     }
-  }, [isOnline, translateY]);
+  }, [shouldShow, translateY]);
 
-  // Always render so the animation can run; the banner is off-screen when hidden.
+  const label = !isOnline
+    ? pendingCount > 0
+      ? `오프라인 · ${pendingCount}건 대기 중`
+      : '오프라인 모드'
+    : `동기화 중... ${pendingCount}건`;
+
   return (
     <Animated.View
       style={[
         styles.container,
         {
-          backgroundColor: colors.error,
+          backgroundColor: !isOnline ? colors.error : (colors.warning ?? '#F5A623'),
           transform: [{ translateY }],
         },
       ]}
@@ -57,12 +65,12 @@ export default function OfflineBanner({ isOnline }: OfflineBannerProps) {
     >
       <View style={styles.content}>
         <Ionicons
-          name="cloud-offline-outline"
+          name={!isOnline ? 'cloud-offline-outline' : 'cloud-upload-outline'}
           size={14}
           color="#FFFFFF"
           style={styles.icon}
         />
-        <Text style={styles.text}>오프라인 모드</Text>
+        <Text style={styles.text}>{label}</Text>
       </View>
     </Animated.View>
   );

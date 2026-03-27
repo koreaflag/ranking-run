@@ -496,6 +496,7 @@ async def get_my_runs(
                 course=course_info,
                 device_model=device_model,
                 route_preview=route_preview,
+                goal_data=record.goal_data,
             )
         )
 

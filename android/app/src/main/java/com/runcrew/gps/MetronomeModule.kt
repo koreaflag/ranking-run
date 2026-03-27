@@ -175,4 +175,101 @@ class MetronomeModule(reactContext: ReactApplicationContext) :
     fun isPlaying(promise: Promise) {
         promise.resolve(isRunning)
     }
+
+    /**
+     * Play a short beep tone [count] times.
+     * count=1: single beep (삐) for run start
+     * count=2: double beep (삐삐) for walk start
+     */
+    @ReactMethod
+    fun playBeep(count: Int) {
+        Thread({
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
+            playBeepSync(count)
+        }, "beep-audio").start()
+    }
+
+    private fun playBeepSync(count: Int) {
+        val beepDurationSec = 0.12   // 120ms per beep
+        val gapDurationSec = 0.12    // 120ms gap between beeps
+        val freq = 1000.0            // 1kHz — distinct from metronome 800Hz
+        val volume = 0.7f
+
+        val beepFrames = (SAMPLE_RATE * beepDurationSec).toInt()
+        val gapFrames = (SAMPLE_RATE * gapDurationSec).toInt()
+        val totalFrames = beepFrames * count + gapFrames * maxOf(count - 1, 0)
+        val samples = ShortArray(totalFrames)
+
+        val fadeInFrames = (SAMPLE_RATE * 0.002).toInt()   // 2ms fade in
+        val fadeOutFrames = (SAMPLE_RATE * 0.005).toInt()  // 5ms fade out
+        var writeIdx = 0
+
+        for (b in 0 until count) {
+            for (i in 0 until beepFrames) {
+                val t = i.toDouble() / SAMPLE_RATE
+                var sample = sin(2.0 * Math.PI * freq * t).toFloat()
+
+                // Fade in / fade out
+                if (i < fadeInFrames) {
+                    sample *= i.toFloat() / fadeInFrames
+                } else if (i >= beepFrames - fadeOutFrames) {
+                    val remaining = beepFrames - i
+                    sample *= remaining.toFloat() / fadeOutFrames
+                }
+
+                sample *= volume
+                samples[writeIdx] = (sample * Short.MAX_VALUE).toInt()
+                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                writeIdx++
+            }
+            // Gap (silence) between beeps
+            if (b < count - 1) {
+                for (g in 0 until gapFrames) {
+                    samples[writeIdx] = 0
+                    writeIdx++
+                }
+            }
+        }
+
+        val minBuf = AudioTrack.getMinBufferSize(
+            SAMPLE_RATE,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+
+        var track: AudioTrack? = null
+        try {
+            // USAGE_ALARM bypasses silent/vibrate mode — beep always plays
+            track = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(SAMPLE_RATE)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build()
+                )
+                .setBufferSizeInBytes(maxOf(samples.size * 2, minBuf))
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+
+            track.write(samples, 0, samples.size)
+            track.play()
+
+            // Wait for playback to finish
+            val playbackMs = (totalFrames.toDouble() / SAMPLE_RATE * 1000).toLong() + 50
+            Thread.sleep(playbackMs)
+
+            track.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "Beep playback error: ${e.message}")
+        } finally {
+            try { track?.release() } catch (_: Exception) {}
+        }
+    }
 }

@@ -194,6 +194,8 @@ private struct SettingsSummary: View {
             return "\(viewModel.standaloneGoalTime)분"
         case "program":
             return String(format: "%.1fkm/%d분", viewModel.standaloneGoalDistance, viewModel.standaloneGoalTargetTime)
+        case "interval":
+            return "인터벌 \(viewModel.standaloneIntervalSets)세트"
         default:
             return "자유"
         }
@@ -211,6 +213,7 @@ private struct SettingsPage: View {
                 // --- Goal Section ---
                 SectionHeader(icon: "target", title: "목표")
 
+                // Row 1: basic goal types
                 HStack(spacing: 5) {
                     GoalTypeChip(label: "자유", type: "free", current: viewModel.standaloneGoalType) {
                         viewModel.setGoalType("free")
@@ -221,8 +224,14 @@ private struct SettingsPage: View {
                     GoalTypeChip(label: "시간", type: "time", current: viewModel.standaloneGoalType) {
                         viewModel.setGoalType("time")
                     }
+                }
+                // Row 2: advanced goal types
+                HStack(spacing: 5) {
                     GoalTypeChip(label: "목표", type: "program", current: viewModel.standaloneGoalType) {
                         viewModel.setGoalType("program")
+                    }
+                    GoalTypeChip(label: "인터벌", type: "interval", current: viewModel.standaloneGoalType) {
+                        viewModel.setGoalType("interval")
                     }
                 }
 
@@ -280,6 +289,80 @@ private struct SettingsPage: View {
                                 .foregroundColor(appOrange)
                         }
                     }
+                } else if viewModel.standaloneGoalType == "interval" {
+                    VStack(spacing: 8) {
+                        // Run duration
+                        HStack(spacing: 6) {
+                            Image(systemName: "figure.run")
+                                .font(.system(size: 12))
+                                .foregroundColor(appOrange)
+                                .frame(width: 16)
+                            Text("달리기")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.gray)
+                            Spacer()
+                        }
+                        ValueStepper(
+                            value: formatMinSec(viewModel.standaloneIntervalRunSec),
+                            unit: "",
+                            onDecrease: {
+                                viewModel.setIntervalRunSec(max(30, viewModel.standaloneIntervalRunSec - 30))
+                            },
+                            onIncrease: {
+                                viewModel.setIntervalRunSec(min(600, viewModel.standaloneIntervalRunSec + 30))
+                            }
+                        )
+
+                        // Walk duration
+                        HStack(spacing: 6) {
+                            Image(systemName: "figure.walk")
+                                .font(.system(size: 12))
+                                .foregroundColor(.green)
+                                .frame(width: 16)
+                            Text("걷기")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.gray)
+                            Spacer()
+                        }
+                        ValueStepper(
+                            value: formatMinSec(viewModel.standaloneIntervalWalkSec),
+                            unit: "",
+                            onDecrease: {
+                                viewModel.setIntervalWalkSec(max(15, viewModel.standaloneIntervalWalkSec - 15))
+                            },
+                            onIncrease: {
+                                viewModel.setIntervalWalkSec(min(300, viewModel.standaloneIntervalWalkSec + 15))
+                            }
+                        )
+
+                        // Sets
+                        HStack(spacing: 6) {
+                            Image(systemName: "repeat")
+                                .font(.system(size: 12))
+                                .foregroundColor(.gray)
+                                .frame(width: 16)
+                            Text("반복")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.gray)
+                            Spacer()
+                        }
+                        ValueStepper(
+                            value: "\(viewModel.standaloneIntervalSets)",
+                            unit: "세트",
+                            onDecrease: {
+                                viewModel.setIntervalSets(max(1, viewModel.standaloneIntervalSets - 1))
+                            },
+                            onIncrease: {
+                                viewModel.setIntervalSets(min(20, viewModel.standaloneIntervalSets + 1))
+                            }
+                        )
+
+                        // Total time summary
+                        let totalSec = (viewModel.standaloneIntervalRunSec + viewModel.standaloneIntervalWalkSec) * viewModel.standaloneIntervalSets
+                        Text("총 \(formatMinSec(totalSec))")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(appOrange)
+                    }
                 }
 
                 Divider().background(Color.white.opacity(0.1))
@@ -324,7 +407,7 @@ private struct SettingsPage: View {
                     viewModel.setVoiceGuidance(!viewModel.isVoiceGuidanceEnabled)
                 }
 
-                if viewModel.isVoiceGuidanceEnabled {
+                if viewModel.isVoiceGuidanceEnabled && viewModel.standaloneGoalType != "interval" {
                     HStack {
                         Text("빈도")
                             .font(.system(size: 14, weight: .medium))
@@ -355,6 +438,13 @@ private struct SettingsPage: View {
         }
         return String(format: "%.1f", viewModel.voiceFrequencyKm)
     }
+}
+
+private func formatMinSec(_ totalSeconds: Int) -> String {
+    let m = totalSeconds / 60
+    let s = totalSeconds % 60
+    if s == 0 { return "\(m)분" }
+    return "\(m)분\(s)초"
 }
 
 // MARK: - Reusable Components

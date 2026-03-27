@@ -230,6 +230,7 @@ class RunService:
             splits=complete_data.get("splits"),
             pause_intervals=complete_data.get("pause_intervals"),
             filter_config=complete_data.get("filter_config"),
+            goal_data=complete_data.get("goal_data"),
             started_at=session.started_at,
             finished_at=complete_data["finished_at"],
         )

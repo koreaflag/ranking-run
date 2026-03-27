@@ -332,7 +332,7 @@ export const useRunningStore = create<RunningState>((set, get) => ({
           longitude: prevPos.longitude + (currentPos.longitude - prevPos.longitude) * f,
         });
       }
-      const combined = [...state.routePoints, ...interp, currentPos];
+      const combined = state.routePoints.concat(interp, currentPos);
       // Cap route points to prevent unbounded memory growth during long runs.
       // Keep last 10,000 points (~20min of data at 8pts/sec).
       // Older points are already captured in chunk uploads.
@@ -359,7 +359,9 @@ export const useRunningStore = create<RunningState>((set, get) => ({
       cumulativeDistance: event.distanceFromStart,
       isInterpolated: false,
     };
-    let newFilteredLocations = [...state.filteredLocations, newFilteredLocation];
+    // Use concat instead of spread — avoids copying entire array into a new
+    // temporary array on every GPS update (O(n) allocation per tick).
+    let newFilteredLocations = state.filteredLocations.concat(newFilteredLocation);
     // Cap filteredLocations to prevent unbounded memory growth on ultra-long runs.
     // markChunkUploaded trims uploaded points, but if uploads stall, this is a safety net.
     if (newFilteredLocations.length > MAX_FILTERED_LOCATIONS) {

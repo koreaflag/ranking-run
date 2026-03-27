@@ -30,7 +30,7 @@ export default function WorldStack() {
       <Stack.Screen name="RunningMain" component={RunningScreen} options={{ gestureEnabled: false }} />
       <Stack.Screen name="RunResult" component={RunResultScreen} />
       <Stack.Screen name="HeartRateSettings" component={HeartRateSettingsScreen} />
-      <Stack.Screen name="WatchSettings" component={WatchSettingsScreen} options={{ presentation: 'modal' }} />
+      <Stack.Screen name="WatchSettings" component={WatchSettingsScreen} />
     </Stack.Navigator>
   );
 }

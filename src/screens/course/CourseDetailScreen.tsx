@@ -16,7 +16,10 @@ import {
   Image,
   Dimensions,
   StatusBar,
+  BackHandler,
 } from 'react-native';
+
+const IS_ANDROID = Platform.OS === 'android';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
@@ -179,6 +182,7 @@ export default function CourseDetailScreen() {
 
   // Edit modal state
   const [showEditModal, setShowEditModal] = useState(false);
+  const [androidEditMounted, setAndroidEditMounted] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editPublic, setEditPublic] = useState(true);
@@ -194,7 +198,24 @@ export default function CourseDetailScreen() {
     setEditCourseType((selectedCourse as any).course_type === 'loop' ? 'loop' : 'normal');
     setEditLapCount((selectedCourse as any).lap_count ?? 1);
     setShowEditModal(true);
+    if (IS_ANDROID) setAndroidEditMounted(true);
   }, [selectedCourse]);
+
+  // Android: sync mount state with showEditModal
+  useEffect(() => {
+    if (IS_ANDROID && showEditModal) setAndroidEditMounted(true);
+    if (IS_ANDROID && !showEditModal) setAndroidEditMounted(false);
+  }, [showEditModal]);
+
+  // Android: hardware back button
+  useEffect(() => {
+    if (!IS_ANDROID || !androidEditMounted) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setShowEditModal(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [androidEditMounted]);
 
   const BOTTOM_CTA_HEIGHT = 200; // approximate height of bottomCta (generous to ensure full hide)
   const handleScroll = useCallback((e: any) => {
@@ -793,8 +814,9 @@ export default function CourseDetailScreen() {
       </KeyboardAvoidingView>
 
       {/* Edit Modal */}
-      <Modal visible={showEditModal} animationType="slide">
-        <View style={[styles.modalContainer, { paddingTop: insets.top }]}>
+      {IS_ANDROID ? (androidEditMounted && (
+        <View style={{ ...StyleSheet.absoluteFillObject, zIndex: 9999, elevation: 9999, backgroundColor: colors.background }}>
+          <View style={[styles.modalContainer, { paddingTop: insets.top }]}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setShowEditModal(false)} activeOpacity={0.7}>
               <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
@@ -904,8 +926,93 @@ export default function CourseDetailScreen() {
               <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </TouchableOpacity>
           </ScrollView>
+          </View>
+        </View>
+      )) : (
+      <Modal visible={showEditModal} animationType="slide">
+        <View style={[styles.modalContainer, { paddingTop: insets.top }]}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowEditModal(false)} activeOpacity={0.7}>
+              <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>{t('course.detail.editTitle')}</Text>
+            <TouchableOpacity onPress={handleSaveEdit} disabled={isSaving} activeOpacity={0.7}>
+              <Text style={[styles.modalSave, isSaving && { opacity: 0.4 }]}>
+                {isSaving ? t('common.saving') : t('common.save')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" showsVerticalScrollIndicator={false}>
+            <Text style={styles.fieldLabel}>{t('course.detail.fieldTitle')}</Text>
+            <TextInput
+              style={styles.fieldInput}
+              value={editTitle}
+              onChangeText={setEditTitle}
+              placeholder={t('course.detail.fieldTitlePlaceholder')}
+              placeholderTextColor={colors.textTertiary}
+              maxLength={50}
+            />
+            <Text style={styles.fieldLabel}>{t('course.detail.fieldDescription')}</Text>
+            <TextInput
+              style={[styles.fieldInput, styles.fieldTextArea]}
+              value={editDescription}
+              onChangeText={(v) => v.length <= 200 && setEditDescription(v)}
+              placeholder={t('course.detail.fieldDescPlaceholder')}
+              placeholderTextColor={colors.textTertiary}
+              multiline
+              maxLength={200}
+            />
+            <Text style={styles.charCount}>{editDescription.length}/200</Text>
+            {(selectedCourse as any)?.course_type === 'loop' && (
+              <>
+                <Text style={styles.fieldLabel}>{t('course.detail.courseType')}</Text>
+                <View style={styles.courseTypeRow}>
+                  <TouchableOpacity style={[styles.courseTypeBtn, editCourseType === 'normal' && styles.courseTypeBtnActive]} onPress={() => setEditCourseType('normal')} activeOpacity={0.7}>
+                    <Text style={[styles.courseTypeBtnText, editCourseType === 'normal' && styles.courseTypeBtnTextActive]}>{t('course.detail.oneWay')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.courseTypeBtn, editCourseType === 'loop' && styles.courseTypeBtnActive]} onPress={() => setEditCourseType('loop')} activeOpacity={0.7}>
+                    <Text style={[styles.courseTypeBtnText, editCourseType === 'loop' && styles.courseTypeBtnTextActive]}>{t('course.detail.roundTrip')}</Text>
+                  </TouchableOpacity>
+                </View>
+                {editCourseType === 'loop' && (
+                  <View style={styles.lapCountRow}>
+                    <Text style={styles.fieldLabel}>{t('course.detail.lapCount')}</Text>
+                    <View style={styles.lapCountControls}>
+                      <TouchableOpacity style={styles.lapCountBtn} onPress={() => setEditLapCount(Math.max(1, editLapCount - 1))} activeOpacity={0.7}>
+                        <Ionicons name="remove" size={18} color={colors.text} />
+                      </TouchableOpacity>
+                      <Text style={styles.lapCountValue}>{editLapCount}</Text>
+                      <TouchableOpacity style={styles.lapCountBtn} onPress={() => setEditLapCount(Math.min(10, editLapCount + 1))} activeOpacity={0.7}>
+                        <Ionicons name="add" size={18} color={colors.text} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </>
+            )}
+            <View style={styles.publicRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>{t('course.detail.publicLabel')}</Text>
+                <Text style={styles.publicHint}>{t('course.detail.publicHint')}</Text>
+              </View>
+              <Switch value={editPublic} onValueChange={setEditPublic} trackColor={{ false: colors.surfaceLight, true: colors.primary }} />
+            </View>
+            <TouchableOpacity
+              style={styles.routeCorrectBtn}
+              onPress={() => { setShowEditModal(false); navigation.navigate('CourseRouteCorrect' as any, { courseId }); }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="map-outline" size={20} color={colors.primary} />
+              <View style={{ flex: 1, marginLeft: SPACING.md }}>
+                <Text style={styles.routeCorrectTitle}>{t('course.detail.routeCorrection')}</Text>
+                <Text style={styles.routeCorrectHint}>{t('course.detail.routeCorrectionHint')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </ScrollView>
         </View>
       </Modal>
+      )}
 
       {/* Bottom CTA: Raid or Competition challenge */}
       <Animated.View style={[styles.bottomCta, { paddingBottom: Math.max(insets.bottom, 4), transform: [{ translateY: bottomCtaTranslateY }] }]}>

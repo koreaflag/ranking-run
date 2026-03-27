@@ -11,6 +11,9 @@ class WatchSettingsManager {
     var standaloneGoalDistance: Double
     var standaloneGoalTime: Int           // minutes (for time goal type)
     var standaloneGoalTargetTime: Int     // minutes (for program goal type)
+    var standaloneIntervalRunSec: Int     // interval: run phase seconds
+    var standaloneIntervalWalkSec: Int    // interval: walk phase seconds
+    var standaloneIntervalSets: Int       // interval: number of sets
     var isIndoorRun: Bool
     var isAutoPauseEnabled: Bool
     var isVoiceGuidanceEnabled: Bool
@@ -36,6 +39,12 @@ class WatchSettingsManager {
         self.standaloneGoalTime = savedTime > 0 ? savedTime : 30
         let savedTargetTime = defaults.integer(forKey: "standaloneGoalTargetTime")
         self.standaloneGoalTargetTime = savedTargetTime > 0 ? savedTargetTime : 20
+        let savedIvRun = defaults.integer(forKey: "standaloneIntervalRunSec")
+        self.standaloneIntervalRunSec = savedIvRun > 0 ? savedIvRun : 180
+        let savedIvWalk = defaults.integer(forKey: "standaloneIntervalWalkSec")
+        self.standaloneIntervalWalkSec = savedIvWalk > 0 ? savedIvWalk : 60
+        let savedIvSets = defaults.integer(forKey: "standaloneIntervalSets")
+        self.standaloneIntervalSets = savedIvSets > 0 ? savedIvSets : 5
         self.isIndoorRun = defaults.bool(forKey: "isIndoorRun")
         self.isAutoPauseEnabled = defaults.object(forKey: "isAutoPauseEnabled") == nil ? true : defaults.bool(forKey: "isAutoPauseEnabled")
         self.isVoiceGuidanceEnabled = defaults.object(forKey: "isVoiceGuidanceEnabled") == nil ? true : defaults.bool(forKey: "isVoiceGuidanceEnabled")
@@ -69,6 +78,24 @@ class WatchSettingsManager {
     func setGoalTargetTime(_ minutes: Int) {
         standaloneGoalTargetTime = minutes
         UserDefaults.standard.set(minutes, forKey: "standaloneGoalTargetTime")
+        onSettingsChanged?()
+    }
+
+    func setIntervalRunSec(_ sec: Int) {
+        standaloneIntervalRunSec = sec
+        UserDefaults.standard.set(sec, forKey: "standaloneIntervalRunSec")
+        onSettingsChanged?()
+    }
+
+    func setIntervalWalkSec(_ sec: Int) {
+        standaloneIntervalWalkSec = sec
+        UserDefaults.standard.set(sec, forKey: "standaloneIntervalWalkSec")
+        onSettingsChanged?()
+    }
+
+    func setIntervalSets(_ sets: Int) {
+        standaloneIntervalSets = sets
+        UserDefaults.standard.set(sets, forKey: "standaloneIntervalSets")
         onSettingsChanged?()
     }
 

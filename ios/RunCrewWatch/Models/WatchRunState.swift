@@ -50,6 +50,15 @@ struct WatchRunState {
     var programStatus: String = ""        // "ahead"/"on_pace"/"behind"/"critical"
     var metronomeBPM: Int = 0             // 0 = off
 
+    // Interval training (from phone)
+    var intervalPhase: String = ""        // "run"/"walk"/"" (empty = not interval)
+    var intervalCurrentSet: Int = 0       // 1-based current set number
+    var intervalTotalSets: Int = 0        // total number of sets
+    var intervalRunSeconds: Int = 0       // run phase duration (seconds)
+    var intervalWalkSeconds: Int = 0      // walk phase duration (seconds)
+    var intervalPhaseRemaining: Int = 0   // seconds remaining in current phase
+    var intervalCompleted: Bool = false   // all sets completed
+
     // Timer sync (startTime-based, from phone)
     var runStartTime: Double = 0          // ms since epoch — when current segment started
     var elapsedBeforePause: Double = 0    // seconds accumulated before current segment

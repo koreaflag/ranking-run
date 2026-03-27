@@ -383,4 +383,5 @@ async def get_run_record_detail(
         finished_at=record.finished_at,
         course=course_info,
         course_completion=course_completion,
+        goal_data=record.goal_data,
     )

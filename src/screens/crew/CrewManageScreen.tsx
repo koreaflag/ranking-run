@@ -12,6 +12,7 @@ import {
   Modal,
   Platform,
   StatusBar,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '../../lib/icons';
@@ -59,6 +60,12 @@ export default function CrewManageScreen() {
   const [inviteCode, setInviteCode] = useState('');
   const [isInviting, setIsInviting] = useState(false);
 
+  const IS_ANDROID = Platform.OS === 'android';
+
+  // Android overlay mount states (useState for proper mount/unmount)
+  const [gradeModalMounted, setGradeModalMounted] = useState(false);
+  const [inviteModalMounted, setInviteModalMounted] = useState(false);
+
   const isOwner = crew?.my_role === 'owner';
 
   const loadData = useCallback(async () => {
@@ -98,6 +105,43 @@ export default function CrewManageScreen() {
       loadData();
     }, [loadData])
   );
+
+  // Sync Android overlay mount states
+  useEffect(() => {
+    if (IS_ANDROID) {
+      if (showGradeModal) setGradeModalMounted(true);
+      else setGradeModalMounted(false);
+    }
+  }, [showGradeModal, IS_ANDROID]);
+
+  useEffect(() => {
+    if (IS_ANDROID) {
+      if (showInvite) setInviteModalMounted(true);
+      else setInviteModalMounted(false);
+    }
+  }, [showInvite, IS_ANDROID]);
+
+  // Android BackHandler for modals
+  useEffect(() => {
+    if (!IS_ANDROID) return;
+    if (!showGradeModal && !showInvite) return;
+
+    const onBack = () => {
+      if (showGradeModal) {
+        setShowGradeModal(false);
+        return true;
+      }
+      if (showInvite) {
+        setShowInvite(false);
+        setInviteCode('');
+        return true;
+      }
+      return false;
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [IS_ANDROID, showGradeModal, showInvite]);
 
   const handleSaveGradeNames = useCallback(async () => {
     if (!crew) return;
@@ -420,102 +464,206 @@ export default function CrewManageScreen() {
         </ScrollView>
 
         {/* Grade Name Config Modal */}
-        <Modal visible={showGradeModal} animationType="slide">
-          <BlurredBackground>
-            <SafeAreaView style={styles.modalContainer}>
-              <View style={styles.modalHeader}>
-                <TouchableOpacity onPress={() => setShowGradeModal(false)} activeOpacity={0.7}>
-                  <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
-                </TouchableOpacity>
-                <Text style={styles.modalTitle}>{t('crew.gradeNameConfig')}</Text>
-                <TouchableOpacity onPress={handleSaveGradeNames} disabled={isSavingGrades} activeOpacity={0.7}>
-                  <Text style={[styles.modalSave, isSavingGrades && { opacity: 0.4 }]}>
-                    {isSavingGrades ? t('common.saving') : t('common.save')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
-                {/* Level 5 - owner (fixed) */}
-                <View style={styles.gradeEditRow}>
-                  <View style={[styles.gradeLevelBadge, { backgroundColor: colors.primary + '20' }]}>
-                    <Text style={[styles.gradeLevelText, { color: colors.primary }]}>Lv.5</Text>
+        {IS_ANDROID ? (
+          gradeModalMounted && (
+            <View style={styles.androidFullOverlay}>
+              <BlurredBackground>
+                <SafeAreaView style={styles.modalContainer}>
+                  <View style={styles.modalHeader}>
+                    <TouchableOpacity onPress={() => setShowGradeModal(false)} activeOpacity={0.7}>
+                      <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.modalTitle}>{t('crew.gradeNameConfig')}</Text>
+                    <TouchableOpacity onPress={handleSaveGradeNames} disabled={isSavingGrades} activeOpacity={0.7}>
+                      <Text style={[styles.modalSave, isSavingGrades && { opacity: 0.4 }]}>
+                        {isSavingGrades ? t('common.saving') : t('common.save')}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                  <TextInput
-                    style={[styles.gradeInput, { color: colors.textTertiary }]}
-                    value={t('crew.gradeOwner')}
-                    editable={false}
-                  />
-                </View>
 
-                {/* Levels 4-1 - editable (high to low) */}
-                {[4, 3, 2, 1].map((level) => {
-                  const defaultName = getGradeName(level, null, t);
-                  const gradeColor = getGradeColor(level, colors);
-                  return (
-                    <View key={level} style={styles.gradeEditRow}>
-                      <View style={[styles.gradeLevelBadge, { backgroundColor: gradeColor + '20' }]}>
-                        <Text style={[styles.gradeLevelText, { color: gradeColor }]}>
-                          Lv.{level}
-                        </Text>
+                  <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+                    {/* Level 5 - owner (fixed) */}
+                    <View style={styles.gradeEditRow}>
+                      <View style={[styles.gradeLevelBadge, { backgroundColor: colors.primary + '20' }]}>
+                        <Text style={[styles.gradeLevelText, { color: colors.primary }]}>Lv.5</Text>
                       </View>
                       <TextInput
-                        style={styles.gradeInput}
-                        value={gradeNames[String(level)]}
-                        onChangeText={(v) =>
-                          setGradeNames(prev => ({ ...prev, [String(level)]: v }))
-                        }
-                        placeholder={defaultName}
-                        placeholderTextColor={colors.textTertiary}
-                        maxLength={20}
+                        style={[styles.gradeInput, { color: colors.textTertiary }]}
+                        value={t('crew.gradeOwner')}
+                        editable={false}
                       />
                     </View>
-                  );
-                })}
-              </ScrollView>
-            </SafeAreaView>
-          </BlurredBackground>
-        </Modal>
+
+                    {/* Levels 4-1 - editable (high to low) */}
+                    {[4, 3, 2, 1].map((level) => {
+                      const defaultName = getGradeName(level, null, t);
+                      const gradeColor = getGradeColor(level, colors);
+                      return (
+                        <View key={level} style={styles.gradeEditRow}>
+                          <View style={[styles.gradeLevelBadge, { backgroundColor: gradeColor + '20' }]}>
+                            <Text style={[styles.gradeLevelText, { color: gradeColor }]}>
+                              Lv.{level}
+                            </Text>
+                          </View>
+                          <TextInput
+                            style={styles.gradeInput}
+                            value={gradeNames[String(level)]}
+                            onChangeText={(v) =>
+                              setGradeNames(prev => ({ ...prev, [String(level)]: v }))
+                            }
+                            placeholder={defaultName}
+                            placeholderTextColor={colors.textTertiary}
+                            maxLength={20}
+                          />
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                </SafeAreaView>
+              </BlurredBackground>
+            </View>
+          )
+        ) : (
+          <Modal visible={showGradeModal} animationType="slide">
+            <BlurredBackground>
+              <SafeAreaView style={styles.modalContainer}>
+                <View style={styles.modalHeader}>
+                  <TouchableOpacity onPress={() => setShowGradeModal(false)} activeOpacity={0.7}>
+                    <Text style={styles.modalCancel}>{t('common.cancel')}</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.modalTitle}>{t('crew.gradeNameConfig')}</Text>
+                  <TouchableOpacity onPress={handleSaveGradeNames} disabled={isSavingGrades} activeOpacity={0.7}>
+                    <Text style={[styles.modalSave, isSavingGrades && { opacity: 0.4 }]}>
+                      {isSavingGrades ? t('common.saving') : t('common.save')}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+                  {/* Level 5 - owner (fixed) */}
+                  <View style={styles.gradeEditRow}>
+                    <View style={[styles.gradeLevelBadge, { backgroundColor: colors.primary + '20' }]}>
+                      <Text style={[styles.gradeLevelText, { color: colors.primary }]}>Lv.5</Text>
+                    </View>
+                    <TextInput
+                      style={[styles.gradeInput, { color: colors.textTertiary }]}
+                      value={t('crew.gradeOwner')}
+                      editable={false}
+                    />
+                  </View>
+
+                  {/* Levels 4-1 - editable (high to low) */}
+                  {[4, 3, 2, 1].map((level) => {
+                    const defaultName = getGradeName(level, null, t);
+                    const gradeColor = getGradeColor(level, colors);
+                    return (
+                      <View key={level} style={styles.gradeEditRow}>
+                        <View style={[styles.gradeLevelBadge, { backgroundColor: gradeColor + '20' }]}>
+                          <Text style={[styles.gradeLevelText, { color: gradeColor }]}>
+                            Lv.{level}
+                          </Text>
+                        </View>
+                        <TextInput
+                          style={styles.gradeInput}
+                          value={gradeNames[String(level)]}
+                          onChangeText={(v) =>
+                            setGradeNames(prev => ({ ...prev, [String(level)]: v }))
+                          }
+                          placeholder={defaultName}
+                          placeholderTextColor={colors.textTertiary}
+                          maxLength={20}
+                        />
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              </SafeAreaView>
+            </BlurredBackground>
+          </Modal>
+        )}
 
         {/* Invite Modal */}
-        <Modal visible={showInvite} animationType="fade" transparent>
-          <View style={styles.inviteOverlay}>
-            <View style={styles.inviteCard}>
-              <Text style={styles.inviteTitle}>{t('crew.inviteTitle')}</Text>
-              <Text style={styles.inviteDesc}>{t('crew.inviteDesc')}</Text>
-              <TextInput
-                style={styles.inviteInput}
-                value={inviteCode}
-                onChangeText={setInviteCode}
-                placeholder={t('crew.inviteCodePlaceholder')}
-                placeholderTextColor={colors.textTertiary}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <View style={styles.inviteActions}>
-                <TouchableOpacity
-                  style={styles.inviteCancelBtn}
-                  onPress={() => { setShowInvite(false); setInviteCode(''); }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.inviteCancelText}>{t('common.cancel')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.inviteConfirmBtn, !inviteCode.trim() && { opacity: 0.5 }]}
-                  onPress={handleInvite}
-                  disabled={!inviteCode.trim() || isInviting}
-                  activeOpacity={0.7}
-                >
-                  {isInviting ? (
-                    <ActivityIndicator size="small" color={colors.white} />
-                  ) : (
-                    <Text style={styles.inviteConfirmText}>{t('crew.invite')}</Text>
-                  )}
-                </TouchableOpacity>
+        {IS_ANDROID ? (
+          inviteModalMounted && (
+            <View style={styles.androidFullOverlay}>
+              <View style={styles.inviteOverlay}>
+                <View style={styles.inviteCard}>
+                  <Text style={styles.inviteTitle}>{t('crew.inviteTitle')}</Text>
+                  <Text style={styles.inviteDesc}>{t('crew.inviteDesc')}</Text>
+                  <TextInput
+                    style={styles.inviteInput}
+                    value={inviteCode}
+                    onChangeText={setInviteCode}
+                    placeholder={t('crew.inviteCodePlaceholder')}
+                    placeholderTextColor={colors.textTertiary}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <View style={styles.inviteActions}>
+                    <TouchableOpacity
+                      style={styles.inviteCancelBtn}
+                      onPress={() => { setShowInvite(false); setInviteCode(''); }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.inviteCancelText}>{t('common.cancel')}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.inviteConfirmBtn, !inviteCode.trim() && { opacity: 0.5 }]}
+                      onPress={handleInvite}
+                      disabled={!inviteCode.trim() || isInviting}
+                      activeOpacity={0.7}
+                    >
+                      {isInviting ? (
+                        <ActivityIndicator size="small" color={colors.white} />
+                      ) : (
+                        <Text style={styles.inviteConfirmText}>{t('crew.invite')}</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
             </View>
-          </View>
-        </Modal>
+          )
+        ) : (
+          <Modal visible={showInvite} animationType="fade" transparent>
+            <View style={styles.inviteOverlay}>
+              <View style={styles.inviteCard}>
+                <Text style={styles.inviteTitle}>{t('crew.inviteTitle')}</Text>
+                <Text style={styles.inviteDesc}>{t('crew.inviteDesc')}</Text>
+                <TextInput
+                  style={styles.inviteInput}
+                  value={inviteCode}
+                  onChangeText={setInviteCode}
+                  placeholder={t('crew.inviteCodePlaceholder')}
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <View style={styles.inviteActions}>
+                  <TouchableOpacity
+                    style={styles.inviteCancelBtn}
+                    onPress={() => { setShowInvite(false); setInviteCode(''); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.inviteCancelText}>{t('common.cancel')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.inviteConfirmBtn, !inviteCode.trim() && { opacity: 0.5 }]}
+                    onPress={handleInvite}
+                    disabled={!inviteCode.trim() || isInviting}
+                    activeOpacity={0.7}
+                  >
+                    {isInviting ? (
+                      <ActivityIndicator size="small" color={colors.white} />
+                    ) : (
+                      <Text style={styles.inviteConfirmText}>{t('crew.invite')}</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
       </SafeAreaView>
     </BlurredBackground>
   );
@@ -743,6 +891,17 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontWeight: '700',
     color: c.textSecondary,
     fontVariant: ['tabular-nums'],
+  },
+
+  // Android full-screen overlay (replaces Modal)
+  androidFullOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999,
+    elevation: 9999,
   },
 
   // Grade Name Modal

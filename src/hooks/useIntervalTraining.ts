@@ -6,11 +6,15 @@
 // ============================================================
 
 import { useEffect, useRef, useMemo } from 'react';
+import { NativeModules } from 'react-native';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import type { RunningPhase } from '../stores/runningStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { getCachedVoiceId } from './useVoiceGuidance';
 import i18n from '../i18n';
+
+const { MetronomeModule } = NativeModules;
 
 export type IntervalPhase = 'run' | 'walk';
 
@@ -46,10 +50,12 @@ export function useIntervalTraining({
   elapsedSeconds,
   phase,
 }: UseIntervalTrainingParams): IntervalState | null {
-  const { voiceGuidance, hapticFeedback } = useSettingsStore();
+  const voiceGuidance = useSettingsStore((s) => s.voiceGuidance);
+  const hapticFeedback = useSettingsStore((s) => s.hapticFeedback);
   const prevPhaseRef = useRef<IntervalPhase | null>(null);
   const prevSetRef = useRef<number>(0);
   const completedAnnouncedRef = useRef(false);
+
 
   const cycleDuration = runSeconds + walkSeconds;
   const totalDuration = cycleDuration * sets;
@@ -102,24 +108,33 @@ export function useIntervalTraining({
   useEffect(() => {
     if (!state || phase !== 'running') return;
 
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
     const { currentPhase, currentSet, isCompleted } = state;
 
-    // Completion announcement
-    if (isCompleted && !completedAnnouncedRef.current) {
-      completedAnnouncedRef.current = true;
-      if (hapticFeedback) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setTimeout(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success), 400);
+    // Completion announcement — then stop all further TTS
+    if (isCompleted) {
+      if (!completedAnnouncedRef.current) {
+        completedAnnouncedRef.current = true;
+        Speech.stop(); // Stop any in-progress TTS
+        MetronomeModule?.playBeep(3);
+        if (hapticFeedback) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          timers.push(setTimeout(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success), 400));
+        }
+        if (voiceGuidance) {
+          const msg = i18n.t('voice.intervalComplete');
+          timers.push(setTimeout(() => Speech.speak(msg, { language: getTTSLocale(), rate: 0.9, voice: getCachedVoiceId() }), 500));
+        }
       }
-      if (voiceGuidance) {
-        const msg = i18n.t('voice.intervalComplete');
-        Speech.speak(msg, { language: getTTSLocale(), rate: 1.1 });
-      }
-      return;
+      // Don't fall through to phase change — interval is done
+      return () => { timers.forEach(clearTimeout); };
     }
 
-    // Phase change: run <-> walk
-    if (prevPhaseRef.current !== null && currentPhase !== prevPhaseRef.current) {
+    // Phase change: run <-> walk (also fires on first entry when prevPhaseRef is null)
+    const isFirstEntry = prevPhaseRef.current === null;
+    if (isFirstEntry || currentPhase !== prevPhaseRef.current) {
+      MetronomeModule?.playBeep(currentPhase === 'run' ? 1 : 2);
       if (hapticFeedback) {
         if (currentPhase === 'run') {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -131,17 +146,14 @@ export function useIntervalTraining({
         const msg = currentPhase === 'run'
           ? i18n.t('voice.intervalRun', { set: currentSet, total: sets })
           : i18n.t('voice.intervalWalk');
-        Speech.speak(msg, { language: getTTSLocale(), rate: 1.1 });
+        timers.push(setTimeout(() => Speech.speak(msg, { language: getTTSLocale(), rate: 0.9, voice: getCachedVoiceId() }), 300));
       }
-    }
-
-    // Set change announcement (when entering a new set's run phase)
-    if (prevSetRef.current > 0 && currentSet !== prevSetRef.current && currentPhase === 'run') {
-      // Already handled by phase change above
     }
 
     prevPhaseRef.current = currentPhase;
     prevSetRef.current = currentSet;
+
+    return () => { timers.forEach(clearTimeout); };
   }, [state, phase, hapticFeedback, voiceGuidance, sets]);
 
   // Reset refs when disabled
@@ -150,6 +162,7 @@ export function useIntervalTraining({
       prevPhaseRef.current = null;
       prevSetRef.current = 0;
       completedAnnouncedRef.current = false;
+
     }
   }, [enabled]);
 

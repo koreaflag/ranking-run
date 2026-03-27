@@ -23,6 +23,8 @@ class CompanionRunManager {
     /// Closure to get/set phaseLockedUntil.
     var getPhaseLockedUntil: (() -> Date)?
     var setPhaseLockedUntil: ((Date) -> Void)?
+    /// Closure to check idle cooldown (blocks stale messages after idle reset).
+    var isInIdleCooldown: (() -> Bool)?
 
     // MARK: - Haptic State
 
@@ -42,6 +44,7 @@ class CompanionRunManager {
 
     func handleLocationUpdate(_ message: [String: Any]) {
         guard isStandaloneMode?() == false else { return }
+        guard isInIdleCooldown?() != true else { return }
 
         // Session ID validation: reject location updates from a previous run session.
         // Without this, stale location data from the old run can overwrite the new run's state.
@@ -102,11 +105,19 @@ class CompanionRunManager {
     }
 
     func handleStateUpdate(_ message: [String: Any]) {
-        // In standalone mode, ignore phone updates UNLESS the phone starts a new run.
+        // Block ALL state updates during idle cooldown (prevents phantom runs from stale messages)
+        if isInIdleCooldown?() == true {
+            print("[CompanionRunManager] BLOCKED stateUpdate during idle cooldown")
+            return
+        }
+
+        // In standalone mode, ignore phone updates UNLESS the phone starts a NEW run.
+        // Only "countdown" is a reliable new-run signal. "running" could be stale from
+        // a previous phone run and must NOT exit standalone mode (causes phantom runs).
         if isStandaloneMode?() == true {
             if let phase = message[WatchMessageKeys.phase] as? String,
-               phase == "running" || phase == "countdown" {
-                print("[CompanionRunManager] Phone started new run — exiting standalone mode")
+               phase == "countdown" {
+                print("[CompanionRunManager] Phone started new run (countdown) — exiting standalone mode")
                 exitStandaloneMode?()
             } else {
                 return
@@ -119,11 +130,11 @@ class CompanionRunManager {
         let phaseLockedUntil = getPhaseLockedUntil?() ?? .distantPast
         print("[CompanionRunManager] handleStateUpdate: incoming=\(incomingPhase) current=\(previousPhase) locked=\(Date() < phaseLockedUntil)")
 
-        // Block stale states from showing when app starts fresh.
-        // Only "countdown" can transition from idle (explicit new run signal).
-        if previousPhase == "idle" || previousPhase == "" {
+        // Block stale states from reviving a finished or fresh session.
+        // Only "countdown" can transition from idle/completed (explicit new run signal).
+        if previousPhase == "idle" || previousPhase == "" || previousPhase == "completed" {
             if incomingPhase != "countdown" {
-                print("[CompanionRunManager] BLOCKED stale \(incomingPhase) — currently idle (only countdown allowed)")
+                print("[CompanionRunManager] BLOCKED stale \(incomingPhase) — currently \(previousPhase) (only countdown allowed)")
                 return
             }
         }
@@ -302,6 +313,37 @@ class CompanionRunManager {
             }
         }
 
+        // Interval training
+        if let v = message[WatchMessageKeys.intervalPhase] as? String {
+            let oldPhase = currentState.intervalPhase
+            currentState.intervalPhase = v
+            // Haptic on phase transition (run↔walk)
+            if !v.isEmpty && v != oldPhase && !oldPhase.isEmpty && currentState.phase == "running" {
+                if v == "run" {
+                    HapticManager.shared.intervalRunStart()
+                } else if v == "walk" {
+                    HapticManager.shared.intervalWalkStart()
+                }
+            }
+        }
+        if let v = message[WatchMessageKeys.intervalCurrentSet] as? Int { currentState.intervalCurrentSet = v }
+        else if let v = message[WatchMessageKeys.intervalCurrentSet] as? Double { currentState.intervalCurrentSet = Int(v) }
+        if let v = message[WatchMessageKeys.intervalTotalSets] as? Int { currentState.intervalTotalSets = v }
+        else if let v = message[WatchMessageKeys.intervalTotalSets] as? Double { currentState.intervalTotalSets = Int(v) }
+        if let v = message[WatchMessageKeys.intervalRunSeconds] as? Int { currentState.intervalRunSeconds = v }
+        else if let v = message[WatchMessageKeys.intervalRunSeconds] as? Double { currentState.intervalRunSeconds = Int(v) }
+        if let v = message[WatchMessageKeys.intervalWalkSeconds] as? Int { currentState.intervalWalkSeconds = v }
+        else if let v = message[WatchMessageKeys.intervalWalkSeconds] as? Double { currentState.intervalWalkSeconds = Int(v) }
+        if let v = message[WatchMessageKeys.intervalPhaseRemaining] as? Int { currentState.intervalPhaseRemaining = v }
+        else if let v = message[WatchMessageKeys.intervalPhaseRemaining] as? Double { currentState.intervalPhaseRemaining = Int(v) }
+        if let v = message[WatchMessageKeys.intervalCompleted] as? Bool {
+            let wasCompleted = currentState.intervalCompleted
+            currentState.intervalCompleted = v
+            if v && !wasCompleted {
+                HapticManager.shared.intervalComplete()
+            }
+        }
+
         // Apply all state changes at once
         updateState?({ state in
             state = currentState
@@ -350,15 +392,20 @@ class CompanionRunManager {
 
     /// Handle phase change from HKWorkoutSession mirroring.
     func handleMirroredPhaseChange(from oldPhase: String, to newPhase: String) {
+        // Block during idle cooldown (prevents stale mirroring callbacks from creating phantom runs)
+        if isInIdleCooldown?() == true {
+            print("[CompanionRunManager] MIRRORED BLOCKED during idle cooldown: \(oldPhase)→\(newPhase)")
+            return
+        }
         guard let state = getState?(), newPhase != state.phase else { return }
 
         // Block mirroring from reviving idle/completed state.
         // After standalone run ends → resetToIdle() sets isStandaloneMode=false.
         // Delayed WorkoutMirroringManager cleanup callbacks can then pass the
         // standalone guard and set phase back to "running". Block this.
-        if state.phase == "idle" || state.phase == "" {
+        if state.phase == "idle" || state.phase == "" || state.phase == "completed" {
             if newPhase != "countdown" {
-                print("[CompanionRunManager] MIRRORED BLOCKED: \(newPhase) while idle (only countdown allowed)")
+                print("[CompanionRunManager] MIRRORED BLOCKED: \(newPhase) while \(state.phase) (only countdown allowed)")
                 return
             }
         }
@@ -398,6 +445,7 @@ class CompanionRunManager {
 
     func pollPhoneState() {
         guard isStandaloneMode?() != true else { return }
+        guard isInIdleCooldown?() != true else { return }
         WatchSessionService.shared.requestCurrentState { [weak self] reply in
             guard let self = self, let reply = reply else { return }
             self.handleStateUpdate(reply)

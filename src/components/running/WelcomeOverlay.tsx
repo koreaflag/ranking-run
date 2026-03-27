@@ -387,7 +387,7 @@ export default function WelcomeOverlay({
 
       {/* Tour button — outside the pointerEvents="none" Animated.View so it remains tappable */}
       {onTour && (
-        <Animated.View style={{ opacity }} pointerEvents="auto">
+        <Animated.View style={[StyleSheet.absoluteFillObject, { opacity }]} pointerEvents="box-none">
           <TouchableOpacity
             style={[styles.tourButton, { backgroundColor: tourBtnBg }]}
             onPress={onTour}

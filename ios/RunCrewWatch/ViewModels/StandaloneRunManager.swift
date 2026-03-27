@@ -37,6 +37,16 @@ class StandaloneRunManager {
     /// Accumulated split data: [(km, splitPaceSeconds)]
     private(set) var splits: [(Int, Int)] = []
 
+    // Interval training state
+    private var intervalTimer: DispatchSourceTimer?
+    private var intervalRunSec: Int = 0
+    private var intervalWalkSec: Int = 0
+    private var intervalTotalSets: Int = 0
+    private var intervalCurrentSet: Int = 0
+    private var intervalIsRunPhase: Bool = true
+    private var intervalPhaseRemaining: Int = 0
+    private var intervalActive: Bool = false
+
     private static let autoPauseSpeedThreshold: Double = 0.3  // m/s (~18 min/km)
     private static let autoPauseGracePeriod: TimeInterval = 15.0  // GPS 안정화 대기
 
@@ -280,12 +290,16 @@ class StandaloneRunManager {
         }
 
         setStandaloneMode?(true)
+        HapticManager.shared.isStandaloneMode = true
         setPhaseLockedUntil?(Date().addingTimeInterval(5.0))
 
         guard settingsManager?.isCountdownEnabled == true else {
             startRun()
             return
         }
+
+        // Pre-configure audio session during countdown so beep plays instantly at transition
+        HapticManager.shared.prepareAudioSession()
 
         let now = Date().timeIntervalSince1970 * 1000
         updateState?({ state in
@@ -294,14 +308,23 @@ class StandaloneRunManager {
             state.phase = "countdown"
         })
 
+        let isInterval = settingsManager?.standaloneGoalType == "interval"
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self = self, self.getState?().phase == "countdown" else { return }
-            self.startRun()
+            // Fire beep/haptic IMMEDIATELY at countdown end, before run setup
+            if isInterval {
+                HapticManager.shared.intervalRunStart()
+            } else {
+                HapticManager.shared.runStarted()
+            }
+            self.startRun(skipIntervalStartSound: isInterval)
         }
     }
 
     /// Start a standalone run — indoor (pedometer) or outdoor (GPS).
-    func startRun() {
+    /// - Parameter skipIntervalStartSound: If true, skip the initial interval beep
+    ///   (already played by countdown transition for instant feedback).
+    func startRun(skipIntervalStartSound: Bool = false) {
         guard let settings = settingsManager else { return }
         standaloneIsIndoor = settings.isIndoorRun
         print("[StandaloneRunManager] START standalone — indoor=\(standaloneIsIndoor)")
@@ -333,7 +356,17 @@ class StandaloneRunManager {
             state.isAutoPaused = false
 
             // Set goal
-            if goalType == "program" {
+            if goalType == "interval" {
+                state.goalType = "interval"
+                state.goalValue = 0
+                state.intervalRunSeconds = settings.standaloneIntervalRunSec
+                state.intervalWalkSeconds = settings.standaloneIntervalWalkSec
+                state.intervalTotalSets = settings.standaloneIntervalSets
+                state.intervalCurrentSet = 1
+                state.intervalPhase = "run"
+                state.intervalPhaseRemaining = settings.standaloneIntervalRunSec
+                state.intervalCompleted = false
+            } else if goalType == "program" {
                 state.goalType = "program"
                 state.goalValue = goalDistance * 1000
                 state.programTargetDistance = goalDistance * 1000
@@ -353,6 +386,11 @@ class StandaloneRunManager {
                 state.goalValue = 0
             }
         })
+
+        // Start interval timer if interval mode
+        if goalType == "interval" {
+            startIntervalTimer(settings: settings, skipStartSound: skipIntervalStartSound)
+        }
 
         if standaloneIsIndoor {
             setupPedometerCallbacks()
@@ -489,8 +527,16 @@ class StandaloneRunManager {
                     summary["programTimeDelta"] = state.programTimeDelta
                     summary["metronomeBPM"] = state.metronomeBPM
                 }
+            } else if settings.standaloneGoalType == "interval" {
+                summary["intervalRunSeconds"] = settings.standaloneIntervalRunSec
+                summary["intervalWalkSeconds"] = settings.standaloneIntervalWalkSec
+                summary["intervalSets"] = settings.standaloneIntervalSets
             }
         }
+
+        // Stop interval timer
+        stopIntervalTimer()
+        intervalActive = false
 
         onPhaseTransition?(oldPhase, "completed")
 
@@ -530,7 +576,93 @@ class StandaloneRunManager {
         splitStartDuration = 0
         splits = []
         lastPhoneStatusUpdate = .distantPast
+        stopIntervalTimer()
+        intervalActive = false
+        intervalCurrentSet = 0
+        intervalPhaseRemaining = 0
+        HapticManager.shared.isStandaloneMode = false
         print("[StandaloneRunManager] resetForNewRun: internal state cleared")
+    }
+
+    // MARK: - Interval Training
+
+    private func startIntervalTimer(settings: WatchSettingsManager, skipStartSound: Bool = false) {
+        intervalRunSec = settings.standaloneIntervalRunSec
+        intervalWalkSec = settings.standaloneIntervalWalkSec
+        intervalTotalSets = settings.standaloneIntervalSets
+        intervalCurrentSet = 1
+        intervalIsRunPhase = true
+        intervalPhaseRemaining = intervalRunSec
+        intervalActive = true
+
+        // Skip if already played by countdown transition
+        if !skipStartSound {
+            HapticManager.shared.intervalRunStart()
+        }
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 1.0, repeating: 1.0)
+        timer.setEventHandler { [weak self] in
+            self?.tickInterval()
+        }
+        timer.resume()
+        intervalTimer = timer
+    }
+
+    private func stopIntervalTimer() {
+        intervalTimer?.cancel()
+        intervalTimer = nil
+    }
+
+    private func tickInterval() {
+        guard intervalActive else { return }
+        guard let state = getState?(), state.phase == "running", !isAutoPaused else { return }
+
+        intervalPhaseRemaining -= 1
+
+        if intervalPhaseRemaining <= 0 {
+            // Phase ended — transition
+            if intervalIsRunPhase {
+                // Run → Walk
+                intervalIsRunPhase = false
+                intervalPhaseRemaining = intervalWalkSec
+                updateState?({ state in
+                    state.intervalPhase = "walk"
+                    state.intervalPhaseRemaining = self.intervalWalkSec
+                })
+                HapticManager.shared.intervalWalkStart()
+            } else {
+                // Walk ended → next set or complete
+                if intervalCurrentSet >= intervalTotalSets {
+                    // All sets completed
+                    intervalActive = false
+                    stopIntervalTimer()
+                    updateState?({ state in
+                        state.intervalCompleted = true
+                        state.intervalPhase = "walk"
+                        state.intervalPhaseRemaining = 0
+                    })
+                    HapticManager.shared.intervalComplete()
+                    return
+                }
+
+                // Next set
+                intervalCurrentSet += 1
+                intervalIsRunPhase = true
+                intervalPhaseRemaining = intervalRunSec
+                updateState?({ state in
+                    state.intervalCurrentSet = self.intervalCurrentSet
+                    state.intervalPhase = "run"
+                    state.intervalPhaseRemaining = self.intervalRunSec
+                })
+                HapticManager.shared.intervalRunStart()
+            }
+        } else {
+            // Normal tick — update remaining
+            updateState?({ state in
+                state.intervalPhaseRemaining = self.intervalPhaseRemaining
+            })
+        }
     }
 
     // MARK: - Standalone Duration Timer

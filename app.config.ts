@@ -13,8 +13,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   newArchEnabled: true,
   splash: {
     image: './assets/splash-icon.png',
-    resizeMode: 'contain',
-    backgroundColor: '#1A1A2E',
+    resizeMode: 'cover',
+    backgroundColor: '#000000',
   },
   ios: {
     supportsTablet: false,

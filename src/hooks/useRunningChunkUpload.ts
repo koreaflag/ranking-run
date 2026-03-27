@@ -25,26 +25,24 @@ export function useRunningChunkUpload() {
   const uploadingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const {
-    phase,
-    isPaused,
-    isAutoPaused,
-    sessionId,
-    distanceMeters,
-    lastChunkDistance,
-    lastChunkTimestamp,
-    lastChunkPointIndex,
-    chunkSequence,
-    filteredLocations,
-    durationSeconds,
-    avgPaceSecondsPerKm,
-    elevationGainMeters,
-    elevationLossMeters,
-    splits,
-    pauseIntervals,
-    incrementChunkSequence,
-    markChunkUploaded,
-  } = useRunningStore();
+  const phase = useRunningStore((s) => s.phase);
+  const isPaused = useRunningStore((s) => s.isPaused);
+  const isAutoPaused = useRunningStore((s) => s.isAutoPaused);
+  const sessionId = useRunningStore((s) => s.sessionId);
+  const distanceMeters = useRunningStore((s) => s.distanceMeters);
+  const lastChunkDistance = useRunningStore((s) => s.lastChunkDistance);
+  const lastChunkTimestamp = useRunningStore((s) => s.lastChunkTimestamp);
+  const lastChunkPointIndex = useRunningStore((s) => s.lastChunkPointIndex);
+  const chunkSequence = useRunningStore((s) => s.chunkSequence);
+  const filteredLocations = useRunningStore((s) => s.filteredLocations);
+  const durationSeconds = useRunningStore((s) => s.durationSeconds);
+  const avgPaceSecondsPerKm = useRunningStore((s) => s.avgPaceSecondsPerKm);
+  const elevationGainMeters = useRunningStore((s) => s.elevationGainMeters);
+  const elevationLossMeters = useRunningStore((s) => s.elevationLossMeters);
+  const splits = useRunningStore((s) => s.splits);
+  const pauseIntervals = useRunningStore((s) => s.pauseIntervals);
+  const incrementChunkSequence = useRunningStore((s) => s.incrementChunkSequence);
+  const markChunkUploaded = useRunningStore((s) => s.markChunkUploaded);
 
   // Keep refs for values used in the upload function (avoid stale closures)
   const stateRef = useRef({

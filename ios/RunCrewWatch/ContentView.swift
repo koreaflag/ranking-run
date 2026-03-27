@@ -10,21 +10,33 @@ struct ContentView: View {
         Group {
             switch viewModel.state.phase {
             case "running":
+                let isInterval = viewModel.state.goalType == "interval" && viewModel.state.intervalTotalSets > 0
                 TabView(selection: $selectedTab) {
                     ControlView().tag(0)
-                    RunningView().tag(1)
-                    if viewModel.state.programTargetDistance > 0 {
+                    if isInterval {
+                        // Interval mode: IntervalView only (no RunningView)
+                        IntervalView().tag(1)
+                    } else {
+                        RunningView().tag(1)
+                    }
+                    if !isInterval && viewModel.state.programTargetDistance > 0 {
                         PaceTargetView().tag(2)
                     }
-                    if viewModel.state.isCourseRun {
-                        CourseNavigationView().tag(viewModel.state.programTargetDistance > 0 ? 3 : 2)
+                    if !isInterval && viewModel.state.isCourseRun {
+                        let offset = viewModel.state.programTargetDistance > 0 ? 1 : 0
+                        CourseNavigationView().tag(2 + offset)
                     }
                 }
                 .tabViewStyle(.page)
                 .onAppear {
-                    if viewModel.state.isCourseRun {
+                    if viewModel.state.isCourseRun && !isInterval {
                         selectedTab = viewModel.state.programTargetDistance > 0 ? 3 : 2
                     } else {
+                        selectedTab = 1
+                    }
+                }
+                .onChange(of: viewModel.state.goalType) { newGoalType in
+                    if newGoalType == "interval" {
                         selectedTab = 1
                     }
                 }

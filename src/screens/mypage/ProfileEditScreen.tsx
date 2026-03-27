@@ -15,6 +15,7 @@ import {
   Modal,
   FlatList,
   StatusBar,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -41,6 +42,8 @@ function getCountryName(code: string | null): string | null {
   return _getCountryName(code);
 }
 
+const IS_ANDROID = Platform.OS === 'android';
+
 export default function ProfileEditScreen() {
   const navigation = useNavigation();
   const { t } = useTranslation();
@@ -65,6 +68,7 @@ export default function ProfileEditScreen() {
   const [country, setCountry] = useState<string | null>(user?.country ?? null);
   const [activityRegion, setActivityRegion] = useState(user?.activity_region ?? '');
   const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [androidCountryPickerMounted, setAndroidCountryPickerMounted] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -72,6 +76,28 @@ export default function ProfileEditScreen() {
   const [selectedCrewId, setSelectedCrewId] = useState<string | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const birthdayYPosition = useRef(0);
+
+  // Android: mount/unmount country picker overlay
+  React.useEffect(() => {
+    if (IS_ANDROID) {
+      if (showCountryPicker) {
+        setAndroidCountryPickerMounted(true);
+      } else {
+        setAndroidCountryPickerMounted(false);
+      }
+    }
+  }, [showCountryPicker]);
+
+  // Android: handle back button for country picker overlay
+  React.useEffect(() => {
+    if (!IS_ANDROID || !androidCountryPickerMounted) return;
+    const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      setShowCountryPicker(false);
+      setCountrySearch('');
+      return true;
+    });
+    return () => handler.remove();
+  }, [androidCountryPickerMounted]);
 
   // Load user's crews
   React.useEffect(() => {
@@ -573,94 +599,181 @@ export default function ProfileEditScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Country picker modal */}
-      <Modal
-        visible={showCountryPicker}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowCountryPicker(false)}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{t('profileEdit.countrySelect')}</Text>
-            <TouchableOpacity
-              onPress={() => { setShowCountryPicker(false); setCountrySearch(''); }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close" size={26} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={18} color={colors.textTertiary} />
-            <TextInput
-              style={styles.searchInput}
-              value={countrySearch}
-              onChangeText={setCountrySearch}
-              placeholder={t('profileEdit.countrySearch')}
-              placeholderTextColor={colors.textTertiary}
-              autoCorrect={false}
-              returnKeyType="search"
-            />
-            {countrySearch.length > 0 && (
-              <TouchableOpacity onPress={() => setCountrySearch('')}>
-                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <FlatList
-            data={COUNTRIES.filter(
-              (c) =>
-                !countrySearch ||
-                c.name.includes(countrySearch) ||
-                c.code.toLowerCase().includes(countrySearch.toLowerCase()),
-            )}
-            keyExtractor={(item) => item.code}
-            keyboardShouldPersistTaps="handled"
-            renderItem={({ item }) => {
-              const isSelected = country === item.code;
-              return (
+      {/* Country picker — iOS: native Modal, Android: absolute overlay */}
+      {IS_ANDROID ? (
+        androidCountryPickerMounted && (
+          <View style={styles.androidOverlay}>
+            <SafeAreaView style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{t('profileEdit.countrySelect')}</Text>
                 <TouchableOpacity
-                  style={[styles.countryRow, isSelected && styles.countryRowSelected]}
+                  onPress={() => { setShowCountryPicker(false); setCountrySearch(''); }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="close" size={26} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.searchBar}>
+                <Ionicons name="search" size={18} color={colors.textTertiary} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={countrySearch}
+                  onChangeText={setCountrySearch}
+                  placeholder={t('profileEdit.countrySearch')}
+                  placeholderTextColor={colors.textTertiary}
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+                {countrySearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setCountrySearch('')}>
+                    <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <FlatList
+                data={COUNTRIES.filter(
+                  (c) =>
+                    !countrySearch ||
+                    _getCountryName(c.code).toLowerCase().includes(countrySearch.toLowerCase()) ||
+                    c.code.toLowerCase().includes(countrySearch.toLowerCase()),
+                )}
+                keyExtractor={(item) => item.code}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => {
+                  const isSelected = country === item.code;
+                  return (
+                    <TouchableOpacity
+                      style={[styles.countryRow, isSelected && styles.countryRowSelected]}
+                      onPress={() => {
+                        setCountry(item.code);
+                        setShowCountryPicker(false);
+                        setCountrySearch('');
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.countryFlag}>{getCountryFlag(item.code)}</Text>
+                      <Text style={[styles.countryName, isSelected && styles.countryNameSelected]}>
+                        {_getCountryName(item.code)}
+                      </Text>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+                ItemSeparatorComponent={() => <View style={styles.countryDivider} />}
+                contentContainerStyle={styles.countryList}
+              />
+
+              {country && (
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity
+                    style={styles.clearCountryBtn}
+                    onPress={() => {
+                      setCountry(null);
+                      setShowCountryPicker(false);
+                      setCountrySearch('');
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.clearCountryText}>{t('profileEdit.countryDeselect')}</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </SafeAreaView>
+          </View>
+        )
+      ) : (
+        <Modal
+          visible={showCountryPicker}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setShowCountryPicker(false)}
+        >
+          <SafeAreaView style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('profileEdit.countrySelect')}</Text>
+              <TouchableOpacity
+                onPress={() => { setShowCountryPicker(false); setCountrySearch(''); }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={26} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={18} color={colors.textTertiary} />
+              <TextInput
+                style={styles.searchInput}
+                value={countrySearch}
+                onChangeText={setCountrySearch}
+                placeholder={t('profileEdit.countrySearch')}
+                placeholderTextColor={colors.textTertiary}
+                autoCorrect={false}
+                returnKeyType="search"
+              />
+              {countrySearch.length > 0 && (
+                <TouchableOpacity onPress={() => setCountrySearch('')}>
+                  <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <FlatList
+              data={COUNTRIES.filter(
+                (c) =>
+                  !countrySearch ||
+                  _getCountryName(c.code).toLowerCase().includes(countrySearch.toLowerCase()) ||
+                  c.code.toLowerCase().includes(countrySearch.toLowerCase()),
+              )}
+              keyExtractor={(item) => item.code}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => {
+                const isSelected = country === item.code;
+                return (
+                  <TouchableOpacity
+                    style={[styles.countryRow, isSelected && styles.countryRowSelected]}
+                    onPress={() => {
+                      setCountry(item.code);
+                      setShowCountryPicker(false);
+                      setCountrySearch('');
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.countryFlag}>{getCountryFlag(item.code)}</Text>
+                    <Text style={[styles.countryName, isSelected && styles.countryNameSelected]}>
+                      {_getCountryName(item.code)}
+                    </Text>
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
+              ItemSeparatorComponent={() => <View style={styles.countryDivider} />}
+              contentContainerStyle={styles.countryList}
+            />
+
+            {country && (
+              <View style={styles.modalFooter}>
+                <TouchableOpacity
+                  style={styles.clearCountryBtn}
                   onPress={() => {
-                    setCountry(item.code);
+                    setCountry(null);
                     setShowCountryPicker(false);
                     setCountrySearch('');
                   }}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.countryFlag}>{getCountryFlag(item.code)}</Text>
-                  <Text style={[styles.countryName, isSelected && styles.countryNameSelected]}>
-                    {item.name}
-                  </Text>
-                  {isSelected && (
-                    <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
-                  )}
+                  <Text style={styles.clearCountryText}>{t('profileEdit.countryDeselect')}</Text>
                 </TouchableOpacity>
-              );
-            }}
-            ItemSeparatorComponent={() => <View style={styles.countryDivider} />}
-            contentContainerStyle={styles.countryList}
-          />
-
-          {country && (
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.clearCountryBtn}
-                onPress={() => {
-                  setCountry(null);
-                  setShowCountryPicker(false);
-                  setCountrySearch('');
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.clearCountryText}>{t('profileEdit.countryDeselect')}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </SafeAreaView>
-      </Modal>
+              </View>
+            )}
+          </SafeAreaView>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -829,6 +942,18 @@ const createStyles = (c: ThemeColors) =>
       fontSize: FONT_SIZES.md,
       fontWeight: '700',
       color: '#FFFFFF',
+    },
+
+    // Android overlay (replaces Modal)
+    androidOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 1000,
+      elevation: 1000,
+      backgroundColor: c.background,
     },
 
     // Country picker modal

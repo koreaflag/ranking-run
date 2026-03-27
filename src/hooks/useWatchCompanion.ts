@@ -8,6 +8,7 @@ import type {
 } from '../types/watch';
 import { WATCH_EVENTS } from '../types/watch';
 import type { CourseNavigation } from './useCourseNavigation';
+import type { IntervalState } from './useIntervalTraining';
 
 const { WatchBridgeModule } = NativeModules;
 
@@ -30,23 +31,22 @@ export function useWatchCompanion(
     totalCount: number;
     justPassed: boolean;
   },
+  intervalState?: IntervalState | null,
 ) {
   const subscriptionsRef = useRef<Array<{ remove: () => void }>>([]);
-  const {
-    phase,
-    distanceMeters,
-    durationSeconds,
-    startTime,
-    elapsedBeforePause,
-    currentPaceSecondsPerKm,
-    avgPaceSecondsPerKm,
-    gpsStatus,
-    calories,
-    isAutoPaused,
-    runGoal,
-    updateHeartRate,
-    setWatchConnected,
-  } = useRunningStore();
+  const phase = useRunningStore((s) => s.phase);
+  const distanceMeters = useRunningStore((s) => s.distanceMeters);
+  const durationSeconds = useRunningStore((s) => s.durationSeconds);
+  const startTime = useRunningStore((s) => s.startTime);
+  const elapsedBeforePause = useRunningStore((s) => s.elapsedBeforePause);
+  const currentPaceSecondsPerKm = useRunningStore((s) => s.currentPaceSecondsPerKm);
+  const avgPaceSecondsPerKm = useRunningStore((s) => s.avgPaceSecondsPerKm);
+  const gpsStatus = useRunningStore((s) => s.gpsStatus);
+  const calories = useRunningStore((s) => s.calories);
+  const isAutoPaused = useRunningStore((s) => s.isAutoPaused);
+  const runGoal = useRunningStore((s) => s.runGoal);
+  const updateHeartRate = useRunningStore((s) => s.updateHeartRate);
+  const setWatchConnected = useRunningStore((s) => s.setWatchConnected);
   // phase is still read for event subscription below, but NOT sent to watch
 
   // Keep callbacks ref up to date without causing re-subscriptions
@@ -116,6 +116,14 @@ export function useWatchCompanion(
       cpPassed: checkpointData?.passedCount ?? 0,
       cpTotal: checkpointData?.totalCount ?? 0,
       cpJustPassed: checkpointData?.justPassed ?? false,
+      // Interval training
+      intervalPhase: intervalState?.currentPhase ?? '',
+      intervalCurrentSet: intervalState?.currentSet ?? 0,
+      intervalTotalSets: intervalState?.totalSets ?? 0,
+      intervalRunSeconds: runGoal.type === 'interval' ? (runGoal.intervalRunSeconds ?? 0) : 0,
+      intervalWalkSeconds: runGoal.type === 'interval' ? (runGoal.intervalWalkSeconds ?? 0) : 0,
+      intervalPhaseRemaining: intervalState?.phaseRemainingSeconds ?? 0,
+      intervalCompleted: intervalState?.isCompleted ?? false,
     }).catch(() => {
       // Silently ignore send failures (Watch may be unreachable)
     });
@@ -124,7 +132,7 @@ export function useWatchCompanion(
   // state every second just because duration ticked, reducing WCSession traffic.
   }, [distanceMeters, currentPaceSecondsPerKm,
       avgPaceSecondsPerKm, gpsStatus, calories, isAutoPaused, runGoal,
-      navigation, checkpointData, startTime, elapsedBeforePause]);
+      navigation, checkpointData, startTime, elapsedBeforePause, intervalState]);
 
   // Subscribe to Watch events during active running
   useEffect(() => {
@@ -164,10 +172,10 @@ export function useWatchCompanion(
       },
     );
 
-    // Check initial Watch reachability
+    // Check initial Watch paired status (isPaired = 페어링 여부)
     WatchBridgeModule.getWatchStatus()
       .then((status: { isPaired: boolean; isReachable: boolean; isAppInstalled: boolean }) => {
-        setWatchConnected(status.isReachable);
+        setWatchConnected(status.isPaired);
       })
       .catch((err: any) => {
         console.warn('[useWatchCompanion] 워치 상태 조회 실패:', err);

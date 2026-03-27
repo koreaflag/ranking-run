@@ -719,6 +719,16 @@ export interface RunCompleteResponse {
 
 // ---- Run Records ----
 
+export interface RunGoalData {
+  type: string;
+  value?: number | null;
+  intervalRunSeconds?: number;
+  intervalWalkSeconds?: number;
+  intervalSets?: number;
+  targetTime?: number | null;
+  cadenceBPM?: number | null;
+}
+
 export interface RecentRun {
   id: string;
   distance_meters: number;
@@ -731,6 +741,7 @@ export interface RecentRun {
     title: string;
   } | null;
   route_preview?: number[][] | null;
+  goal_data?: RunGoalData | null;
 }
 
 export interface RunHistoryItem {
@@ -747,6 +758,7 @@ export interface RunHistoryItem {
   } | null;
   device_model?: string | null;
   route_preview?: number[][] | null;
+  goal_data?: RunGoalData | null;
 }
 
 export type RunHistoryResponse = PaginatedResponse<RunHistoryItem>;
@@ -780,6 +792,7 @@ export interface RunRecordDetail {
     route_match_percent: number;
     ranking_at_time: number | null;
   };
+  goal_data?: RunGoalData | null;
 }
 
 // ---- Reviews ----

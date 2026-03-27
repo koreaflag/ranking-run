@@ -12,6 +12,7 @@ import * as Haptics from 'expo-haptics';
 import type { RunningPhase } from '../stores/runningStore';
 import type { Split } from '../types/api';
 import { useSettingsStore } from '../stores/settingsStore';
+import { getCachedVoiceId } from './useVoiceGuidance';
 import i18n from '../i18n';
 
 /** Minimum distance before pace coaching activates (initial GPS is unstable) */
@@ -107,6 +108,7 @@ function speak(message: string) {
     language: getTTSLocale(),
     rate: 1.0,
     pitch: 1.0,
+    voice: getCachedVoiceId(),
     onDone: () => {
       gps?.restoreAudioAfterSpeech?.().catch((err: any) => {
         console.warn('[usePaceCoaching] 오디오 세션 복원 실패:', err);
@@ -129,7 +131,8 @@ export function usePaceCoaching({
   const prevStatusRef = useRef<PaceStatus | null>(null);
   const lastStatusAlertTimeRef = useRef(0);
 
-  const { hapticFeedback, voiceGuidance } = useSettingsStore();
+  const hapticFeedback = useSettingsStore((s) => s.hapticFeedback);
+  const voiceGuidance = useSettingsStore((s) => s.voiceGuidance);
 
   // Determine if coaching is active (all conditions met)
   const isActive = enabled

@@ -143,13 +143,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       return true;
     } catch (error: unknown) {
-      const isAuthFailure =
+      // Only logout on definitive 401 (token revoked/expired).
+      // Other 4xx (429 rate-limit, 400, 403) may be transient — don't logout.
+      const isDefinitiveAuthFailure =
         error instanceof Error &&
         'status' in error &&
-        typeof (error as any).status === 'number' &&
-        (error as any).status >= 400 &&
-        (error as any).status < 500;
-      if (isAuthFailure) {
+        (error as any).status === 401;
+      if (isDefinitiveAuthFailure) {
         await get().logout();
       }
       return false;

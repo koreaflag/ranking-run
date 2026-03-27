@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,16 @@ import {
   TouchableOpacity,
   FlatList,
   SafeAreaView,
+  Platform,
+  BackHandler,
+  StatusBar,
 } from 'react-native';
+
+const IS_ANDROID = Platform.OS === 'android';
 import { Ionicons } from '../../lib/icons';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../hooks/useTheme';
-import { COUNTRIES, getCountryFlag } from '../../data/countries';
+import { COUNTRIES, getCountryFlag, getCountryName } from '../../data/countries';
 import { FONT_SIZES, SPACING, BORDER_RADIUS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 
@@ -32,6 +37,29 @@ export default function CountryPickerModal({
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
+  // Android: use useState for mount/unmount control instead of Modal
+  const [androidMounted, setAndroidMounted] = useState(false);
+
+  useEffect(() => {
+    if (IS_ANDROID) {
+      if (visible) {
+        setAndroidMounted(true);
+      } else {
+        setAndroidMounted(false);
+      }
+    }
+  }, [visible]);
+
+  // Android: handle hardware back button
+  useEffect(() => {
+    if (!IS_ANDROID || !androidMounted) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [androidMounted, onClose]);
+
   const handleSelect = useCallback(
     (code: string | null) => {
       onSelect(code);
@@ -51,7 +79,7 @@ export default function CountryPickerModal({
         >
           <Text style={styles.flag}>{getCountryFlag(item.code)}</Text>
           <Text style={[styles.name, isSelected && styles.nameSelected]}>
-            {item.name}
+            {getCountryName(item.code)}
           </Text>
           {isSelected && (
             <Ionicons name="checkmark" size={18} color={colors.primary} />
@@ -62,6 +90,56 @@ export default function CountryPickerModal({
     [colors, handleSelect, selectedCountry, styles],
   );
 
+  const content = (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={onClose} activeOpacity={0.6}>
+          <Ionicons name="close" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.title}>{t('ranking.selectCountry')}</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      {/* All countries option */}
+      <TouchableOpacity
+        style={[styles.row, !selectedCountry && styles.rowSelected]}
+        onPress={() => handleSelect(null)}
+        activeOpacity={0.6}
+      >
+        <Text style={styles.flag}>🌍</Text>
+        <Text style={[styles.name, !selectedCountry && styles.nameSelected]}>
+          {t('ranking.allCountries')}
+        </Text>
+        {!selectedCountry && (
+          <Ionicons name="checkmark" size={18} color={colors.primary} />
+        )}
+      </TouchableOpacity>
+
+      <View style={styles.divider} />
+
+      <FlatList
+        data={COUNTRIES}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.code}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.list}
+      />
+    </SafeAreaView>
+  );
+
+  // Android: render as absolute overlay to avoid Modal touch desync
+  if (IS_ANDROID) {
+    if (!androidMounted) return null;
+    return (
+      <View style={styles.androidOverlay}>
+        <StatusBar backgroundColor={colors.background} barStyle="light-content" />
+        {content}
+      </View>
+    );
+  }
+
+  // iOS: keep native Modal
   return (
     <Modal
       visible={visible}
@@ -69,47 +147,23 @@ export default function CountryPickerModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} activeOpacity={0.6}>
-            <Ionicons name="close" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={styles.title}>{t('ranking.selectCountry')}</Text>
-          <View style={{ width: 24 }} />
-        </View>
-
-        {/* All countries option */}
-        <TouchableOpacity
-          style={[styles.row, !selectedCountry && styles.rowSelected]}
-          onPress={() => handleSelect(null)}
-          activeOpacity={0.6}
-        >
-          <Text style={styles.flag}>🌍</Text>
-          <Text style={[styles.name, !selectedCountry && styles.nameSelected]}>
-            {t('ranking.allCountries')}
-          </Text>
-          {!selectedCountry && (
-            <Ionicons name="checkmark" size={18} color={colors.primary} />
-          )}
-        </TouchableOpacity>
-
-        <View style={styles.divider} />
-
-        <FlatList
-          data={COUNTRIES}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.code}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.list}
-        />
-      </SafeAreaView>
+      {content}
     </Modal>
   );
 }
 
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
+    androidOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 9999,
+      elevation: 9999,
+      backgroundColor: colors.background,
+    } as any,
     container: {
       flex: 1,
       backgroundColor: colors.background,

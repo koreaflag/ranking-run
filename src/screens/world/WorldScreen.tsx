@@ -188,8 +188,16 @@ function formatGoalLabel(goal: RunGoal, t: (key: string, opts?: Record<string, u
       const targetMins = goal.targetTime ? Math.floor(goal.targetTime / 60) : 0;
       return `${km}km · ${targetMins}분`;
     }
-    case 'interval':
-      return t('world.goalSetting');
+    case 'interval': {
+      const runMins = Math.floor((goal.intervalRunSeconds ?? 0) / 60);
+      const runSecs = (goal.intervalRunSeconds ?? 0) % 60;
+      const walkMins = Math.floor((goal.intervalWalkSeconds ?? 0) / 60);
+      const walkSecs = (goal.intervalWalkSeconds ?? 0) % 60;
+      const sets = goal.intervalSets ?? 0;
+      const runStr = runMins > 0 ? `${runMins}m${runSecs > 0 ? String(runSecs).padStart(2, '0') + 's' : ''}` : `${runSecs}s`;
+      const walkStr = walkMins > 0 ? `${walkMins}m${walkSecs > 0 ? String(walkSecs).padStart(2, '0') + 's' : ''}` : `${walkSecs}s`;
+      return `${runStr}/${walkStr} ×${sets}`;
+    }
     default:
       return t('world.goalSetting');
   }
@@ -1816,7 +1824,7 @@ export default function WorldScreen() {
         lastKnownLocation={myLocation ?? useSettingsStore.getState().lastKnownLocation ?? undefined}
         customUserLocation={myLocation ?? undefined}
         customUserHeading={runHeadingValue ?? undefined}
-        interactive={phase === 'idle' || isInRun}
+        interactive={touring || isInRun}
         pitchEnabled={map3DStyle || is3DMode || isInRun}
         use3DStyle={map3DStyle}
         style={styles.map}
@@ -1853,20 +1861,18 @@ export default function WorldScreen() {
         </SafeAreaView>
       )}
 
-      {/* ===== WORLD MODE OVERLAYS (fade out during running) ===== */}
-      <Animated.View
-        style={[StyleSheet.absoluteFill, { opacity: worldOverlayOpacity, zIndex: 95 }]}
-        pointerEvents={isInRun ? 'none' : 'box-none'}
-      >
+      {/* ===== WORLD MODE OVERLAYS (individual elements, no absoluteFill wrapper) ===== */}
+
         {/* ===== Unified recenter button (always visible) ===== */}
-        <View style={styles.recenterContainer} pointerEvents="box-none">
+        <Animated.View style={[styles.recenterContainer, { opacity: worldOverlayOpacity }]} pointerEvents={isInRun ? 'none' : 'auto'}>
           <TouchableOpacity style={styles.recenterBtn} onPress={handleRecenter} activeOpacity={0.7}>
             <Ionicons name="locate" size={20} color={colors.text} />
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
         {/* Run FAB — visible during tour mode to quickly start running */}
         {touring && phase === 'idle' && (
+          <Animated.View style={{ opacity: worldOverlayOpacity }} pointerEvents="auto">
           <TouchableOpacity
             style={styles.fabRun}
             onPress={() => { setTouring(false); setWelcomeVisible(true); }}
@@ -1874,6 +1880,7 @@ export default function WorldScreen() {
           >
             <Ionicons name="walk" size={20} color={COLORS.white} />
           </TouchableOpacity>
+          </Animated.View>
         )}
 
         {/* ===== HUD overlay when marker selected ===== */}
@@ -2029,8 +2036,6 @@ export default function WorldScreen() {
             </View>
           </>
         )}
-
-      </Animated.View>
 
       {/* Welcome overlay — rendered BEFORE RunStartOverlay so buttons are on top (Android uses JSX order for touch priority) */}
       <WelcomeOverlay

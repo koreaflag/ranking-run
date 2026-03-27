@@ -217,6 +217,22 @@ export default function RunDetailScreen() {
   const headerLabel = useMemo(() => {
     if (!detail) return '';
     if (detail.course) return detail.course.title;
+    if (detail.goal_data?.type) {
+      const km = ((detail.goal_data.value ?? 0) / 1000).toFixed(1);
+      switch (detail.goal_data.type) {
+        case 'interval': {
+          const rm = Math.floor((detail.goal_data.intervalRunSeconds ?? 0) / 60);
+          const wm = Math.floor((detail.goal_data.intervalWalkSeconds ?? 0) / 60);
+          return t('runHistory.intervalLabel', { run: rm, walk: wm, sets: detail.goal_data.intervalSets ?? 0 });
+        }
+        case 'program':
+          return t('runHistory.programLabel', { km });
+        case 'distance':
+          return t('runHistory.distanceLabel', { km });
+        case 'time':
+          return t('runHistory.timeLabel');
+      }
+    }
     return t('mypage.freeRunning');
   }, [detail, t]);
 

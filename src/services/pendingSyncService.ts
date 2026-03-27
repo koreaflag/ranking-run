@@ -2,7 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from './authService';
 import { courseService } from './courseService';
 import { runService } from './runService';
+import { ApiError } from './api';
 import type { CompleteRunRequest, ProfileUpdateRequest, UploadChunkRequest } from '../types/api';
+
+/** Returns true if the error is a client error (4xx) that should NOT be retried */
+function isClientError(err: unknown): boolean {
+  return err instanceof ApiError && err.status >= 400 && err.status < 500;
+}
 
 const KEYS = {
   PENDING_PROFILE: '@pending_sync:profile',
@@ -161,8 +167,12 @@ export async function syncPendingData(): Promise<{ profileSynced: boolean; cours
       await runService.uploadChunk(chunk.sessionId, chunk.request);
       await removePendingChunk(chunk.id);
       chunksSynced++;
-    } catch {
-      // Server still unreachable — keep pending
+    } catch (err) {
+      if (isClientError(err)) {
+        // 4xx = data problem, won't succeed on retry — discard
+        await removePendingChunk(chunk.id);
+      }
+      // 5xx / network error — keep pending for next attempt
     }
   }
 
@@ -173,8 +183,8 @@ export async function syncPendingData(): Promise<{ profileSynced: boolean; cours
       await authService.updateProfile(pendingProfile);
       await clearPendingProfile();
       profileSynced = true;
-    } catch {
-      // Server still unreachable — keep pending
+    } catch (err) {
+      if (isClientError(err)) await clearPendingProfile();
     }
   }
 
@@ -185,8 +195,8 @@ export async function syncPendingData(): Promise<{ profileSynced: boolean; cours
       await runService.completeRun(run.sessionId, run.payload);
       await removePendingRunRecord(run.id);
       runsSynced++;
-    } catch {
-      // Server still unreachable — keep pending
+    } catch (err) {
+      if (isClientError(err)) await removePendingRunRecord(run.id);
     }
   }
 
@@ -197,8 +207,8 @@ export async function syncPendingData(): Promise<{ profileSynced: boolean; cours
       await courseService.createCourse(course.payload as Parameters<typeof courseService.createCourse>[0]);
       await removePendingCourse(course.id);
       coursesSynced++;
-    } catch {
-      // Server still unreachable — keep pending
+    } catch (err) {
+      if (isClientError(err)) await removePendingCourse(course.id);
     }
   }
 

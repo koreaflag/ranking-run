@@ -159,6 +159,91 @@ class MetronomeModule: NSObject {
         resolve(isRunning)
     }
 
+    // MARK: - Interval Beep
+
+    /// Play a short beep tone `count` times.
+    /// count=1: single beep (삐) for run start
+    /// count=2: double beep (삐삐) for walk start
+    @objc func playBeep(_ count: Int) {
+        DispatchQueue.global(qos: .userInteractive).async { [weak self] in
+            self?.playBeepSync(count: count)
+        }
+    }
+
+    private func playBeepSync(count: Int) {
+        let sampleRate: Double = 44100
+        let beepDuration: Double = 0.12  // 120ms per beep
+        let gapDuration: Double = 0.12   // 120ms gap between beeps
+        let beepFrames = Int(sampleRate * beepDuration)
+        let gapFrames = Int(sampleRate * gapDuration)
+        let totalFrames = beepFrames * count + gapFrames * max(count - 1, 0)
+
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(totalFrames)),
+              let channelData = buffer.floatChannelData?[0] else { return }
+
+        buffer.frameLength = AVAudioFrameCount(totalFrames)
+
+        let freq: Double = 1000.0  // 1kHz — clear, distinct from metronome 800Hz
+        var writeIdx = 0
+
+        for b in 0..<count {
+            // Write one beep
+            for i in 0..<beepFrames {
+                let t = Double(i) / sampleRate
+                var sample = Float(sin(2.0 * .pi * freq * t))
+
+                // Fade in (2ms) / fade out (5ms)
+                let fadeInFrames = Int(sampleRate * 0.002)
+                let fadeOutFrames = Int(sampleRate * 0.005)
+                if i < fadeInFrames {
+                    sample *= Float(i) / Float(fadeInFrames)
+                } else if i >= beepFrames - fadeOutFrames {
+                    let remaining = beepFrames - i
+                    sample *= Float(remaining) / Float(fadeOutFrames)
+                }
+
+                sample *= 0.7  // volume
+                channelData[writeIdx] = sample
+                writeIdx += 1
+            }
+            // Write gap (silence) between beeps
+            if b < count - 1 {
+                for _ in 0..<gapFrames {
+                    channelData[writeIdx] = 0
+                    writeIdx += 1
+                }
+            }
+        }
+
+        // Play using a one-shot engine (does not interfere with metronome)
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, options: [.mixWithOthers])
+            try audioSession.setActive(true)
+
+            let engine = AVAudioEngine()
+            let player = AVAudioPlayerNode()
+            engine.attach(player)
+            engine.connect(player, to: engine.mainMixerNode, format: format)
+
+            try engine.start()
+            player.play()
+            player.scheduleBuffer(buffer, at: nil, options: []) {
+                DispatchQueue.global().async {
+                    player.stop()
+                    engine.stop()
+                }
+            }
+
+            // Keep engine alive until playback finishes
+            let playbackDuration = Double(totalFrames) / sampleRate + 0.05
+            Thread.sleep(forTimeInterval: playbackDuration)
+        } catch {
+            NSLog("[Metronome] Beep playback error: %@", error.localizedDescription)
+        }
+    }
+
     // Required for RN modules with main queue setup
     @objc static func requiresMainQueueSetup() -> Bool {
         return false

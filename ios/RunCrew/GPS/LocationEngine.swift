@@ -694,23 +694,33 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
     /// prevents iOS from suspending the process entirely (same approach as Nike Run Club).
     private func startBackgroundExecution() {
         // 1. Begin a UIKit background task as safety net
+        beginNewBackgroundTask()
+
+        // 2. Start silent audio session to keep process alive
+        startSilentAudioSession()
+    }
+
+    /// Request a new UIKit background task. Called on start and renewed on expiration.
+    private func beginNewBackgroundTask() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             if self.backgroundTaskId != .invalid {
                 UIApplication.shared.endBackgroundTask(self.backgroundTaskId)
             }
             self.backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "GPSTracking") { [weak self] in
-                // Expiration handler — iOS is about to suspend, but location updates
-                // will continue thanks to background location mode + audio session
+                // Expiration handler — renew the task immediately if still tracking
                 if let taskId = self?.backgroundTaskId {
                     UIApplication.shared.endBackgroundTask(taskId)
                 }
                 self?.backgroundTaskId = .invalid
+                // Renew background task if tracking is still active
+                let state = self?.session.state
+                if state == .running || state == .starting {
+                    NSLog("[LocationEngine] Background task expired — renewing")
+                    self?.beginNewBackgroundTask()
+                }
             }
         }
-
-        // 2. Start silent audio session to keep process alive
-        startSilentAudioSession()
     }
 
     private func stopBackgroundExecution() {
@@ -749,6 +759,9 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
         return wav
     }()
 
+    private var audioRetryCount = 0
+    private let maxAudioRetries = 3
+
     private func startSilentAudioSession() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
@@ -759,13 +772,25 @@ class LocationEngine: NSObject, CLLocationManagerDelegate {
             silentAudioPlayer?.numberOfLoops = -1
             silentAudioPlayer?.volume = 0.0
             silentAudioPlayer?.play()
+            audioRetryCount = 0
             NSLog("[LocationEngine] Silent audio session started for background GPS")
         } catch {
             NSLog("[LocationEngine] Failed to start silent audio session: \(error)")
+            // Retry with backoff if tracking is still active
+            if (session.state == .running || session.state == .starting) && audioRetryCount < maxAudioRetries {
+                audioRetryCount += 1
+                let delay = Double(audioRetryCount) * 2.0
+                NSLog("[LocationEngine] Retrying silent audio in \(delay)s (attempt \(audioRetryCount)/\(maxAudioRetries))")
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self = self, self.session.state == .running || self.session.state == .starting else { return }
+                    self.startSilentAudioSession()
+                }
+            }
         }
     }
 
     private func stopSilentAudioSession() {
+        audioRetryCount = 0
         silentAudioPlayer?.stop()
         silentAudioPlayer = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)

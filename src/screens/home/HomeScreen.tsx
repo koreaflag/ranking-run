@@ -12,6 +12,7 @@ import {
   NativeModules,
   Platform,
   Modal,
+  BackHandler,
   RefreshControl,
   InteractionManager,
   NativeScrollEvent,
@@ -72,6 +73,7 @@ let _cachedRaids: Array<{ crew: CrewItem; raid: CrewChallengeItem }> = [];
 let _cachedFriendsRunning: FriendRunning[] = [];
 let _diskCacheLoaded = false;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const IS_ANDROID = Platform.OS === 'android';
 
 // ---- Onboarding Guide ----
 
@@ -347,6 +349,16 @@ export default function HomeScreen() {
     }).start(() => setGuideVisible(false));
     await AsyncStorage.setItem(GUIDE_STORAGE_KEY, 'true');
   }, [guideOpacity]);
+
+  // Android back button handler for guide modal
+  useEffect(() => {
+    if (!IS_ANDROID || !guideVisible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      dismissGuide();
+      return true;
+    });
+    return () => sub.remove();
+  }, [guideVisible, dismissGuide]);
 
   const handleGuideNext = useCallback(() => {
     const next = guideStep + 1;
@@ -964,63 +976,127 @@ export default function HomeScreen() {
       </SafeAreaView>
 
       {/* Onboarding Guide */}
-      <Modal visible={guideVisible} transparent animationType="none" statusBarTranslucent>
-        <Animated.View style={[guideStyles.root, { opacity: guideOpacity }]}>
-          <View style={guideStyles.card}>
-            <TouchableOpacity style={guideStyles.skipBtn} onPress={dismissGuide} activeOpacity={0.7}>
-              <Text style={guideStyles.skipText}>{t('guide.skip', { defaultValue: '건너뛰기' })}</Text>
-            </TouchableOpacity>
+      {/* Android: absolute overlay (no Dialog window = no touch desync) */}
+      {/* iOS: native Modal (proper UIViewController presentation) */}
+      {IS_ANDROID ? (
+        guideVisible ? (
+          <View style={{ ...StyleSheet.absoluteFillObject, zIndex: 9999, elevation: 9999 }}>
+            <Animated.View style={[guideStyles.root, { opacity: guideOpacity }]}>
+              <View style={guideStyles.card}>
+                <TouchableOpacity style={guideStyles.skipBtn} onPress={dismissGuide} activeOpacity={0.7}>
+                  <Text style={guideStyles.skipText}>{t('guide.skip', { defaultValue: '건너뛰기' })}</Text>
+                </TouchableOpacity>
 
-            <ScrollView
-              ref={guideScrollRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              scrollEventThrottle={16}
-              onMomentumScrollEnd={handleGuideScrollEnd}
-              style={guideStyles.pager}
-            >
-              {GUIDE_STEPS.map((step, idx) => (
-                <View key={idx} style={guideStyles.page}>
-                  <View style={[guideStyles.iconCircle, { backgroundColor: step.iconBg }]}>
-                    <Ionicons name={step.icon} size={56} color={step.iconColor} />
-                  </View>
-                  <Text style={guideStyles.stepLabel}>{`${idx + 1} / ${STEP_COUNT}`}</Text>
-                  <Text style={guideStyles.stepTitle}>
-                    {t(step.titleKey, { defaultValue: '' })}
-                  </Text>
-                  <Text style={guideStyles.stepDesc}>
-                    {t(step.descKey, { defaultValue: '' })}
-                  </Text>
+                <ScrollView
+                  ref={guideScrollRef}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  scrollEventThrottle={16}
+                  onMomentumScrollEnd={handleGuideScrollEnd}
+                  style={guideStyles.pager}
+                >
+                  {GUIDE_STEPS.map((step, idx) => (
+                    <View key={idx} style={guideStyles.page}>
+                      <View style={[guideStyles.iconCircle, { backgroundColor: step.iconBg }]}>
+                        <Ionicons name={step.icon} size={56} color={step.iconColor} />
+                      </View>
+                      <Text style={guideStyles.stepLabel}>{`${idx + 1} / ${STEP_COUNT}`}</Text>
+                      <Text style={guideStyles.stepTitle}>
+                        {t(step.titleKey, { defaultValue: '' })}
+                      </Text>
+                      <Text style={guideStyles.stepDesc}>
+                        {t(step.descKey, { defaultValue: '' })}
+                      </Text>
+                    </View>
+                  ))}
+                </ScrollView>
+
+                <View style={guideStyles.dots}>
+                  {GUIDE_STEPS.map((_, idx) => (
+                    <View
+                      key={idx}
+                      style={[
+                        guideStyles.dot,
+                        idx === guideStep ? guideStyles.dotActive : guideStyles.dotInactive,
+                      ]}
+                    />
+                  ))}
                 </View>
-              ))}
-            </ScrollView>
 
-            <View style={guideStyles.dots}>
-              {GUIDE_STEPS.map((_, idx) => (
-                <View
-                  key={idx}
-                  style={[
-                    guideStyles.dot,
-                    idx === guideStep ? guideStyles.dotActive : guideStyles.dotInactive,
-                  ]}
-                />
-              ))}
-            </View>
-
-            <TouchableOpacity style={guideStyles.ctaBtn} onPress={handleGuideNext} activeOpacity={0.85}>
-              <Text style={guideStyles.ctaText}>
-                {guideStep === STEP_COUNT - 1
-                  ? t('guide.start', { defaultValue: '시작하기' })
-                  : t('guide.next', { defaultValue: '다음' })}
-              </Text>
-              {guideStep < STEP_COUNT - 1 && (
-                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={{ marginLeft: 6 }} />
-              )}
-            </TouchableOpacity>
+                <TouchableOpacity style={guideStyles.ctaBtn} onPress={handleGuideNext} activeOpacity={0.85}>
+                  <Text style={guideStyles.ctaText}>
+                    {guideStep === STEP_COUNT - 1
+                      ? t('guide.start', { defaultValue: '시작하기' })
+                      : t('guide.next', { defaultValue: '다음' })}
+                  </Text>
+                  {guideStep < STEP_COUNT - 1 && (
+                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={{ marginLeft: 6 }} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
           </View>
-        </Animated.View>
-      </Modal>
+        ) : null
+      ) : (
+        <Modal visible={guideVisible} transparent animationType="none" statusBarTranslucent>
+          <Animated.View style={[guideStyles.root, { opacity: guideOpacity }]}>
+            <View style={guideStyles.card}>
+              <TouchableOpacity style={guideStyles.skipBtn} onPress={dismissGuide} activeOpacity={0.7}>
+                <Text style={guideStyles.skipText}>{t('guide.skip', { defaultValue: '건너뛰기' })}</Text>
+              </TouchableOpacity>
+
+              <ScrollView
+                ref={guideScrollRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                scrollEventThrottle={16}
+                onMomentumScrollEnd={handleGuideScrollEnd}
+                style={guideStyles.pager}
+              >
+                {GUIDE_STEPS.map((step, idx) => (
+                  <View key={idx} style={guideStyles.page}>
+                    <View style={[guideStyles.iconCircle, { backgroundColor: step.iconBg }]}>
+                      <Ionicons name={step.icon} size={56} color={step.iconColor} />
+                    </View>
+                    <Text style={guideStyles.stepLabel}>{`${idx + 1} / ${STEP_COUNT}`}</Text>
+                    <Text style={guideStyles.stepTitle}>
+                      {t(step.titleKey, { defaultValue: '' })}
+                    </Text>
+                    <Text style={guideStyles.stepDesc}>
+                      {t(step.descKey, { defaultValue: '' })}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+
+              <View style={guideStyles.dots}>
+                {GUIDE_STEPS.map((_, idx) => (
+                  <View
+                    key={idx}
+                    style={[
+                      guideStyles.dot,
+                      idx === guideStep ? guideStyles.dotActive : guideStyles.dotInactive,
+                    ]}
+                  />
+                ))}
+              </View>
+
+              <TouchableOpacity style={guideStyles.ctaBtn} onPress={handleGuideNext} activeOpacity={0.85}>
+                <Text style={guideStyles.ctaText}>
+                  {guideStep === STEP_COUNT - 1
+                    ? t('guide.start', { defaultValue: '시작하기' })
+                    : t('guide.next', { defaultValue: '다음' })}
+                </Text>
+                {guideStep < STEP_COUNT - 1 && (
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={{ marginLeft: 6 }} />
+                )}
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </Modal>
+      )}
     </BlurredBackground>
   );
 }

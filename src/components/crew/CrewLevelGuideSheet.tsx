@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   ScrollView,
   PanResponder,
   Dimensions,
+  BackHandler,
 } from 'react-native';
 import { Ionicons } from '../../lib/icons';
 import { useTheme } from '../../hooks/useTheme';
@@ -27,6 +28,7 @@ import {
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DISMISS_THRESHOLD = 120;
+const IS_ANDROID = Platform.OS === 'android';
 
 interface CrewLevelGuideSheetProps {
   visible: boolean;
@@ -51,9 +53,11 @@ export default function CrewLevelGuideSheet({
   const modalVisible = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const cardPositions = useRef<Record<number, number>>({});
+  const [androidMounted, setAndroidMounted] = useState(false);
 
   useEffect(() => {
     if (visible) {
+      if (IS_ANDROID) setAndroidMounted(true);
       modalVisible.current = true;
       dragOffset.setValue(0);
       Animated.parallel([
@@ -91,9 +95,20 @@ export default function CrewLevelGuideSheet({
         }),
       ]).start(() => {
         modalVisible.current = false;
+        if (IS_ANDROID) setAndroidMounted(false);
       });
     }
   }, [visible, slideAnim, overlayOpacity, dragOffset, currentLevel]);
+
+  // Android back button handler
+  useEffect(() => {
+    if (!IS_ANDROID || !visible) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, onClose]);
 
   const panResponder = useMemo(
     () =>
@@ -133,8 +148,8 @@ export default function CrewLevelGuideSheet({
   const xp = getXpProgress(currentLevel, totalXp);
   const combinedTranslateY = Animated.add(slideAnim, dragOffset);
 
-  return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
+  const sheetContent = (
+    <>
       <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]}>
         <TouchableOpacity
           style={StyleSheet.absoluteFill}
@@ -253,12 +268,34 @@ export default function CrewLevelGuideSheet({
           })}
         </ScrollView>
       </Animated.View>
+    </>
+  );
+
+  // Android: render as absolute overlay to avoid native Modal touch issues
+  if (IS_ANDROID) {
+    if (!androidMounted) return null;
+    return (
+      <View style={styles.androidOverlayContainer} pointerEvents="box-none">
+        {sheetContent}
+      </View>
+    );
+  }
+
+  // iOS: use native Modal
+  return (
+    <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
+      {sheetContent}
     </Modal>
   );
 }
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
+    androidOverlayContainer: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 9999,
+      elevation: 9999,
+    },
     overlay: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: 'rgba(0, 0, 0, 0.45)',

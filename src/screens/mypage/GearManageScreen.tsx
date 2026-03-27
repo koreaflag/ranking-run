@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   StatusBar,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -25,6 +26,8 @@ import { formatDistance } from '../../utils/format';
 import { FONT_SIZES, SPACING, BORDER_RADIUS, SHADOWS } from '../../utils/constants';
 import type { ThemeColors } from '../../utils/constants';
 import type { GearItem } from '../../types/api';
+
+const IS_ANDROID = Platform.OS === 'android';
 
 const BRAND_NAMES = [
   'Nike',
@@ -53,6 +56,7 @@ export default function GearManageScreen() {
   const [gearList, setGearList] = useState<GearItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [androidShowModal, setAndroidShowModal] = useState(false);
   const [editingGear, setEditingGear] = useState<GearItem | null>(null);
 
   // Add/Edit form state
@@ -86,6 +90,7 @@ export default function GearManageScreen() {
 
   const handleOpenAdd = useCallback(() => {
     resetForm();
+    if (IS_ANDROID) setAndroidShowModal(true);
     setShowAddModal(true);
   }, [resetForm]);
 
@@ -94,13 +99,25 @@ export default function GearManageScreen() {
     setSelectedBrand(gear.brand);
     setModelName(gear.model_name);
     setShowBrandPicker(false);
+    if (IS_ANDROID) setAndroidShowModal(true);
     setShowAddModal(true);
   }, []);
 
   const handleCloseModal = useCallback(() => {
     setShowAddModal(false);
+    if (IS_ANDROID) setAndroidShowModal(false);
     resetForm();
   }, [resetForm]);
+
+  // Android back button handler
+  useEffect(() => {
+    if (!IS_ANDROID || !showAddModal) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleCloseModal();
+      return true;
+    });
+    return () => sub.remove();
+  }, [showAddModal, handleCloseModal]);
 
   const handleSave = useCallback(async () => {
     if (!selectedBrand || !modelName.trim()) {
@@ -280,123 +297,140 @@ export default function GearManageScreen() {
       )}
 
       {/* Add/Edit Gear Modal */}
-      <Modal
-        visible={showAddModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={handleCloseModal}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <KeyboardAvoidingView
-            style={{ flex: 1 }}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            {/* Modal Header */}
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={handleCloseModal} activeOpacity={0.7}>
-                <Ionicons name="close" size={28} color={colors.text} />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>
-                {editingGear ? t('gear.editGear') : t('gear.addGear')}
-              </Text>
-              <TouchableOpacity
-                onPress={handleSave}
-                disabled={isSaving || !selectedBrand || !modelName.trim()}
-                activeOpacity={0.7}
-              >
-                {isSaving ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Text
-                    style={[
-                      styles.saveButton,
-                      (!selectedBrand || !modelName.trim()) && styles.saveButtonDisabled,
-                    ]}
-                  >
-                    {t('common.save')}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              style={styles.modalBody}
-              contentContainerStyle={styles.modalContent}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
+      {(() => {
+        const modalContent = (
+          <SafeAreaView style={styles.modalContainer}>
+            <KeyboardAvoidingView
+              style={{ flex: 1 }}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             >
-              {/* Brand Selection */}
-              {showBrandPicker ? (
-                <View style={styles.brandSection}>
-                  <Text style={styles.fieldLabel}>{t('gear.brandSelect')}</Text>
-                  <View style={styles.brandGrid}>
-                    {BRANDS.map((brand) => {
-                      const isSelected = selectedBrand === brand;
-                      return (
-                        <TouchableOpacity
-                          key={brand}
-                          style={[
-                            styles.brandChip,
-                            isSelected && styles.brandChipSelected,
-                          ]}
-                          onPress={() => {
-                            setSelectedBrand(brand);
-                            setShowBrandPicker(false);
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <Text
-                            style={[
-                              styles.brandChipText,
-                              isSelected && styles.brandChipTextSelected,
-                            ]}
-                          >
-                            {brand}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              ) : (
-                <>
-                  {/* Selected brand display */}
-                  <View style={styles.fieldGroup}>
-                    <Text style={styles.fieldLabel}>{t('gear.brand')}</Text>
-                    <TouchableOpacity
-                      style={styles.selectedBrandRow}
-                      onPress={() => setShowBrandPicker(true)}
-                      activeOpacity={0.7}
+              {/* Modal Header */}
+              <View style={styles.modalHeader}>
+                <TouchableOpacity onPress={handleCloseModal} activeOpacity={0.7}>
+                  <Ionicons name="close" size={28} color={colors.text} />
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>
+                  {editingGear ? t('gear.editGear') : t('gear.addGear')}
+                </Text>
+                <TouchableOpacity
+                  onPress={handleSave}
+                  disabled={isSaving || !selectedBrand || !modelName.trim()}
+                  activeOpacity={0.7}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Text
+                      style={[
+                        styles.saveButton,
+                        (!selectedBrand || !modelName.trim()) && styles.saveButtonDisabled,
+                      ]}
                     >
-                      <Text style={styles.selectedBrandText}>{selectedBrand}</Text>
-                      <Ionicons
-                        name="chevron-forward"
-                        size={18}
-                        color={colors.textTertiary}
-                      />
-                    </TouchableOpacity>
-                  </View>
+                      {t('common.save')}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
 
-                  {/* Model name input */}
-                  <View style={styles.fieldGroup}>
-                    <Text style={styles.fieldLabel}>{t('gear.modelName')}</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={modelName}
-                      onChangeText={setModelName}
-                      placeholder="예: Pegasus 41, Gel-Kayano 30"
-                      placeholderTextColor={colors.textTertiary}
-                      maxLength={50}
-                      returnKeyType="done"
-                      autoFocus
-                    />
+              <ScrollView
+                style={styles.modalBody}
+                contentContainerStyle={styles.modalContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Brand Selection */}
+                {showBrandPicker ? (
+                  <View style={styles.brandSection}>
+                    <Text style={styles.fieldLabel}>{t('gear.brandSelect')}</Text>
+                    <View style={styles.brandGrid}>
+                      {BRANDS.map((brand) => {
+                        const isSelected = selectedBrand === brand;
+                        return (
+                          <TouchableOpacity
+                            key={brand}
+                            style={[
+                              styles.brandChip,
+                              isSelected && styles.brandChipSelected,
+                            ]}
+                            onPress={() => {
+                              setSelectedBrand(brand);
+                              setShowBrandPicker(false);
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              style={[
+                                styles.brandChipText,
+                                isSelected && styles.brandChipTextSelected,
+                              ]}
+                            >
+                              {brand}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                   </View>
-                </>
-              )}
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
-      </Modal>
+                ) : (
+                  <>
+                    {/* Selected brand display */}
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>{t('gear.brand')}</Text>
+                      <TouchableOpacity
+                        style={styles.selectedBrandRow}
+                        onPress={() => setShowBrandPicker(true)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.selectedBrandText}>{selectedBrand}</Text>
+                        <Ionicons
+                          name="chevron-forward"
+                          size={18}
+                          color={colors.textTertiary}
+                        />
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Model name input */}
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>{t('gear.modelName')}</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={modelName}
+                        onChangeText={setModelName}
+                        placeholder="예: Pegasus 41, Gel-Kayano 30"
+                        placeholderTextColor={colors.textTertiary}
+                        maxLength={50}
+                        returnKeyType="done"
+                        autoFocus
+                      />
+                    </View>
+                  </>
+                )}
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
+        );
+
+        if (IS_ANDROID) {
+          if (!androidShowModal) return null;
+          return (
+            <View style={styles.androidModalRoot}>
+              {modalContent}
+            </View>
+          );
+        }
+
+        return (
+          <Modal
+            visible={showAddModal}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={handleCloseModal}
+          >
+            {modalContent}
+          </Modal>
+        );
+      })()}
     </SafeAreaView>
   );
 }
@@ -500,6 +534,13 @@ const createStyles = (c: ThemeColors) =>
       color: c.textTertiary,
       textAlign: 'center',
       lineHeight: 22,
+    },
+
+    // -- Android Modal Root --
+    androidModalRoot: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 9999,
+      elevation: 9999,
     },
 
     // -- Modal --

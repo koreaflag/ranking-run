@@ -68,24 +68,22 @@ export default function RunningHUD({
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  // Read live metrics directly from the store
-  const {
-    distanceMeters,
-    durationSeconds,
-    avgPaceSecondsPerKm,
-    gpsStatus,
-    gpsAccuracy,
-    calories,
-    heartRate,
-    cadence,
-    elevationGainMeters,
-    watchConnected,
-    isAutoPaused,
-    isApproachingStart,
-    isNearStart,
-    loopDetected,
-    distanceToStart,
-  } = useRunningStore();
+  // Read live metrics — individual selectors to avoid re-render on unrelated store changes
+  const distanceMeters = useRunningStore((s) => s.distanceMeters);
+  const durationSeconds = useRunningStore((s) => s.durationSeconds);
+  const avgPaceSecondsPerKm = useRunningStore((s) => s.avgPaceSecondsPerKm);
+  const gpsStatus = useRunningStore((s) => s.gpsStatus);
+  const gpsAccuracy = useRunningStore((s) => s.gpsAccuracy);
+  const calories = useRunningStore((s) => s.calories);
+  const heartRate = useRunningStore((s) => s.heartRate);
+  const cadence = useRunningStore((s) => s.cadence);
+  const elevationGainMeters = useRunningStore((s) => s.elevationGainMeters);
+  const watchConnected = useRunningStore((s) => s.watchConnected);
+  const isAutoPaused = useRunningStore((s) => s.isAutoPaused);
+  const isApproachingStart = useRunningStore((s) => s.isApproachingStart);
+  const isNearStart = useRunningStore((s) => s.isNearStart);
+  const loopDetected = useRunningStore((s) => s.loopDetected);
+  const distanceToStart = useRunningStore((s) => s.distanceToStart);
 
   // ---- Countdown Overlay ----
 

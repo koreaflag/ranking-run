@@ -1607,6 +1607,8 @@ PODS:
     - Yoga
   - react-native-maps (1.18.0):
     - React-Core
+  - react-native-netinfo (11.4.1):
+    - React-Core
   - react-native-safe-area-context (4.12.0):
     - React-Core
   - react-native-webview (13.16.1):
@@ -1963,8 +1965,32 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - Yoga
+  - RNSentry (6.22.0):
+    - DoubleConversion
+    - glog
+    - hermes-engine
+    - RCT-Folly (= 2024.10.14.00)
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-hermes
+    - React-ImageManager
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - Sentry/HybridSDK (= 8.56.2)
+    - Yoga
   - RNSVG (15.8.0):
     - React-Core
+  - Sentry/HybridSDK (8.56.2)
   - SocketRocket (0.7.1)
   - Turf (4.0.0)
   - Yoga (0.0.0)
@@ -2039,6 +2065,7 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-maps (from `../node_modules/react-native-maps`)
+  - "react-native-netinfo (from `../node_modules/@react-native-community/netinfo`)"
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - react-native-webview (from `../node_modules/react-native-webview`)
   - React-nativeconfig (from `../node_modules/react-native/ReactCommon`)
@@ -2074,6 +2101,7 @@ DEPENDENCIES:
   - "RNGoogleSignin (from `../node_modules/@react-native-google-signin/google-signin`)"
   - "rnmapbox-maps (from `../node_modules/@rnmapbox/maps`)"
   - RNScreens (from `../node_modules/react-native-screens`)
+  - "RNSentry (from `../node_modules/@sentry/react-native`)"
   - RNSVG (from `../node_modules/react-native-svg`)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
@@ -2089,6 +2117,7 @@ SPEC REPOS:
     - MapboxCoreMaps
     - MapboxMaps
     - PromisesObjC
+    - Sentry
     - SocketRocket
     - Turf
 
@@ -2228,6 +2257,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   react-native-maps:
     :path: "../node_modules/react-native-maps"
+  react-native-netinfo:
+    :path: "../node_modules/@react-native-community/netinfo"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
   react-native-webview:
@@ -2298,6 +2329,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@rnmapbox/maps"
   RNScreens:
     :path: "../node_modules/react-native-screens"
+  RNSentry:
+    :path: "../node_modules/@sentry/react-native"
   RNSVG:
     :path: "../node_modules/react-native-svg"
   Yoga:
@@ -2381,6 +2414,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 33546a3ebefbccb8770c33a1f8a5554fa96a54de
   React-microtasksnativemodule: 5c3d795318c22ab8df55100e50b151384a4a60b3
   react-native-maps: 3b0c8378ff774053bdd8954c820e987fdd7b4d72
+  react-native-netinfo: cec9c4e86083cb5b6aba0e0711f563e2fbbff187
   react-native-safe-area-context: 8b8404e70b0cbf2a56428a17017c14c1dcc16448
   react-native-webview: ff76bd483e879911c9ca6f5430b6143531bdfcfd
   React-nativeconfig: 8efdb1ef1e9158c77098a93085438f7e7b463678
@@ -2416,7 +2450,9 @@ SPEC CHECKSUMS:
   RNGoogleSignin: 5782dd7dad559608a06f3c6b1d4142c395fb5308
   rnmapbox-maps: 86eb3e67a73a722933c6bb5679d977af64a27a98
   RNScreens: 295d9c0aaeb7f680d03d7e9b476569a4959aae89
+  RNSentry: c559d832d419285e6a58158c59828f034f3b026e
   RNSVG: 8542aa11770b27563714bbd8494a8436385fc85f
+  Sentry: b53951377b78e21a734f5dc8318e333dbfc682d7
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Turf: c9eb11a65d96af58cac523460fd40fec5061b081
   Yoga: feb4910aba9742cfedc059e2b2902e22ffe9954a
