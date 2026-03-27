@@ -325,6 +325,11 @@ class WatchSessionService: NSObject, WCSessionDelegate {
             }
             // No requestCurrentState here — phone pushes state via applicationContext/transferUserInfo.
             // Avoids sendMessage timeout when phone app is backgrounded.
+
+            // Sync any pending standalone runs on session activation
+            DispatchQueue.main.async { [weak self] in
+                self?.onSyncPendingRuns?()
+            }
         }
     }
 
@@ -341,11 +346,18 @@ class WatchSessionService: NSObject, WCSessionDelegate {
         replyHandler([:])
     }
 
+    /// Callback to sync any pending standalone runs when connectivity is restored.
+    var onSyncPendingRuns: (() -> Void)?
+
     func sessionReachabilityDidChange(_ session: WCSession) {
         print("[WatchSessionSvc] reachability changed: \(session.isReachable)")
         // Flush any queued messages when connectivity is restored
         if session.isReachable {
             flushPendingMessages()
+            // Sync pending standalone runs to phone
+            DispatchQueue.main.async { [weak self] in
+                self?.onSyncPendingRuns?()
+            }
         }
         DispatchQueue.main.async { [weak self] in
             self?.onReachabilityChange?(session.isReachable)

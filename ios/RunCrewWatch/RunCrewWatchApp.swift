@@ -85,6 +85,7 @@ struct RunCrewWatchApp: App {
                     if newPhase == .active {
                         viewModel.updateReachabilityStatus()
                         viewModel.pollPhoneState()
+                        viewModel.syncPendingRuns()
                         // Request HealthKit auth when scene is active (dialog needs foreground)
                         Self.requestHealthKitAuthorization()
                     }

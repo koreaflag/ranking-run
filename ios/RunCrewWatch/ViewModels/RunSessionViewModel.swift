@@ -250,6 +250,11 @@ class RunSessionViewModel: ObservableObject {
             }
         }
 
+        // Sync pending runs when WCSession activates or reachability changes
+        service.onSyncPendingRuns = { [weak self] in
+            self?.syncPendingRuns()
+        }
+
         service.onReachabilityChange = { [weak self] reachable in
             self?.isPhoneReachable = reachable
             if reachable {
