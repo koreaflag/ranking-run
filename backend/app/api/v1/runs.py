@@ -32,8 +32,10 @@ from app.schemas.run import (
     UserStatsUpdate,
 )
 from app.services.run_service import RunService
+from app.services.notification_service import NotificationService
 from app.tasks.ranking import recalculate_course_ranking
 from app.tasks.stats import update_stats_after_run
+from app.tasks.notifications import notify_followers_run_completed
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -188,6 +190,17 @@ async def complete_run_session(
         run_record_id=run_record.id,
         course_id=run_record.course_id,
         distance_meters=run_record.distance_meters,
+    )
+
+    # Notify followers about run completion
+    background_tasks.add_task(
+        notify_followers_run_completed,
+        user_id=current_user.id,
+        nickname=current_user.nickname,
+        run_record_id=run_record.id,
+        distance_meters=run_record.distance_meters,
+        duration_seconds=run_record.duration_seconds,
+        course_id=run_record.course_id,
     )
 
     # Only update rankings if run is not flagged and route adherence is sufficient

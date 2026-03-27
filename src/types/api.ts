@@ -934,6 +934,7 @@ export interface ActivityFeedItem {
     run_id: string | null;
     distance_meters: number | null;
     duration_seconds: number | null;
+    avg_pace_seconds_per_km: number | null;
     course_title: string | null;
     // Course fields
     course_id: string | null;

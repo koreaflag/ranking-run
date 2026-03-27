@@ -38,6 +38,7 @@ export type WorldStackParamList = {
 
 export type HomeStackParamList = {
   Home: undefined;
+  ActivityFeed: undefined;
   NotificationInbox: undefined;
   CourseDetail: { courseId: string; selectForRaid?: string };
   RunHistory: undefined;

@@ -1221,7 +1221,18 @@
     "postLike": "があなたの投稿にいいねしました",
     "crewJoinRequest": "が{{crew}}への参加を申請しました",
     "followed": "がフォローしました",
-    "friendRequest": "が友達リクエストを送りました"
+    "friendRequest": "が友達リクエストを送りました",
+    "runCompleted": "がランニングを完了しました"
+  },
+  "feed": {
+    "title": "フォロー中のフィード",
+    "freeRun": "🏃 フリーラン",
+    "distance": "距離",
+    "time": "時間",
+    "pace": "ペース",
+    "courseCreated": "新しいコースを作成しました: {{title}}",
+    "emptyTitle": "まだフィードがありません",
+    "emptySubtitle": "他のランナーをフォローすると\nここにアクティビティが表示されます"
   },
   "guide": {
     "step1Title": "走ってコースを作ろう",

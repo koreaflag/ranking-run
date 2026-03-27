@@ -375,6 +375,7 @@ class FollowService:
                 "run_id": str(run.id),
                 "distance_meters": run.distance_meters,
                 "duration_seconds": run.duration_seconds,
+                "avg_pace_seconds_per_km": run.avg_pace_seconds_per_km,
                 "course_title": run.course.title if run.course else None,
                 "created_at": run.finished_at,
             })

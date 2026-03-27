@@ -26,6 +26,16 @@ class NotificationService {
   async markAllAsRead(): Promise<void> {
     await api.post('/notifications/read-all');
   }
+
+  async registerToken(deviceToken: string, platform: string): Promise<void> {
+    await api.post('/notifications/token', { device_token: deviceToken, platform });
+  }
+
+  async unregisterToken(deviceToken: string): Promise<void> {
+    await api.delete('/notifications/token', {
+      body: JSON.stringify({ device_token: deviceToken }),
+    });
+  }
 }
 
 export const notificationService = new NotificationService();

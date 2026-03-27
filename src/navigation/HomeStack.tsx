@@ -16,6 +16,7 @@ import CrewBoardScreen from '../screens/community/CrewBoardScreen';
 import CrewEditScreen from '../screens/crew/CrewEditScreen';
 import CrewManageScreen from '../screens/crew/CrewManageScreen';
 import CrewNotificationsScreen from '../screens/crew/CrewNotificationsScreen';
+import ActivityFeedScreen from '../screens/home/ActivityFeedScreen';
 import NotificationInboxScreen from '../screens/notification/NotificationInboxScreen';
 import RunDetailScreen from '../screens/mypage/RunDetailScreen';
 import CommunityPostEditScreen from '../screens/community/CommunityPostEditScreen';
@@ -44,6 +45,7 @@ export default function HomeStack() {
       }}
     >
       <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="ActivityFeed" component={ActivityFeedScreen} />
       <Stack.Screen name="NotificationInbox" component={NotificationInboxScreen} />
       <Stack.Screen name="RunHistory" component={RunHistoryScreen} />
       <Stack.Screen name="RunDetail" component={RunDetailScreen} />

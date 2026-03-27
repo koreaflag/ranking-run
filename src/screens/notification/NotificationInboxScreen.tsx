@@ -37,6 +37,7 @@ const NOTIFICATION_ICONS: Record<string, { name: string; color: string }> = {
   crew_join_request: { name: 'person-add', color: '#FF7A33' },
   follow: { name: 'person-add-outline', color: '#10B981' },
   friend_request: { name: 'people', color: '#8B5CF6' },
+  run_completed: { name: 'footsteps', color: '#FF7A33' },
 };
 
 function getNotificationMessage(item: NotificationItem, t: (key: string, opts?: Record<string, unknown>) => string): string {
@@ -54,6 +55,8 @@ function getNotificationMessage(item: NotificationItem, t: (key: string, opts?: 
       return `${name}${t('notification.followed')}`;
     case 'friend_request':
       return `${name}${t('notification.friendRequest')}`;
+    case 'run_completed':
+      return `${name}${t('notification.runCompleted')}`;
     default:
       return name;
   }
@@ -154,6 +157,13 @@ export default function NotificationInboxScreen() {
         case 'follow':
         case 'friend_request':
           navigation.navigate('UserProfile', { userId: item.actor.id });
+          break;
+        case 'run_completed':
+          if (item.target_id) {
+            navigation.navigate('RunDetail', { runId: item.target_id });
+          } else {
+            navigation.navigate('UserProfile', { userId: item.actor.id });
+          }
           break;
       }
     },

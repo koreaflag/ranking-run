@@ -1221,7 +1221,18 @@
     "postLike": "님이 게시글을 좋아합니다",
     "crewJoinRequest": "님이 {{crew}}에 가입을 신청했습니다",
     "followed": "님이 팔로우했습니다",
-    "friendRequest": "님이 친구 요청을 보냈습니다"
+    "friendRequest": "님이 친구 요청을 보냈습니다",
+    "runCompleted": "님이 러닝을 완료했습니다"
+  },
+  "feed": {
+    "title": "팔로잉 피드",
+    "freeRun": "🏃 자유 러닝",
+    "distance": "거리",
+    "time": "시간",
+    "pace": "페이스",
+    "courseCreated": "새 코스를 만들었어요: {{title}}",
+    "emptyTitle": "아직 피드가 없어요",
+    "emptySubtitle": "다른 러너를 팔로우하면\n활동이 여기에 표시됩니다"
   },
   "guide": {
     "step1Title": "달리며 코스를 만드세요",

@@ -1221,7 +1221,18 @@
     "postLike": " liked your post",
     "crewJoinRequest": " requested to join {{crew}}",
     "followed": " started following you",
-    "friendRequest": " sent you a friend request"
+    "friendRequest": " sent you a friend request",
+    "runCompleted": " completed a run"
+  },
+  "feed": {
+    "title": "Following Feed",
+    "freeRun": "🏃 Free Run",
+    "distance": "Distance",
+    "time": "Time",
+    "pace": "Pace",
+    "courseCreated": "Created a new course: {{title}}",
+    "emptyTitle": "No activity yet",
+    "emptySubtitle": "Follow other runners to see\ntheir activity here"
   },
   "guide": {
     "step1Title": "Create Courses by Running",

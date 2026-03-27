@@ -403,14 +403,23 @@ export default function HomeScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.logoText}>RUNVS</Text>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('NotificationInbox')}
-            activeOpacity={0.6}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Ionicons name="notifications-outline" size={24} color={colors.text} />
-            {unreadCount > 0 && <View style={styles.unreadBadge} />}
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('ActivityFeed')}
+              activeOpacity={0.6}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Ionicons name="people-outline" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('NotificationInbox')}
+              activeOpacity={0.6}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Ionicons name="notifications-outline" size={24} color={colors.text} />
+              {unreadCount > 0 && <View style={styles.unreadBadge} />}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {loading ? (
@@ -1244,6 +1253,11 @@ const createStyles = (c: ThemeColors) =>
       fontWeight: '900',
       color: c.text,
       letterSpacing: 1.5,
+    },
+    headerRight: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.md,
     },
     unreadBadge: {
       position: 'absolute',

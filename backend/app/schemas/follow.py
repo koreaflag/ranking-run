@@ -75,6 +75,7 @@ class ActivityFeedItem(BaseModel):
     run_id: str | None = None
     distance_meters: int | None = None
     duration_seconds: int | None = None
+    avg_pace_seconds_per_km: int | None = None
     course_title: str | None = None
     # Course fields (when type == 'course_created')
     course_id: str | None = None
