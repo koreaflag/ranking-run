@@ -25,9 +25,18 @@ const MAX_RETRY = 5;
 const BASE_DELAY_MS = 2_000;
 const MAX_DELAY_MS = 30_000;
 
+// Module-level sync lock to prevent concurrent triggerSync calls
+let syncLock = false;
+
 function getBackoffDelay(): number {
-  const delay = Math.min(BASE_DELAY_MS * Math.pow(2, retryCount), MAX_DELAY_MS);
-  return delay;
+  return Math.min(BASE_DELAY_MS * Math.pow(2, retryCount), MAX_DELAY_MS);
+}
+
+function clearRetryTimer(): void {
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
 }
 
 export const useNetworkStore = create<NetworkStore>((set, get) => ({
@@ -45,23 +54,24 @@ export const useNetworkStore = create<NetworkStore>((set, get) => ({
       // Network recovered — attempt sync
       if (!wasOnline && nowOnline) {
         retryCount = 0;
-        if (retryTimer) {
-          clearTimeout(retryTimer);
-          retryTimer = null;
-        }
-        get().triggerSync();
+        clearRetryTimer();
+        get().triggerSync().catch(() => {});
       }
     });
 
     // Initial pending count
-    get().refreshPendingCount();
+    get().refreshPendingCount().catch(() => {});
 
-    return unsubscribe;
+    // Return cleanup that also clears pending retry timer
+    return () => {
+      unsubscribe();
+      clearRetryTimer();
+    };
   },
 
   triggerSync: async () => {
-    const { isOnline, isSyncing } = get();
-    if (!isOnline || isSyncing) return;
+    const { isOnline } = get();
+    if (!isOnline || syncLock) return;
 
     const hasPending = await hasPendingData();
     if (!hasPending) {
@@ -70,15 +80,10 @@ export const useNetworkStore = create<NetworkStore>((set, get) => ({
       return;
     }
 
+    syncLock = true;
     set({ isSyncing: true });
     try {
-      const result = await syncPendingData();
-      const totalSynced =
-        (result.profileSynced ? 1 : 0) +
-        result.coursesSynced +
-        result.runsSynced +
-        result.chunksSynced;
-
+      await syncPendingData();
       retryCount = 0;
 
       // Refresh count after sync
@@ -91,7 +96,7 @@ export const useNetworkStore = create<NetworkStore>((set, get) => ({
         const delay = getBackoffDelay();
         retryTimer = setTimeout(() => {
           retryTimer = null;
-          get().triggerSync();
+          get().triggerSync().catch(() => {});
         }, delay);
       }
     } catch {
@@ -101,10 +106,11 @@ export const useNetworkStore = create<NetworkStore>((set, get) => ({
         const delay = getBackoffDelay();
         retryTimer = setTimeout(() => {
           retryTimer = null;
-          get().triggerSync();
+          get().triggerSync().catch(() => {});
         }, delay);
       }
     } finally {
+      syncLock = false;
       set({ isSyncing: false });
     }
   },
@@ -120,17 +126,29 @@ export const useNetworkStore = create<NetworkStore>((set, get) => ({
       let count = 0;
       if (profile) count++;
       if (courses) {
-        try { count += JSON.parse(courses).length; } catch { /* ignore */ }
+        try {
+          count += JSON.parse(courses).length;
+        } catch (e) {
+          if (__DEV__) console.warn('[networkStore] corrupt pending courses data', e);
+        }
       }
       if (runs) {
-        try { count += JSON.parse(runs).length; } catch { /* ignore */ }
+        try {
+          count += JSON.parse(runs).length;
+        } catch (e) {
+          if (__DEV__) console.warn('[networkStore] corrupt pending runs data', e);
+        }
       }
       if (chunks) {
-        try { count += JSON.parse(chunks).length; } catch { /* ignore */ }
+        try {
+          count += JSON.parse(chunks).length;
+        } catch (e) {
+          if (__DEV__) console.warn('[networkStore] corrupt pending chunks data', e);
+        }
       }
       set({ pendingCount: count });
     } catch {
-      // ignore
+      // AsyncStorage read failed — ignore
     }
   },
 }));

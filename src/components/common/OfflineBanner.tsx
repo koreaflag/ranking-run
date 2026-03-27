@@ -30,12 +30,14 @@ export default function OfflineBanner() {
   useEffect(() => {
     if (shouldShow && !isVisible.current) {
       isVisible.current = true;
+      translateY.stopAnimation();
       Animated.timing(translateY, {
         toValue: topOffset,
         duration: 300,
         useNativeDriver: true,
       }).start();
     } else if (!shouldShow && isVisible.current) {
+      translateY.stopAnimation();
       Animated.timing(translateY, {
         toValue: -(BANNER_HEIGHT + topOffset + 10),
         duration: 250,
@@ -44,7 +46,7 @@ export default function OfflineBanner() {
         isVisible.current = false;
       });
     }
-  }, [shouldShow, translateY]);
+  }, [shouldShow, translateY, topOffset]);
 
   const label = !isOnline
     ? pendingCount > 0

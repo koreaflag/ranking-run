@@ -17,6 +17,22 @@ const KEYS = {
   PENDING_CHUNKS: '@pending_sync:chunks',
 } as const;
 
+// ── Mutex for AsyncStorage read-modify-write atomicity ──
+// Prevents concurrent writes from losing data (e.g. sync removes item while user adds new one)
+const locks: Record<string, Promise<void>> = {};
+
+async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = locks[key] ?? Promise.resolve();
+  let resolve: () => void;
+  locks[key] = new Promise<void>((r) => { resolve = r; });
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    resolve!();
+  }
+}
+
 export interface PendingCourse {
   id: string; // local uuid for deduplication
   payload: {
@@ -54,11 +70,12 @@ export async function clearPendingProfile(): Promise<void> {
 // ── Courses ──────────────────────────────────────────────
 
 export async function savePendingCourse(course: PendingCourse): Promise<void> {
-  const existing = await getPendingCourses();
-  // Avoid duplicates by id
-  const filtered = existing.filter((c) => c.id !== course.id);
-  filtered.push(course);
-  await AsyncStorage.setItem(KEYS.PENDING_COURSES, JSON.stringify(filtered));
+  await withLock(KEYS.PENDING_COURSES, async () => {
+    const existing = await getPendingCourses();
+    const filtered = existing.filter((c) => c.id !== course.id);
+    filtered.push(course);
+    await AsyncStorage.setItem(KEYS.PENDING_COURSES, JSON.stringify(filtered));
+  });
 }
 
 export async function getPendingCourses(): Promise<PendingCourse[]> {
@@ -71,13 +88,15 @@ export async function clearPendingCourses(): Promise<void> {
 }
 
 export async function removePendingCourse(id: string): Promise<void> {
-  const existing = await getPendingCourses();
-  const filtered = existing.filter((c) => c.id !== id);
-  if (filtered.length > 0) {
-    await AsyncStorage.setItem(KEYS.PENDING_COURSES, JSON.stringify(filtered));
-  } else {
-    await AsyncStorage.removeItem(KEYS.PENDING_COURSES);
-  }
+  await withLock(KEYS.PENDING_COURSES, async () => {
+    const existing = await getPendingCourses();
+    const filtered = existing.filter((c) => c.id !== id);
+    if (filtered.length > 0) {
+      await AsyncStorage.setItem(KEYS.PENDING_COURSES, JSON.stringify(filtered));
+    } else {
+      await AsyncStorage.removeItem(KEYS.PENDING_COURSES);
+    }
+  });
 }
 
 // ── Run Records ──────────────────────────────────────────
@@ -90,10 +109,12 @@ export interface PendingRunRecord {
 }
 
 export async function savePendingRunRecord(record: PendingRunRecord): Promise<void> {
-  const existing = await getPendingRunRecords();
-  const filtered = existing.filter((r) => r.id !== record.id);
-  filtered.push(record);
-  await AsyncStorage.setItem(KEYS.PENDING_RUNS, JSON.stringify(filtered));
+  await withLock(KEYS.PENDING_RUNS, async () => {
+    const existing = await getPendingRunRecords();
+    const filtered = existing.filter((r) => r.id !== record.id);
+    filtered.push(record);
+    await AsyncStorage.setItem(KEYS.PENDING_RUNS, JSON.stringify(filtered));
+  });
 }
 
 export async function getPendingRunRecords(): Promise<PendingRunRecord[]> {
@@ -102,13 +123,15 @@ export async function getPendingRunRecords(): Promise<PendingRunRecord[]> {
 }
 
 export async function removePendingRunRecord(id: string): Promise<void> {
-  const existing = await getPendingRunRecords();
-  const filtered = existing.filter((r) => r.id !== id);
-  if (filtered.length > 0) {
-    await AsyncStorage.setItem(KEYS.PENDING_RUNS, JSON.stringify(filtered));
-  } else {
-    await AsyncStorage.removeItem(KEYS.PENDING_RUNS);
-  }
+  await withLock(KEYS.PENDING_RUNS, async () => {
+    const existing = await getPendingRunRecords();
+    const filtered = existing.filter((r) => r.id !== id);
+    if (filtered.length > 0) {
+      await AsyncStorage.setItem(KEYS.PENDING_RUNS, JSON.stringify(filtered));
+    } else {
+      await AsyncStorage.removeItem(KEYS.PENDING_RUNS);
+    }
+  });
 }
 
 // ── Chunks (intermediate GPS data during running) ────────
@@ -121,10 +144,12 @@ export interface PendingChunk {
 }
 
 export async function savePendingChunk(chunk: PendingChunk): Promise<void> {
-  const existing = await getPendingChunks();
-  const filtered = existing.filter((c) => c.id !== chunk.id);
-  filtered.push(chunk);
-  await AsyncStorage.setItem(KEYS.PENDING_CHUNKS, JSON.stringify(filtered));
+  await withLock(KEYS.PENDING_CHUNKS, async () => {
+    const existing = await getPendingChunks();
+    const filtered = existing.filter((c) => c.id !== chunk.id);
+    filtered.push(chunk);
+    await AsyncStorage.setItem(KEYS.PENDING_CHUNKS, JSON.stringify(filtered));
+  });
 }
 
 export async function getPendingChunks(): Promise<PendingChunk[]> {
@@ -133,23 +158,27 @@ export async function getPendingChunks(): Promise<PendingChunk[]> {
 }
 
 export async function removePendingChunk(id: string): Promise<void> {
-  const existing = await getPendingChunks();
-  const filtered = existing.filter((c) => c.id !== id);
-  if (filtered.length > 0) {
-    await AsyncStorage.setItem(KEYS.PENDING_CHUNKS, JSON.stringify(filtered));
-  } else {
-    await AsyncStorage.removeItem(KEYS.PENDING_CHUNKS);
-  }
+  await withLock(KEYS.PENDING_CHUNKS, async () => {
+    const existing = await getPendingChunks();
+    const filtered = existing.filter((c) => c.id !== id);
+    if (filtered.length > 0) {
+      await AsyncStorage.setItem(KEYS.PENDING_CHUNKS, JSON.stringify(filtered));
+    } else {
+      await AsyncStorage.removeItem(KEYS.PENDING_CHUNKS);
+    }
+  });
 }
 
 export async function clearPendingChunksForSession(sessionId: string): Promise<void> {
-  const existing = await getPendingChunks();
-  const filtered = existing.filter((c) => c.sessionId !== sessionId);
-  if (filtered.length > 0) {
-    await AsyncStorage.setItem(KEYS.PENDING_CHUNKS, JSON.stringify(filtered));
-  } else {
-    await AsyncStorage.removeItem(KEYS.PENDING_CHUNKS);
-  }
+  await withLock(KEYS.PENDING_CHUNKS, async () => {
+    const existing = await getPendingChunks();
+    const filtered = existing.filter((c) => c.sessionId !== sessionId);
+    if (filtered.length > 0) {
+      await AsyncStorage.setItem(KEYS.PENDING_CHUNKS, JSON.stringify(filtered));
+    } else {
+      await AsyncStorage.removeItem(KEYS.PENDING_CHUNKS);
+    }
+  });
 }
 
 // ── Sync All ─────────────────────────────────────────────

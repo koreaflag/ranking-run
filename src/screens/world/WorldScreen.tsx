@@ -1863,16 +1863,16 @@ export default function WorldScreen() {
 
       {/* ===== WORLD MODE OVERLAYS (individual elements, no absoluteFill wrapper) ===== */}
 
-        {/* ===== Unified recenter button (always visible) ===== */}
-        <Animated.View style={[styles.recenterContainer, { opacity: worldOverlayOpacity }]} pointerEvents={isInRun ? 'none' : 'auto'}>
-          <TouchableOpacity style={styles.recenterBtn} onPress={handleRecenter} activeOpacity={0.7}>
-            <Ionicons name="locate" size={20} color={colors.text} />
-          </TouchableOpacity>
-        </Animated.View>
+      {/* ===== Unified recenter button (always visible) ===== */}
+      <Animated.View style={[styles.recenterContainer, { opacity: worldOverlayOpacity }]} pointerEvents={isInRun ? 'none' : 'auto'}>
+        <TouchableOpacity style={styles.recenterBtn} onPress={handleRecenter} activeOpacity={0.7}>
+          <Ionicons name="locate" size={20} color={colors.text} />
+        </TouchableOpacity>
+      </Animated.View>
 
-        {/* Run FAB — visible during tour mode to quickly start running */}
-        {touring && phase === 'idle' && (
-          <Animated.View style={{ opacity: worldOverlayOpacity }} pointerEvents="auto">
+      {/* Run FAB — visible during tour mode to quickly start running */}
+      {touring && phase === 'idle' && (
+        <Animated.View style={{ opacity: worldOverlayOpacity }} pointerEvents="auto">
           <TouchableOpacity
             style={styles.fabRun}
             onPress={() => { setTouring(false); setWelcomeVisible(true); }}
@@ -1880,11 +1880,11 @@ export default function WorldScreen() {
           >
             <Ionicons name="walk" size={20} color={COLORS.white} />
           </TouchableOpacity>
-          </Animated.View>
-        )}
+        </Animated.View>
+      )}
 
-        {/* ===== HUD overlay when marker selected ===== */}
-        {selectedMarker && (
+      {/* ===== HUD overlay when marker selected ===== */}
+      {selectedMarker && (
           <>
             <SafeAreaView style={styles.hudTopOverlay} pointerEvents="box-none">
               <View style={styles.hudTop}>
