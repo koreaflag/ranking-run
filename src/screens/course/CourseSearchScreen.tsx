@@ -163,16 +163,14 @@ export default function CourseSearchScreen() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<TextInput>(null);
 
-  const {
-    courses,
-    isLoading,
-    isLoadingMore,
-    hasNext,
-    filters,
-    fetchCourses,
-    fetchMoreCourses,
-    setFilters,
-  } = useCourseListStore();
+  const courses = useCourseListStore((s) => s.courses);
+  const isLoading = useCourseListStore((s) => s.isLoading);
+  const isLoadingMore = useCourseListStore((s) => s.isLoadingMore);
+  const hasNext = useCourseListStore((s) => s.hasNext);
+  const filters = useCourseListStore((s) => s.filters);
+  const fetchCourses = useCourseListStore((s) => s.fetchCourses);
+  const fetchMoreCourses = useCourseListStore((s) => s.fetchMoreCourses);
+  const setFilters = useCourseListStore((s) => s.setFilters);
 
   // Initial fetch on mount
   useEffect(() => {
@@ -433,6 +431,10 @@ export default function CourseSearchScreen() {
           refreshing={isLoading}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          initialNumToRender={10}
+          windowSize={10}
         />
       )}
     </SafeAreaView>

@@ -202,6 +202,10 @@ export default function FollowListScreen() {
             contentContainerStyle={styles.listContent}
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.3}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            initialNumToRender={10}
+            windowSize={10}
             ListFooterComponent={
               loadingMore ? (
                 <View style={styles.footerLoader}>

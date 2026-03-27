@@ -148,7 +148,10 @@ export default function HomeScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const favoriteCourses = useCourseListStore((s) => s.favoriteCourses);
   const fetchFavoriteCourses = useCourseListStore((s) => s.fetchFavoriteCourses);
-  const watchStandalone = useWatchStandaloneStore();
+  const watchStandaloneIsActive = useWatchStandaloneStore((s) => s.isActive);
+  const watchStandaloneDistanceMeters = useWatchStandaloneStore((s) => s.distanceMeters);
+  const watchStandaloneDurationSeconds = useWatchStandaloneStore((s) => s.durationSeconds);
+  const watchStandaloneAvgPace = useWatchStandaloneStore((s) => s.avgPace);
 
   // Challenges
   const challenges = useChallengeStore((s) => s.challenges);
@@ -159,7 +162,7 @@ export default function HomeScreen() {
 
   // Auto-clear stale watch standalone status (no update in 15s → watch disconnected)
   useEffect(() => {
-    if (!watchStandalone.isActive) return;
+    if (!watchStandaloneIsActive) return;
     const interval = setInterval(() => {
       const { lastUpdateAt, isActive, clear } = useWatchStandaloneStore.getState();
       if (isActive && Date.now() - lastUpdateAt > 15_000) {
@@ -167,7 +170,7 @@ export default function HomeScreen() {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [watchStandalone.isActive]);
+  }, [watchStandaloneIsActive]);
 
   // Restore disk cache on first mount (instant display before API)
   useEffect(() => {
@@ -450,7 +453,7 @@ export default function HomeScreen() {
           </View>
 
           {/* Watch Standalone Run Banner */}
-          {watchStandalone.isActive && (
+          {watchStandaloneIsActive && (
             <View style={styles.watchBanner}>
               <View style={styles.watchBannerLeft}>
                 <Ionicons name="watch-outline" size={18} color="#FF7A33" />
@@ -460,17 +463,17 @@ export default function HomeScreen() {
               </View>
               <View style={styles.watchBannerStats}>
                 <Text style={styles.watchBannerValue}>
-                  {(watchStandalone.distanceMeters / 1000).toFixed(2)} km
+                  {(watchStandaloneDistanceMeters / 1000).toFixed(2)} km
                 </Text>
                 <Text style={styles.watchBannerSep}>·</Text>
                 <Text style={styles.watchBannerValue}>
-                  {formatDuration(watchStandalone.durationSeconds)}
+                  {formatDuration(watchStandaloneDurationSeconds)}
                 </Text>
-                {watchStandalone.avgPace > 0 && watchStandalone.avgPace < 3600 && (
+                {watchStandaloneAvgPace > 0 && watchStandaloneAvgPace < 3600 && (
                   <>
                     <Text style={styles.watchBannerSep}>·</Text>
                     <Text style={styles.watchBannerValue}>
-                      {formatPace(watchStandalone.avgPace)}
+                      {formatPace(watchStandaloneAvgPace)}
                     </Text>
                   </>
                 )}

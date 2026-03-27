@@ -165,7 +165,10 @@ export default function MyCoursesScreen() {
   const { t } = useTranslation();
   const colors = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { myCourses, isLoadingMyCourses, fetchMyCourses, updateMyCourse } = useCourseListStore();
+  const myCourses = useCourseListStore((s) => s.myCourses);
+  const isLoadingMyCourses = useCourseListStore((s) => s.isLoadingMyCourses);
+  const fetchMyCourses = useCourseListStore((s) => s.fetchMyCourses);
+  const updateMyCourse = useCourseListStore((s) => s.updateMyCourse);
   const nickname = useAuthStore((s) => s.user?.nickname ?? '나');
 
   // Edit modal state
@@ -277,6 +280,10 @@ export default function MyCoursesScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          initialNumToRender={10}
+          windowSize={10}
         />
       )}
 

@@ -124,6 +124,10 @@ export default function CountryPickerModal({
         keyExtractor={(item) => item.code}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.list}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        initialNumToRender={10}
+        windowSize={10}
       />
     </SafeAreaView>
   );

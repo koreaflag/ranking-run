@@ -67,16 +67,14 @@ export default function CourseListScreen() {
   const [userLat, setUserLat] = useState(DEFAULT_LAT);
   const [userLng, setUserLng] = useState(DEFAULT_LNG);
 
-  const {
-    nearbyCourses,
-    popularCourses,
-    newCourses,
-    favoriteCourses,
-    fetchNearbyCourses,
-    fetchPopularCourses,
-    fetchNewCourses,
-    fetchFavoriteCourses,
-  } = useCourseListStore();
+  const nearbyCourses = useCourseListStore((s) => s.nearbyCourses);
+  const popularCourses = useCourseListStore((s) => s.popularCourses);
+  const newCourses = useCourseListStore((s) => s.newCourses);
+  const favoriteCourses = useCourseListStore((s) => s.favoriteCourses);
+  const fetchNearbyCourses = useCourseListStore((s) => s.fetchNearbyCourses);
+  const fetchPopularCourses = useCourseListStore((s) => s.fetchPopularCourses);
+  const fetchNewCourses = useCourseListStore((s) => s.fetchNewCourses);
+  const fetchFavoriteCourses = useCourseListStore((s) => s.fetchFavoriteCourses);
 
   const loadLocation = useCallback(async () => {
     try {

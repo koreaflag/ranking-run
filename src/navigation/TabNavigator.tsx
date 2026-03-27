@@ -70,7 +70,7 @@ export default function TabNavigator() {
       initialRouteName="WorldTab"
       screenOptions={{
         headerShown: false,
-        lazy: false,
+        lazy: true,
         freezeOnBlur: true,
         tabBarStyle: [
           styles.tabBar,

@@ -353,6 +353,10 @@ export default function FriendsScreen() {
             keyExtractor={(item) => item.id}
             renderItem={currentRender as any}
             contentContainerStyle={styles.listContent}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            initialNumToRender={10}
+            windowSize={10}
           />
         )}
       </SafeAreaView>

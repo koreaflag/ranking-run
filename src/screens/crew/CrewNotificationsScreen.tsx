@@ -191,6 +191,10 @@ export default function CrewNotificationsScreen() {
                 <Text style={styles.emptyDesc}>{t('crew.noNotificationsDesc')}</Text>
               </View>
             }
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            initialNumToRender={10}
+            windowSize={10}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}

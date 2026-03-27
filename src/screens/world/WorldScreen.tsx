@@ -267,7 +267,10 @@ export default function WorldScreen() {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const { mapMarkers, fetchMapMarkers, pendingFocusCourseId, pendingStartCourseId } = useCourseListStore();
+  const mapMarkers = useCourseListStore((s) => s.mapMarkers);
+  const fetchMapMarkers = useCourseListStore((s) => s.fetchMapMarkers);
+  const pendingFocusCourseId = useCourseListStore((s) => s.pendingFocusCourseId);
+  const pendingStartCourseId = useCourseListStore((s) => s.pendingStartCourseId);
   const map3DStyle = useSettingsStore((s) => s.map3DStyle);
   const countdownSeconds = useSettingsStore((s) => s.countdownSeconds);
   const hapticFeedback = useSettingsStore((s) => s.hapticFeedback);

@@ -122,6 +122,10 @@ export default function GroupRunListScreen() {
             description={t('liveGroupRun.emptyDesc')}
           />
         }
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        initialNumToRender={10}
+        windowSize={10}
       />
     </SafeAreaView>
   );

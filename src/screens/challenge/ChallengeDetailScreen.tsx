@@ -71,13 +71,11 @@ export default function ChallengeDetailScreen() {
 
   const { challengeId } = route.params;
 
-  const {
-    selectedChallenge,
-    isLoadingDetail,
-    isJoining,
-    fetchChallengeDetail,
-    joinChallenge,
-  } = useChallengeStore();
+  const selectedChallenge = useChallengeStore((s) => s.selectedChallenge);
+  const isLoadingDetail = useChallengeStore((s) => s.isLoadingDetail);
+  const isJoining = useChallengeStore((s) => s.isJoining);
+  const fetchChallengeDetail = useChallengeStore((s) => s.fetchChallengeDetail);
+  const joinChallenge = useChallengeStore((s) => s.joinChallenge);
 
   useEffect(() => {
     fetchChallengeDetail(challengeId);

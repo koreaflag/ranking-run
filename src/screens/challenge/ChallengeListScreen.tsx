@@ -55,13 +55,11 @@ export default function ChallengeListScreen() {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [refreshing, setRefreshing] = useState(false);
 
-  const {
-    challenges,
-    isLoading,
-    filterType,
-    setFilterType,
-    fetchChallenges,
-  } = useChallengeStore();
+  const challenges = useChallengeStore((s) => s.challenges);
+  const isLoading = useChallengeStore((s) => s.isLoading);
+  const filterType = useChallengeStore((s) => s.filterType);
+  const setFilterType = useChallengeStore((s) => s.setFilterType);
+  const fetchChallenges = useChallengeStore((s) => s.fetchChallenges);
 
   useEffect(() => {
     fetchChallenges();
@@ -160,6 +158,10 @@ export default function ChallengeListScreen() {
               description={t('challenge.emptyDesc')}
             />
           }
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          initialNumToRender={10}
+          windowSize={10}
         />
       )}
     </SafeAreaView>

@@ -120,6 +120,10 @@ export default function PointHistoryScreen() {
               <ListEndIndicator text={t('common.endOfList')} />
             ) : null
           }
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          initialNumToRender={10}
+          windowSize={10}
         />
       )}
     </SafeAreaView>

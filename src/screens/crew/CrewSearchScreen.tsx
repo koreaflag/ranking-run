@@ -229,6 +229,10 @@ export default function CrewSearchScreen() {
             onEndReached={fetchMoreCrews}
             onEndReachedThreshold={0.3}
             ListFooterComponent={renderFooter}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            initialNumToRender={10}
+            windowSize={10}
           />
         )}
       </SafeAreaView>
